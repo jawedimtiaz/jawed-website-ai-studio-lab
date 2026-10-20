@@ -1,7 +1,98 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { User, Mail, Phone, Tag, MessageSquare, ShieldCheck, Loader2 } from 'lucide-react';
+import {
+  User,
+  Mail,
+  Phone,
+  Tag,
+  MessageSquare,
+  ShieldCheck,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check
+} from 'lucide-react';
 import { logContactAttempt } from '../services/contactLogger';
+
+export interface SentContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  reason: string;
+  message: string;
+  sentAt: string; // ISO 8601 timestamp
+  method: 'api' | 'email-client';
+  submissionId?: string;
+}
+
+export const SENT_MESSAGES_STORAGE_KEY = 'jawed_sent_contact_messages';
+const MAX_SENT_MESSAGES_SAVED = 15;
+
+/**
+ * Local storage utility to track and retrieve recently sent contact messages for user reference
+ */
+export const sentMessagesStorage = {
+  getSentMessages: (): SentContactMessage[] => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return [];
+    }
+    try {
+      const raw = localStorage.getItem(SENT_MESSAGES_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      console.warn('Failed to load sent messages from localStorage:', err);
+      return [];
+    }
+  },
+
+  saveSentMessage: (
+    entry: Omit<SentContactMessage, 'id' | 'sentAt'> & { id?: string; sentAt?: string }
+  ): SentContactMessage => {
+    const newMessage: SentContactMessage = {
+      id: entry.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: entry.name,
+      email: entry.email,
+      phone: entry.phone,
+      reason: entry.reason,
+      message: entry.message,
+      sentAt: entry.sentAt || new Date().toISOString(),
+      method: entry.method,
+      submissionId: entry.submissionId
+    };
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const existing = sentMessagesStorage.getSentMessages();
+        const filtered = existing.filter(
+          (m) => m.id !== newMessage.id && (!newMessage.submissionId || m.submissionId !== newMessage.submissionId)
+        );
+        const updated = [newMessage, ...filtered].slice(0, MAX_SENT_MESSAGES_SAVED);
+        localStorage.setItem(SENT_MESSAGES_STORAGE_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.warn('Failed to save sent message to localStorage:', err);
+      }
+    }
+
+    return newMessage;
+  },
+
+  clearSentMessages: (): void => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.removeItem(SENT_MESSAGES_STORAGE_KEY);
+      } catch (err) {
+        console.warn('Failed to clear sent messages from localStorage:', err);
+      }
+    }
+  }
+};
 
 interface FormState {
   name: string;
@@ -88,6 +179,28 @@ export const ContactPage: React.FC = () => {
   const [submissionId, setSubmissionId] = useState<string>('');
   const [formLoadedAt] = useState<number>(Date.now());
   const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
+
+  // Recently sent messages state loaded from localStorage utility
+  const [recentSentMessages, setRecentSentMessages] = useState<SentContactMessage[]>(() => {
+    return sentMessagesStorage.getSentMessages();
+  });
+  const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  const handleClearSentMessages = () => {
+    sentMessagesStorage.clearSentMessages();
+    setRecentSentMessages([]);
+    setExpandedMessageId(null);
+  };
+
+  const handleCopySentMessage = (msgId: string, text: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedMessageId(msgId);
+        setTimeout(() => setCopiedMessageId(null), 2500);
+      });
+    }
+  };
 
   const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -194,7 +307,7 @@ export const ContactPage: React.FC = () => {
             ? undefined
             : 'Please enter your email address.';
         }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed)) {
           return 'Please enter a valid email address (e.g. name@domain.com).';
         }
         if (trimmed.length > 150) {
@@ -438,6 +551,19 @@ export const ContactPage: React.FC = () => {
         setSubmitStatus('success');
         setServerMessage(result.message || 'Thank you! Your message has been sent successfully.');
         setSubmissionId(result.id || '');
+
+        // Track recently sent message in localStorage utility for user reference
+        sentMessagesStorage.saveSentMessage({
+          submissionId: result.id || undefined,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim() || undefined,
+          reason: formData.reason,
+          message: formData.message.trim(),
+          method: 'api'
+        });
+        setRecentSentMessages(sentMessagesStorage.getSentMessages());
+
         setFormData({
           name: '',
           email: '',
@@ -573,6 +699,18 @@ export const ContactPage: React.FC = () => {
         'Your email application has been launched with your pre-filled inquiry addressed to webmaster@jawed.co.in. If no email client opens, copy the message details or email address below.'
       );
       setIsOpenEmailLoading(false);
+
+      // Track recently sent email inquiry in localStorage utility for user reference
+      sentMessagesStorage.saveSentMessage({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim() || undefined,
+        reason: formData.reason,
+        message: formData.message.trim(),
+        method: 'email-client'
+      });
+      setRecentSentMessages(sentMessagesStorage.getSentMessages());
+
       setFormData({
         name: '',
         email: '',
@@ -1195,7 +1333,7 @@ export const ContactPage: React.FC = () => {
                 <Mail size={16} style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
                 <span>Email Address <span style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${errors.email ? 'has-error' : formData.email.trim() && !errors.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.email ? 'has-error' : formData.email.trim() && !errors.email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(formData.email.trim()) ? 'is-valid' : ''}`}>
                 <Mail className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-email"
@@ -1204,6 +1342,8 @@ export const ContactPage: React.FC = () => {
                   autoComplete="email"
                   required
                   aria-required="true"
+                  pattern="[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"
+                  title="Please enter a valid email address (e.g. name@domain.com)"
                   aria-invalid={Boolean(errors.email)}
                   aria-describedby={errors.email ? 'contact-email-error' : 'contact-email-hint'}
                   value={formData.email}
@@ -1214,7 +1354,7 @@ export const ContactPage: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: errors.email ? '2px solid #dc2626' : formData.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? '1px solid #10b981' : '1px solid var(--line)',
+                    border: errors.email ? '2px solid #dc2626' : formData.email.trim() && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(formData.email.trim()) ? '1px solid #10b981' : '1px solid var(--line)',
                     boxShadow: errors.email ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
@@ -1228,7 +1368,7 @@ export const ContactPage: React.FC = () => {
                     <span aria-hidden="true">⚠️</span>
                     <span>{errors.email}</span>
                   </p>
-                ) : formData.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? (
+                ) : formData.email.trim() && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(formData.email.trim()) ? (
                   <span id="contact-email-hint" style={{ color: '#059669', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span>✓</span> Valid email address format
                   </span>
@@ -1262,15 +1402,17 @@ export const ContactPage: React.FC = () => {
                 <Phone size={16} style={{ color: errors.phone ? '#dc2626' : 'var(--muted)' }} aria-hidden="true" />
                 <span>Phone Number <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(Optional)</span></span>
               </label>
-              <div className={`input-icon-wrapper ${errors.phone ? 'has-error' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.phone ? 'has-error' : formData.phone.trim() && !errors.phone && /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,20}$/.test(formData.phone.trim()) ? 'is-valid' : ''}`}>
                 <Phone className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-phone"
                   name="phone"
                   type="tel"
                   autoComplete="tel"
+                  pattern="[+]?[(]?[0-9]{1,4}[)]?[-\\s./0-9]{6,20}"
+                  title="Please enter a valid phone number (e.g. +1 555-123-4567 or 7-20 digits)"
                   aria-invalid={Boolean(errors.phone)}
-                  aria-describedby={errors.phone ? 'contact-phone-error' : undefined}
+                  aria-describedby={errors.phone ? 'contact-phone-error' : 'contact-phone-hint'}
                   value={formData.phone}
                   onChange={handleChange}
                   onBlur={() => handleBlur('phone')}
@@ -1279,7 +1421,7 @@ export const ContactPage: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: errors.phone ? '2px solid #dc2626' : '1px solid var(--line)',
+                    border: errors.phone ? '2px solid #dc2626' : formData.phone.trim() && /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,20}$/.test(formData.phone.trim()) ? '1px solid #10b981' : '1px solid var(--line)',
                     boxShadow: errors.phone ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
@@ -1287,11 +1429,27 @@ export const ContactPage: React.FC = () => {
                   }}
                 />
               </div>
-              {errors.phone && (
-                <p id="contact-phone-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0', fontWeight: 500 }}>
-                  {errors.phone}
-                </p>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
+                {errors.phone ? (
+                  <p id="contact-phone-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span aria-hidden="true">⚠️</span>
+                    <span>{errors.phone}</span>
+                  </p>
+                ) : formData.phone.trim() && /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,20}$/.test(formData.phone.trim()) ? (
+                  <span id="contact-phone-hint" style={{ color: '#059669', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>✓</span> Valid phone format
+                  </span>
+                ) : (
+                  <span id="contact-phone-hint" style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
+                    Optional — e.g. +1 (555) 000-0000
+                  </span>
+                )}
+                {formData.phone.length > 0 && (
+                  <span style={{ fontSize: '0.8rem', color: formData.phone.trim().length > 30 ? '#dc2626' : 'var(--muted)' }}>
+                    {formData.phone.trim().length}/30
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Topic / Reason */}
@@ -1491,6 +1649,239 @@ export const ContactPage: React.FC = () => {
               </button>
             </div>
           </form>
+        )}
+      </section>
+
+      {/* Recently Sent Contact Messages (Local Storage Reference) */}
+      <section
+        className="content-section"
+        id="recent-messages"
+        style={{
+          marginTop: '2.5rem',
+          backgroundColor: 'var(--surface)',
+          padding: '1.5rem',
+          borderRadius: '8px',
+          border: '1px solid var(--line)'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+            <Clock size={20} style={{ color: 'var(--accent)' }} aria-hidden="true" />
+            <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Recently Sent Inquiries</h2>
+            {recentSentMessages.length > 0 && (
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  backgroundColor: '#e0e7ff',
+                  color: '#3730a3',
+                  padding: '0.15rem 0.55rem',
+                  borderRadius: '9999px'
+                }}
+              >
+                {recentSentMessages.length}
+              </span>
+            )}
+          </div>
+          {recentSentMessages.length > 0 && (
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={handleClearSentMessages}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+              title="Clear all stored sent messages from this browser"
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              <span>Clear History</span>
+            </button>
+          )}
+        </div>
+
+        <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+          Messages you send from this browser are logged in your local storage so you can easily reference past submissions, timestamps, and message contents.
+        </p>
+
+        {recentSentMessages.length === 0 ? (
+          <div
+            style={{
+              padding: '1.5rem',
+              textAlign: 'center',
+              backgroundColor: '#fafafa',
+              borderRadius: '6px',
+              border: '1px dashed var(--line)',
+              color: 'var(--muted)',
+              fontSize: '0.88rem'
+            }}
+          >
+            <Clock size={24} style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} aria-hidden="true" />
+            <p style={{ margin: '0 0 0.25rem', fontWeight: 500, color: 'var(--text)' }}>
+              No sent messages in local storage yet
+            </p>
+            <p style={{ margin: 0, fontSize: '0.82rem' }}>
+              When you submit an inquiry through the form or your email client, a reference copy will appear here.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {recentSentMessages.map((msg) => {
+              const isExpanded = expandedMessageId === msg.id;
+              const formattedDate = new Date(msg.sentAt).toLocaleString(undefined, {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+              });
+
+              return (
+                <div
+                  key={msg.id}
+                  style={{
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    backgroundColor: '#fff',
+                    overflow: 'hidden',
+                    transition: 'border-color 0.15s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '0.85rem 1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.45rem',
+                      cursor: 'pointer',
+                      backgroundColor: isExpanded ? 'rgba(29, 78, 216, 0.03)' : undefined
+                    }}
+                    onClick={() => setExpandedMessageId(isExpanded ? null : msg.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedMessageId(isExpanded ? null : msg.id);
+                      }
+                    }}
+                    aria-expanded={isExpanded}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)' }}>
+                          {msg.reason}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '4px',
+                            backgroundColor: msg.method === 'api' ? '#ecfdf5' : '#eff6ff',
+                            color: msg.method === 'api' ? '#065f46' : '#1e40af',
+                            border: msg.method === 'api' ? '1px solid #a7f3d0' : '1px solid #bfdbfe'
+                          }}
+                        >
+                          {msg.method === 'api' ? '✓ Sent via Web API' : '✉️ Opened in Email'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                        <span>{formattedDate}</span>
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', color: 'var(--muted)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span>From: <strong style={{ color: 'var(--text)' }}>{msg.name}</strong> ({msg.email}){msg.phone ? ` • ${msg.phone}` : ''}</span>
+                      {msg.submissionId && (
+                        <span style={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>ID: {msg.submissionId.slice(0, 8)}...</span>
+                      )}
+                    </div>
+
+                    {!isExpanded && (
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: '0.84rem',
+                          color: 'var(--muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}
+                      >
+                        {msg.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {isExpanded && (
+                    <div
+                      style={{
+                        padding: '1rem',
+                        borderTop: '1px solid var(--line)',
+                        backgroundColor: '#fafafa',
+                        fontSize: '0.88rem'
+                      }}
+                    >
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <strong style={{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '0.35rem' }}>
+                          Message Content:
+                        </strong>
+                        <div
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            backgroundColor: '#fff',
+                            border: '1px solid var(--line)',
+                            borderRadius: '4px',
+                            padding: '0.75rem',
+                            lineHeight: 1.6,
+                            color: 'var(--text)',
+                            maxHeight: '220px',
+                            overflowY: 'auto'
+                          }}
+                        >
+                          {msg.message}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopySentMessage(msg.id, msg.message);
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            padding: '0.35rem 0.75rem',
+                            fontSize: '0.82rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <>
+                              <Check size={14} style={{ color: '#059669' }} />
+                              <span style={{ color: '#059669' }}>Copied to clipboard!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={14} />
+                              <span>Copy Message Text</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
 
