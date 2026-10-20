@@ -264,11 +264,7 @@ export const ContactPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!handleValidation('api')) {
-      return;
-    }
-
-    // Check hidden honeypot field: reject any request where this field is filled
+    // Honeypot spam protection: reject immediately if the hidden honeypot field is populated
     if (formData.website && formData.website.trim().length > 0) {
       logContactAttempt({
         status: 'fail',
@@ -283,6 +279,10 @@ export const ContactPage: React.FC = () => {
       setSubmissionMethod('api');
       setSubmitStatus('error');
       setServerMessage('Submission rejected: automated spam activity detected.');
+      return;
+    }
+
+    if (!handleValidation('api')) {
       return;
     }
 
@@ -305,6 +305,7 @@ export const ContactPage: React.FC = () => {
           phone: formData.phone.trim() || undefined,
           reason: formData.reason,
           message: formData.message.trim(),
+          website: formData.website,
           form_loaded_at: formLoadedAt
         })
       });
@@ -383,12 +384,7 @@ export const ContactPage: React.FC = () => {
   };
 
   const handleOpenEmail = () => {
-    // Validate form fields first and trigger shake animation on failure
-    if (!handleValidation('email-client')) {
-      return;
-    }
-
-    // Check hidden honeypot field: reject any request where this field is filled
+    // Honeypot spam protection: reject immediately if the hidden honeypot field is populated
     if (formData.website && formData.website.trim().length > 0) {
       logContactAttempt({
         status: 'fail',
@@ -403,6 +399,11 @@ export const ContactPage: React.FC = () => {
       setSubmissionMethod('email-client');
       setSubmitStatus('error');
       setServerMessage('Submission rejected: automated spam activity detected.');
+      return;
+    }
+
+    // Validate form fields first and trigger shake animation on failure
+    if (!handleValidation('email-client')) {
       return;
     }
 
@@ -765,8 +766,49 @@ export const ContactPage: React.FC = () => {
             noValidate
             style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
           >
-            {/* Scoped CSS to ensure robust red border highlighting on validation failure */}
+            {/* Scoped CSS to ensure robust red border highlighting on validation failure and focus transitions */}
             <style>{`
+              /* Transition effect on focus to scale border color and padding */
+              .contact-form input,
+              textarea {
+                transition: border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            padding 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            outline-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            background-color 0.15s ease;
+              }
+
+              .contact-form input:focus,
+              textarea:focus {
+                border-color: var(--accent) !important;
+                padding-top: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+                padding-left: 2.65rem !important;
+                padding-right: 1rem !important;
+                box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18), 0 2px 8px -1px rgba(29, 78, 216, 0.12) !important;
+                outline: 3px solid rgba(29, 78, 216, 0.35) !important;
+                outline-offset: 2px !important;
+              }
+
+              .contact-form select {
+                transition: border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            padding 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            outline-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                            background-color 0.15s ease;
+              }
+
+              .contact-form select:focus {
+                border-color: var(--accent) !important;
+                padding-top: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+                padding-left: 2.65rem !important;
+                padding-right: 1rem !important;
+                box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18), 0 2px 8px -1px rgba(29, 78, 216, 0.12) !important;
+                outline: 3px solid rgba(29, 78, 216, 0.35) !important;
+                outline-offset: 2px !important;
+              }
+
               .contact-form .form-field.has-error input,
               .contact-form .form-field.has-error select,
               .contact-form .form-field.has-error textarea,
@@ -782,6 +824,7 @@ export const ContactPage: React.FC = () => {
                 border: 2px solid #dc2626 !important;
                 box-shadow: 0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
               }
+
               .contact-form .form-field.has-error input:focus,
               .contact-form .form-field.has-error select:focus,
               .contact-form .form-field.has-error textarea:focus,
@@ -795,18 +838,45 @@ export const ContactPage: React.FC = () => {
               .contact-form select[aria-invalid="true"]:focus,
               .contact-form textarea[aria-invalid="true"]:focus {
                 border-color: #dc2626 !important;
+                padding-top: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+                padding-left: 2.65rem !important;
+                padding-right: 1rem !important;
                 outline: 3px solid rgba(220, 38, 38, 0.45) !important;
-                outline-offset: 2px;
+                outline-offset: 2px !important;
                 box-shadow: 0 0 0 1px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.25) !important;
               }
+
               .contact-form .form-field.has-error label {
                 color: #b91c1c;
               }
+
+              @media (prefers-reduced-motion: reduce) {
+                .contact-form input,
+                textarea,
+                .contact-form select {
+                  transition: none !important;
+                }
+              }
             `}</style>
 
-            {/* Honeypot field (hidden from legitimate users, trapped for bots) */}
-            <div style={{ display: 'none' }} aria-hidden="true">
-              <label htmlFor="contact-website">Website (Leave blank)</label>
+            {/* Hidden honeypot input field to prevent automated spam submissions */}
+            <div
+              className="honeypot-field"
+              style={{
+                position: 'absolute',
+                left: '-9999px',
+                top: '-9999px',
+                opacity: 0,
+                height: 0,
+                width: 0,
+                zIndex: -1,
+                overflow: 'hidden',
+                pointerEvents: 'none'
+              }}
+              aria-hidden="true"
+            >
+              <label htmlFor="contact-website">Website (Leave blank if human)</label>
               <input
                 id="contact-website"
                 name="website"
@@ -815,6 +885,7 @@ export const ContactPage: React.FC = () => {
                 autoComplete="off"
                 value={formData.website}
                 onChange={handleChange}
+                placeholder="Leave blank"
               />
             </div>
 
@@ -869,7 +940,7 @@ export const ContactPage: React.FC = () => {
                     boxShadow: errors.name ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
-                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 />
               </div>
@@ -935,7 +1006,7 @@ export const ContactPage: React.FC = () => {
                     boxShadow: errors.email ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
-                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 />
               </div>
@@ -984,7 +1055,7 @@ export const ContactPage: React.FC = () => {
                     boxShadow: errors.phone ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
-                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 />
               </div>
@@ -1033,7 +1104,7 @@ export const ContactPage: React.FC = () => {
                     borderRadius: '6px',
                     backgroundColor: '#fff',
                     fontSize: '0.95rem',
-                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 >
                   <option value="" disabled>
@@ -1104,7 +1175,7 @@ export const ContactPage: React.FC = () => {
                     borderRadius: '6px',
                     fontFamily: 'inherit',
                     fontSize: '0.95rem',
-                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                    transition: 'border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 />
               </div>

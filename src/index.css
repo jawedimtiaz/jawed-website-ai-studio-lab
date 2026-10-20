@@ -422,6 +422,59 @@ select:focus-visible {
   border-color: #9dbbe5;
 }
 
+/* Focus transition effect on .contact-form input, textarea to scale border color and padding */
+.contact-form input,
+textarea {
+  transition: border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              padding 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              outline-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 0.15s ease;
+}
+
+.contact-form input:focus,
+textarea:focus {
+  border-color: var(--accent);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  padding-left: 2.65rem;
+  padding-right: 1rem;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18), 0 2px 8px -1px rgba(29, 78, 216, 0.12);
+  outline: 3px solid rgba(29, 78, 216, 0.35);
+  outline-offset: 2px;
+}
+
+.contact-form select {
+  transition: border-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              padding 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              outline-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 0.15s ease;
+}
+
+.contact-form select:focus {
+  border-color: var(--accent);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  padding-left: 2.65rem;
+  padding-right: 1rem;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.18), 0 2px 8px -1px rgba(29, 78, 216, 0.12);
+  outline: 3px solid rgba(29, 78, 216, 0.35);
+  outline-offset: 2px;
+}
+
+/* Hidden Honeypot Field for Spam Bot Trapping */
+.honeypot-field {
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Input Icon Wrapper for form inputs */
 .input-icon-wrapper {
   position: relative;
