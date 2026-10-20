@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny Catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'jawedimtiaz@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isTechOrAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTicket(data) {
+      return data.clientId is string &&
+        data.clientId == request.auth.uid &&
+        data.clientName is string && data.clientName.size() >= 2 && data.clientName.size() <= 100 &&
+        data.clientEmail is string && data.clientEmail.size() <= 150 &&
+        data.deviceType in ['Desktop', 'Server', 'Network Switch', 'Laptop', 'Firewall / Router'] &&
+        data.priority in ['Low', 'Medium', 'Critical'] &&
+        data.siteLocation is string && data.siteLocation.size() >= 2 && data.siteLocation.size() <= 150 &&
+        data.issueDescription is string && data.issueDescription.size() >= 10 && data.issueDescription.size() <= 2000 &&
+        data.status in ['Open', 'In Progress', 'Resolved'] &&
+        data.createdAt is string && data.createdAt.size() <= 64 &&
+        (!('clientPhotoUrl' in data) || (data.clientPhotoUrl is string && data.clientPhotoUrl.size() <= 500)) &&
+        (!('resolutionNotes' in data) || (data.resolutionNotes is string && data.resolutionNotes.size() <= 5000)) &&
+        (!('lastResolutionNote' in data) || (data.lastResolutionNote is string && data.lastResolutionNote.size() <= 1000)) &&
+        (!('lastUpdatedBy' in data) || (data.lastUpdatedBy is string && data.lastUpdatedBy.size() <= 150)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64)) &&
+        (!('resolvedAt' in data) || (data.resolvedAt is string && data.resolvedAt.size() <= 64));
+    }
+
+    match /tickets/{ticketId} {
+      allow get: if isSignedIn() && isValidId(ticketId) && (
+        resource.data.clientId == request.auth.uid || isTechOrAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.clientId == request.auth.uid || isTechOrAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+        isValidId(ticketId) &&
+        incoming().clientId == request.auth.uid &&
+        incoming().status == 'Open' &&
+        incoming().keys().hasAll([
+          'clientId', 'clientName', 'clientEmail', 'deviceType',
+          'priority', 'siteLocation', 'issueDescription', 'status', 'createdAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'clientId', 'clientName', 'clientEmail', 'clientPhotoUrl', 'deviceType',
+          'priority', 'siteLocation', 'issueDescription', 'status',
+          'resolutionNotes', 'lastResolutionNote', 'lastUpdatedBy',
+          'createdAt', 'updatedAt', 'resolvedAt'
+        ]) &&
+        isValidTicket(incoming());
+
+      allow update: if isSignedIn() &&
+        isValidId(ticketId) &&
+        isValidTicket(incoming()) &&
+        incoming().clientId == existing().clientId &&
+        incoming().createdAt == existing().createdAt && (
+          // Technician role: can update status, worklog notes, resolvedAt, lastUpdatedBy
+          (isTechOrAdmin() &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'status', 'resolutionNotes', 'lastResolutionNote', 'lastUpdatedBy', 'updatedAt', 'resolvedAt'
+           ])) ||
+          // Client: can update description or device info while ticket is still Open
+          (existing().clientId == request.auth.uid &&
+           existing().status == 'Open' &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'issueDescription', 'siteLocation', 'priority', 'deviceType', 'updatedAt'
+           ]))
+        );
+
+      allow delete: if isSignedIn() && isValidId(ticketId) && isTechOrAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if isSignedIn() && isValidId(userId) && (
+        request.auth.uid == userId || isBootstrappedAdmin()
+      );
+      allow write: if isBootstrappedAdmin();
+    }
+  }
+}

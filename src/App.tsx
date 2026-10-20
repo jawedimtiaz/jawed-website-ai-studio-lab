@@ -24,7 +24,9 @@ const AiPage = lazy(() => import('./pages/AiPage').then((m) => ({ default: m.AiP
 const ContactPage = lazy(() => import('./pages/ContactPage').then((m) => ({ default: m.ContactPage })));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const ItServicePage = lazy(() => import('./pages/ItServicePage').then((m) => ({ default: m.ItServicePage })));
 
+import { AuthProvider } from './context/AuthContext';
 import { DocumentHead } from './components/common/DocumentHead';
 import { PwaInstallPrompt } from './components/common/PwaInstallPrompt';
 import { ErrorBoundary, RouteErrorBoundary } from './components/common/ErrorBoundary';
@@ -74,10 +76,11 @@ const ScrollToTop: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <ScrollToTop />
-      <DocumentHead />
-      <ErrorBoundary>
-        <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <AuthProvider>
+        <ScrollToTop />
+        <DocumentHead />
+        <ErrorBoundary>
+          <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <Header />
         
         <div style={{ flex: 1 }}>
@@ -141,6 +144,14 @@ export const App: React.FC = () => {
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/privacy/" element={<PrivacyPage />} />
 
+                {/* IT Service & Field Tech Portal */}
+                <Route path="/it-service" element={<ItServicePage />} />
+                <Route path="/it-service/" element={<ItServicePage />} />
+                <Route path="/service-desk" element={<ItServicePage />} />
+                <Route path="/service-desk/" element={<ItServicePage />} />
+                <Route path="/it-portal" element={<ItServicePage />} />
+                <Route path="/it-portal/" element={<ItServicePage />} />
+
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
@@ -153,6 +164,7 @@ export const App: React.FC = () => {
         <PwaInstallPrompt />
       </div>
     </ErrorBoundary>
+    </AuthProvider>
   </BrowserRouter>
 );
 };
