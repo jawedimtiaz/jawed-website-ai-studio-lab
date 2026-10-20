@@ -463,7 +463,22 @@ textarea:focus {
   outline-offset: 2px;
 }
 
-/* Hidden Honeypot Field for Spam Bot Trapping */
+/* Hidden Honeypot Field for Spam Bot Trapping with Subtle Debug Animation */
+@keyframes honeypot-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.001; /* Remains invisible to human eyes, but active and detectable in DevTools */
+    transform: scale(1.002);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
 .honeypot-field {
   position: absolute !important;
   left: -9999px !important;
@@ -473,6 +488,14 @@ textarea:focus {
   height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+  animation: honeypot-pulse 3s ease-in-out infinite !important;
+  will-change: transform, opacity;
+}
+
+.honeypot-field input,
+.honeypot-input {
+  animation: honeypot-pulse 3s ease-in-out infinite !important;
+  will-change: transform, opacity;
 }
 
 /* Input Icon Wrapper for form inputs */

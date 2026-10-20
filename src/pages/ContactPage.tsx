@@ -378,6 +378,13 @@ export const ContactPage: React.FC = () => {
     const nextForm = { ...formData, [name]: value };
     setFormData(nextForm);
 
+    // If honeypot is populated, immediately log a clear warning for debugging/bot tracking
+    if (name === 'website' && value.trim().length > 0) {
+      console.warn(
+        `[Security Warning] Honeypot input field "website" was populated during input event with: "${value}". Form submissions will be rejected as automated spam activity.`
+      );
+    }
+
     // Save form input data (Name, Email, Topic, Message) to sessionStorage whenever the user types
     if (name !== 'website' && typeof window !== 'undefined' && window.sessionStorage) {
       try {
@@ -490,6 +497,9 @@ export const ContactPage: React.FC = () => {
 
     // Honeypot spam protection: reject immediately if the hidden honeypot field is populated
     if (formData.website && formData.website.trim().length > 0) {
+      console.warn(
+        `[Security Warning] Form submission rejected: honeypot input field "website" was populated with "${formData.website}". Automated spam submission aborted immediately.`
+      );
       logContactAttempt({
         status: 'fail',
         reason: 'BOT_HONEYPOT_DETECTED',
@@ -498,7 +508,7 @@ export const ContactPage: React.FC = () => {
         topic: formData.reason,
         messageLength: formData.message.trim().length,
         submissionMethod: 'api',
-        error: 'Submission rejected: honeypot field was filled.'
+        error: `Submission rejected: honeypot field was filled with "${formData.website}".`
       });
       setSubmissionMethod('api');
       setSubmitStatus('error');
@@ -631,6 +641,9 @@ export const ContactPage: React.FC = () => {
   const handleOpenEmail = () => {
     // Honeypot spam protection: reject immediately if the hidden honeypot field is populated
     if (formData.website && formData.website.trim().length > 0) {
+      console.warn(
+        `[Security Warning] Direct email client action rejected: honeypot input field "website" was populated with "${formData.website}". Automated spam activity detected.`
+      );
       logContactAttempt({
         status: 'fail',
         reason: 'BOT_HONEYPOT_DETECTED',
@@ -639,7 +652,7 @@ export const ContactPage: React.FC = () => {
         topic: formData.reason,
         messageLength: formData.message.trim().length,
         submissionMethod: 'email-client',
-        error: 'Email trigger rejected: honeypot field was filled.'
+        error: `Email trigger rejected: honeypot field was filled with "${formData.website}".`
       });
       setSubmissionMethod('email-client');
       setSubmitStatus('error');
@@ -1207,9 +1220,44 @@ export const ContactPage: React.FC = () => {
                   transition: none !important;
                 }
               }
+
+              /* Subtle CSS animation for honeypot input field: remains invisible to human eyes, but active and detectable in DevTools animation inspector for debugging */
+              @keyframes honeypot-pulse {
+                0% {
+                  opacity: 0;
+                  transform: scale(1);
+                }
+                50% {
+                  opacity: 0.001; /* Invisible to human users, but computes active composited animation frames detectable by debuggers */
+                  transform: scale(1.002);
+                }
+                100% {
+                  opacity: 0;
+                  transform: scale(1);
+                }
+              }
+
+              .honeypot-field {
+                position: absolute !important;
+                left: -9999px !important;
+                top: -9999px !important;
+                opacity: 0 !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+                pointer-events: none !important;
+                animation: honeypot-pulse 3s ease-in-out infinite !important;
+                will-change: transform, opacity;
+              }
+
+              .honeypot-field input,
+              .honeypot-input {
+                animation: honeypot-pulse 3s ease-in-out infinite !important;
+                will-change: transform, opacity;
+              }
             `}</style>
 
-            {/* Hidden honeypot input field to prevent automated spam submissions */}
+            {/* Hidden honeypot input field with subtle CSS animation for spam protection and debugging */}
             <div
               className="honeypot-field"
               style={{
@@ -1221,9 +1269,15 @@ export const ContactPage: React.FC = () => {
                 width: 0,
                 zIndex: -1,
                 overflow: 'hidden',
-                pointerEvents: 'none'
+                pointerEvents: 'none',
+                animation: 'honeypot-pulse 3s ease-in-out infinite',
+                willChange: 'transform, opacity'
               }}
               aria-hidden="true"
+              data-testid="honeypot-wrapper"
+              data-debug-trap="active"
+              data-debug-animation="honeypot-pulse"
+              data-debug-trapped={Boolean(formData.website && formData.website.trim().length > 0)}
             >
               <label htmlFor="contact-website">Website (Leave blank if human)</label>
               <input
@@ -1235,6 +1289,16 @@ export const ContactPage: React.FC = () => {
                 value={formData.website}
                 onChange={handleChange}
                 placeholder="Leave blank"
+                className="honeypot-input"
+                style={{
+                  opacity: 0,
+                  pointerEvents: 'none',
+                  animation: 'honeypot-pulse 3s ease-in-out infinite',
+                  willChange: 'transform, opacity'
+                }}
+                data-testid="honeypot-input"
+                data-debug-animated="true"
+                data-debug-field="honeypot"
               />
             </div>
 

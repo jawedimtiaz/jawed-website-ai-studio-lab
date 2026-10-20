@@ -109,6 +109,11 @@ function contactApiDevPlugin(): Plugin {
 
             // Spam check: honeypot
             if (data.website || data.bot_check) {
+              console.warn(`[DevServer Security Warning] Bot submission rejected: honeypot field was populated:`, {
+                website: data.website,
+                bot_check: data.bot_check,
+                form_loaded_at: data.form_loaded_at
+              });
               appendContactSubmissionLog({
                 status: 'fail',
                 reason: 'BOT_HONEYPOT_DETECTED',
