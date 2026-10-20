@@ -224,6 +224,24 @@ select:focus-visible {
   background: var(--accent);
 }
 
+.button[disabled],
+.button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.button-spinner {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+  transform-origin: center center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button-spinner {
+    animation-duration: 2s;
+  }
+}
+
 .button-secondary {
   background: var(--surface-accent);
   color: var(--accent-dark) !important;
@@ -446,20 +464,63 @@ select:focus-visible {
   color: #059669;
 }
 
-/* Subtle shake animation for form fields upon validation failure */
+/* Validation Failure Highlighting - Red Borders and Focus Rings */
+.form-field.has-error input,
+.form-field.has-error select,
+.form-field.has-error textarea,
+.form-field-error input,
+.form-field-error select,
+.form-field-error textarea,
+.input-icon-wrapper.has-error input,
+.input-icon-wrapper.has-error select,
+.input-icon-wrapper.has-error textarea,
+.form-field-shake input,
+.form-field-shake select,
+.form-field-shake textarea,
+.form-field input[aria-invalid="true"],
+.form-field select[aria-invalid="true"],
+.form-field textarea[aria-invalid="true"] {
+  border: 2px solid #dc2626 !important;
+  box-shadow: 0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+
+.form-field.has-error input:focus,
+.form-field.has-error select:focus,
+.form-field.has-error textarea:focus,
+.form-field-error input:focus,
+.form-field-error select:focus,
+.form-field-error textarea:focus,
+.input-icon-wrapper.has-error input:focus,
+.input-icon-wrapper.has-error select:focus,
+.input-icon-wrapper.has-error textarea:focus,
+.form-field-shake input:focus,
+.form-field-shake select:focus,
+.form-field-shake textarea:focus,
+.form-field input[aria-invalid="true"]:focus,
+.form-field select[aria-invalid="true"]:focus,
+.form-field textarea[aria-invalid="true"]:focus {
+  border-color: #dc2626 !important;
+  outline: 3px solid rgba(220, 38, 38, 0.45) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.25) !important;
+}
+
+/* Shake animation for invalid form fields upon validation failure */
 @keyframes field-shake {
   0%, 100% {
     transform: translateX(0);
   }
   20%, 60% {
-    transform: translateX(-4px);
+    transform: translateX(-5px);
   }
   40%, 80% {
-    transform: translateX(4px);
+    transform: translateX(5px);
   }
 }
 
-.form-field-shake {
+.form-field-shake,
+.field-shake,
+.shake {
   animation: field-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
   will-change: transform;
 }
@@ -478,7 +539,9 @@ select:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .form-field-shake {
+  .form-field-shake,
+  .field-shake,
+  .shake {
     animation: none !important;
   }
   .banner-progress {

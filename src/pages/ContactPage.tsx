@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { User, Mail, Phone, Tag, MessageSquare, ShieldCheck } from 'lucide-react';
+import { User, Mail, Phone, Tag, MessageSquare, ShieldCheck, Loader2 } from 'lucide-react';
 import { logContactAttempt } from '../services/contactLogger';
 
 interface FormState {
@@ -215,8 +215,8 @@ export const ContactPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Core validation handler: validates fields, records attempts, and triggers CSS shake animation on failing fields
+  const handleValidation = (method: 'api' | 'email-client'): boolean => {
     setTouched({
       name: true,
       email: true,
@@ -226,9 +226,11 @@ export const ContactPage: React.FC = () => {
     });
 
     const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
+    const failingFields = Object.keys(validationErrors);
+
+    if (failingFields.length > 0) {
       setErrors(validationErrors);
-      triggerShake(Object.keys(validationErrors));
+      triggerShake(failingFields);
       setValidationSummary(Object.values(validationErrors).filter(Boolean) as string[]);
 
       // Track failed validation attempt
@@ -239,7 +241,7 @@ export const ContactPage: React.FC = () => {
         email: formData.email.trim(),
         topic: formData.reason,
         messageLength: formData.message.trim().length,
-        submissionMethod: 'api',
+        submissionMethod: method,
         error: Object.entries(validationErrors)
           .map(([f, msg]) => `${f}: ${msg}`)
           .join('; ')
@@ -253,6 +255,16 @@ export const ContactPage: React.FC = () => {
         const el = document.getElementById(`contact-${firstInvalidField}`);
         el?.focus();
       }
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!handleValidation('api')) {
       return;
     }
 
@@ -371,42 +383,26 @@ export const ContactPage: React.FC = () => {
   };
 
   const handleOpenEmail = () => {
-    // Validate form fields first
-    setTouched({
-      name: true,
-      email: true,
-      phone: true,
-      reason: true,
-      message: true
-    });
+    // Validate form fields first and trigger shake animation on failure
+    if (!handleValidation('email-client')) {
+      return;
+    }
 
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      triggerShake(Object.keys(validationErrors));
-      setValidationSummary(Object.values(validationErrors).filter(Boolean) as string[]);
-
-      // Track failed validation attempt for email client opening
+    // Check hidden honeypot field: reject any request where this field is filled
+    if (formData.website && formData.website.trim().length > 0) {
       logContactAttempt({
         status: 'fail',
-        reason: 'VALIDATION_ERROR',
+        reason: 'BOT_HONEYPOT_DETECTED',
         name: formData.name.trim(),
         email: formData.email.trim(),
         topic: formData.reason,
         messageLength: formData.message.trim().length,
         submissionMethod: 'email-client',
-        error: Object.entries(validationErrors)
-          .map(([f, msg]) => `${f}: ${msg}`)
-          .join('; ')
+        error: 'Email trigger rejected: honeypot field was filled.'
       });
-
-      const firstInvalidField = ['name', 'email', 'phone', 'reason', 'message'].find(
-        (field) => validationErrors[field as keyof FormErrors]
-      );
-      if (firstInvalidField) {
-        const el = document.getElementById(`contact-${firstInvalidField}`);
-        el?.focus();
-      }
+      setSubmissionMethod('email-client');
+      setSubmitStatus('error');
+      setServerMessage('Submission rejected: automated spam activity detected.');
       return;
     }
 
@@ -769,6 +765,45 @@ export const ContactPage: React.FC = () => {
             noValidate
             style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
           >
+            {/* Scoped CSS to ensure robust red border highlighting on validation failure */}
+            <style>{`
+              .contact-form .form-field.has-error input,
+              .contact-form .form-field.has-error select,
+              .contact-form .form-field.has-error textarea,
+              .contact-form .input-icon-wrapper.has-error input,
+              .contact-form .input-icon-wrapper.has-error select,
+              .contact-form .input-icon-wrapper.has-error textarea,
+              .contact-form .form-field-shake input,
+              .contact-form .form-field-shake select,
+              .contact-form .form-field-shake textarea,
+              .contact-form input[aria-invalid="true"],
+              .contact-form select[aria-invalid="true"],
+              .contact-form textarea[aria-invalid="true"] {
+                border: 2px solid #dc2626 !important;
+                box-shadow: 0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+              }
+              .contact-form .form-field.has-error input:focus,
+              .contact-form .form-field.has-error select:focus,
+              .contact-form .form-field.has-error textarea:focus,
+              .contact-form .input-icon-wrapper.has-error input:focus,
+              .contact-form .input-icon-wrapper.has-error select:focus,
+              .contact-form .input-icon-wrapper.has-error textarea:focus,
+              .contact-form .form-field-shake input:focus,
+              .contact-form .form-field-shake select:focus,
+              .contact-form .form-field-shake textarea:focus,
+              .contact-form input[aria-invalid="true"]:focus,
+              .contact-form select[aria-invalid="true"]:focus,
+              .contact-form textarea[aria-invalid="true"]:focus {
+                border-color: #dc2626 !important;
+                outline: 3px solid rgba(220, 38, 38, 0.45) !important;
+                outline-offset: 2px;
+                box-shadow: 0 0 0 1px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.25) !important;
+              }
+              .contact-form .form-field.has-error label {
+                color: #b91c1c;
+              }
+            `}</style>
+
             {/* Honeypot field (hidden from legitimate users, trapped for bots) */}
             <div style={{ display: 'none' }} aria-hidden="true">
               <label htmlFor="contact-website">Website (Leave blank)</label>
@@ -784,15 +819,23 @@ export const ContactPage: React.FC = () => {
             </div>
 
             {/* Name */}
-            <div className={`form-field ${shakingFields.name ? 'form-field-shake' : ''}`}>
+            <div className={`form-field ${errors.name ? 'has-error form-field-error' : ''} ${shakingFields.name ? 'form-field-shake' : ''}`}>
               <label
                 htmlFor="contact-name"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  marginBottom: '0.35rem',
+                  color: errors.name ? '#b91c1c' : undefined
+                }}
               >
-                <User size={16} style={{ color: 'var(--accent)' }} aria-hidden="true" />
-                <span>Full Name <span style={{ color: 'var(--accent)' }}>*</span></span>
+                <User size={16} style={{ color: errors.name ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
+                <span>Full Name <span style={{ color: errors.name ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${touched.name && errors.name ? 'has-error' : touched.name && formData.name.trim().length >= 2 ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.name ? 'has-error' : touched.name && formData.name.trim().length >= 2 ? 'is-valid' : ''}`}>
                 <User className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-name"
@@ -803,9 +846,9 @@ export const ContactPage: React.FC = () => {
                   minLength={2}
                   maxLength={100}
                   aria-required="true"
-                  aria-invalid={Boolean(touched.name && errors.name)}
+                  aria-invalid={Boolean(errors.name)}
                   aria-describedby={
-                    touched.name && errors.name
+                    errors.name
                       ? 'contact-name-error'
                       : 'contact-name-hint'
                   }
@@ -813,23 +856,26 @@ export const ContactPage: React.FC = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur('name')}
                   placeholder="e.g. Alex Morgan"
+                  className={errors.name ? 'field-error' : ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
                     border:
-                      touched.name && errors.name
+                      errors.name
                         ? '2px solid #dc2626'
                         : touched.name && formData.name.trim().length >= 2
                         ? '1px solid #10b981'
                         : '1px solid var(--line)',
+                    boxShadow: errors.name ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
-                    fontSize: '0.95rem'
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                   }}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
-                {touched.name && errors.name ? (
-                  <p id="contact-name-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0 }}>
+                {errors.name ? (
+                  <p id="contact-name-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500 }}>
                     {errors.name}
                   </p>
                 ) : touched.name && formData.name.trim().length >= 2 ? (
@@ -850,15 +896,23 @@ export const ContactPage: React.FC = () => {
             </div>
 
             {/* Email */}
-            <div className={`form-field ${shakingFields.email ? 'form-field-shake' : ''}`}>
+            <div className={`form-field ${errors.email ? 'has-error form-field-error' : ''} ${shakingFields.email ? 'form-field-shake' : ''}`}>
               <label
                 htmlFor="contact-email"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  marginBottom: '0.35rem',
+                  color: errors.email ? '#b91c1c' : undefined
+                }}
               >
-                <Mail size={16} style={{ color: 'var(--accent)' }} aria-hidden="true" />
-                <span>Email Address <span style={{ color: 'var(--accent)' }}>*</span></span>
+                <Mail size={16} style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
+                <span>Email Address <span style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${touched.email && errors.email ? 'has-error' : touched.email && formData.email.trim() && !errors.email ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.email ? 'has-error' : touched.email && formData.email.trim() && !errors.email ? 'is-valid' : ''}`}>
                 <Mail className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-email"
@@ -867,94 +921,119 @@ export const ContactPage: React.FC = () => {
                   autoComplete="email"
                   required
                   aria-required="true"
-                  aria-invalid={Boolean(touched.email && errors.email)}
+                  aria-invalid={Boolean(errors.email)}
                   aria-describedby={errors.email ? 'contact-email-error' : undefined}
                   value={formData.email}
                   onChange={handleChange}
                   onBlur={() => handleBlur('email')}
                   placeholder="alex.morgan@company.com"
+                  className={errors.email ? 'field-error' : ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: touched.email && errors.email ? '2px solid #dc2626' : '1px solid var(--line)',
+                    border: errors.email ? '2px solid #dc2626' : '1px solid var(--line)',
+                    boxShadow: errors.email ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
-                    fontSize: '0.95rem'
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                   }}
                 />
               </div>
-              {touched.email && errors.email && (
-                <p id="contact-email-error" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0' }}>
+              {errors.email && (
+                <p id="contact-email-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0', fontWeight: 500 }}>
                   {errors.email}
                 </p>
               )}
             </div>
 
             {/* Optional Phone */}
-            <div className={`form-field ${shakingFields.phone ? 'form-field-shake' : ''}`}>
+            <div className={`form-field ${errors.phone ? 'has-error form-field-error' : ''} ${shakingFields.phone ? 'form-field-shake' : ''}`}>
               <label
                 htmlFor="contact-phone"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  marginBottom: '0.35rem',
+                  color: errors.phone ? '#b91c1c' : undefined
+                }}
               >
-                <Phone size={16} style={{ color: 'var(--muted)' }} aria-hidden="true" />
+                <Phone size={16} style={{ color: errors.phone ? '#dc2626' : 'var(--muted)' }} aria-hidden="true" />
                 <span>Phone Number <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(Optional)</span></span>
               </label>
-              <div className={`input-icon-wrapper ${touched.phone && errors.phone ? 'has-error' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.phone ? 'has-error' : ''}`}>
                 <Phone className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-phone"
                   name="phone"
                   type="tel"
                   autoComplete="tel"
-                  aria-invalid={Boolean(touched.phone && errors.phone)}
+                  aria-invalid={Boolean(errors.phone)}
                   aria-describedby={errors.phone ? 'contact-phone-error' : undefined}
                   value={formData.phone}
                   onChange={handleChange}
                   onBlur={() => handleBlur('phone')}
                   placeholder="+1 (555) 000-0000"
+                  className={errors.phone ? 'field-error' : ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: touched.phone && errors.phone ? '2px solid #dc2626' : '1px solid var(--line)',
+                    border: errors.phone ? '2px solid #dc2626' : '1px solid var(--line)',
+                    boxShadow: errors.phone ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
-                    fontSize: '0.95rem'
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                   }}
                 />
               </div>
-              {touched.phone && errors.phone && (
-                <p id="contact-phone-error" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0' }}>
+              {errors.phone && (
+                <p id="contact-phone-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0', fontWeight: 500 }}>
                   {errors.phone}
                 </p>
               )}
             </div>
 
             {/* Topic / Reason */}
-            <div className={`form-field ${shakingFields.reason ? 'form-field-shake' : ''}`}>
+            <div className={`form-field ${errors.reason ? 'has-error form-field-error' : ''} ${shakingFields.reason ? 'form-field-shake' : ''}`}>
               <label
                 htmlFor="contact-reason"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  marginBottom: '0.35rem',
+                  color: errors.reason ? '#b91c1c' : undefined
+                }}
               >
-                <Tag size={16} style={{ color: 'var(--accent)' }} aria-hidden="true" />
-                <span>Topic / Reason for Inquiry <span style={{ color: 'var(--accent)' }}>*</span></span>
+                <Tag size={16} style={{ color: errors.reason ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
+                <span>Topic / Reason for Inquiry <span style={{ color: errors.reason ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${touched.reason && errors.reason ? 'has-error' : touched.reason && formData.reason ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.reason ? 'has-error' : touched.reason && formData.reason ? 'is-valid' : ''}`}>
                 <Tag className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <select
                   id="contact-reason"
                   name="reason"
                   required
                   aria-required="true"
-                  aria-invalid={Boolean(touched.reason && errors.reason)}
+                  aria-invalid={Boolean(errors.reason)}
                   aria-describedby={errors.reason ? 'contact-reason-error' : undefined}
                   value={formData.reason}
                   onChange={handleChange}
                   onBlur={() => handleBlur('reason')}
+                  className={errors.reason ? 'field-error' : ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: touched.reason && errors.reason ? '2px solid #dc2626' : '1px solid var(--line)',
+                    border: errors.reason ? '2px solid #dc2626' : '1px solid var(--line)',
+                    boxShadow: errors.reason ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     backgroundColor: '#fff',
-                    fontSize: '0.95rem'
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                   }}
                 >
                   <option value="" disabled>
@@ -967,23 +1046,31 @@ export const ContactPage: React.FC = () => {
                   ))}
                 </select>
               </div>
-              {touched.reason && errors.reason && (
-                <p id="contact-reason-error" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0' }}>
+              {errors.reason && (
+                <p id="contact-reason-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0', fontWeight: 500 }}>
                   {errors.reason}
                 </p>
               )}
             </div>
 
             {/* Message */}
-            <div className={`form-field ${shakingFields.message ? 'form-field-shake' : ''}`}>
+            <div className={`form-field ${errors.message ? 'has-error form-field-error' : ''} ${shakingFields.message ? 'form-field-shake' : ''}`}>
               <label
                 htmlFor="contact-message"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  marginBottom: '0.35rem',
+                  color: errors.message ? '#b91c1c' : undefined
+                }}
               >
-                <MessageSquare size={16} style={{ color: 'var(--accent)' }} aria-hidden="true" />
-                <span>Message <span style={{ color: 'var(--accent)' }}>*</span></span>
+                <MessageSquare size={16} style={{ color: errors.message ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
+                <span>Message <span style={{ color: errors.message ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper textarea-icon-wrapper ${touched.message && errors.message ? 'has-error' : touched.message && formData.message.trim().length >= 10 ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper textarea-icon-wrapper ${errors.message ? 'has-error' : touched.message && formData.message.trim().length >= 10 ? 'is-valid' : ''}`}>
                 <MessageSquare className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <textarea
                   id="contact-message"
@@ -993,9 +1080,9 @@ export const ContactPage: React.FC = () => {
                   minLength={10}
                   maxLength={3000}
                   aria-required="true"
-                  aria-invalid={Boolean(touched.message && errors.message)}
+                  aria-invalid={Boolean(errors.message)}
                   aria-describedby={
-                    touched.message && errors.message
+                    errors.message
                       ? 'contact-message-error'
                       : 'contact-message-hint'
                   }
@@ -1003,24 +1090,27 @@ export const ContactPage: React.FC = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur('message')}
                   placeholder="Please describe your project, opportunity, or feedback in detail..."
+                  className={errors.message ? 'field-error' : ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
                     border:
-                      touched.message && errors.message
+                      errors.message
                         ? '2px solid #dc2626'
                         : touched.message && formData.message.trim().length >= 10
                         ? '1px solid #10b981'
                         : '1px solid var(--line)',
+                    boxShadow: errors.message ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontFamily: 'inherit',
-                    fontSize: '0.95rem'
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                   }}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
-                {touched.message && errors.message ? (
-                  <p id="contact-message-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0 }}>
+                {errors.message ? (
+                  <p id="contact-message-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500 }}>
                     {errors.message}
                   </p>
                 ) : touched.message && formData.message.trim().length >= 10 ? (
@@ -1042,6 +1132,7 @@ export const ContactPage: React.FC = () => {
               <button
                 className="button"
                 type="submit"
+                id="contact-submit-btn"
                 disabled={isSubmitting || isOpenEmailLoading}
                 aria-busy={isSubmitting}
                 style={{
@@ -1054,7 +1145,13 @@ export const ContactPage: React.FC = () => {
               >
                 {isSubmitting ? (
                   <>
-                    <span aria-hidden="true">⏳</span>
+                    <Loader2
+                      className="button-spinner"
+                      size={18}
+                      strokeWidth={2.5}
+                      style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}
+                      aria-hidden="true"
+                    />
                     <span>Sending Message...</span>
                   </>
                 ) : (
@@ -1079,7 +1176,13 @@ export const ContactPage: React.FC = () => {
               >
                 {isOpenEmailLoading ? (
                   <>
-                    <span aria-hidden="true">⏳</span>
+                    <Loader2
+                      className="button-spinner"
+                      size={18}
+                      strokeWidth={2.5}
+                      style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}
+                      aria-hidden="true"
+                    />
                     <span>Opening Email...</span>
                   </>
                 ) : (
