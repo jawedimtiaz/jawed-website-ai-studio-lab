@@ -31,17 +31,49 @@ const REASONS = [
   'Other Professional Inquiry'
 ];
 
+export const CONTACT_FORM_STORAGE_KEY = 'jawed_contact_form_session_draft';
+
 export const ContactPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const preselectedReason = searchParams.get('reason') || '';
 
-  const [formData, setFormData] = useState<FormState>({
-    name: '',
-    email: '',
-    phone: '',
-    reason: '',
-    message: '',
-    website: ''
+  // Initialize form data pre-filling from sessionStorage if user previously typed and returned
+  const [formData, setFormData] = useState<FormState>(() => {
+    let saved: Partial<FormState> = {};
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const raw = sessionStorage.getItem(CONTACT_FORM_STORAGE_KEY);
+        if (raw) {
+          saved = JSON.parse(raw);
+        }
+      } catch (err) {
+        console.warn('Failed to parse contact form draft from sessionStorage:', err);
+      }
+    }
+
+    return {
+      name: typeof saved.name === 'string' ? saved.name : '',
+      email: typeof saved.email === 'string' ? saved.email : '',
+      phone: typeof saved.phone === 'string' ? saved.phone : '',
+      reason: typeof saved.reason === 'string' ? saved.reason : '',
+      message: typeof saved.message === 'string' ? saved.message : '',
+      website: ''
+    };
+  });
+
+  const [draftRestored, setDraftRestored] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const raw = sessionStorage.getItem(CONTACT_FORM_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return Boolean(parsed.name || parsed.email || parsed.reason || parsed.message);
+        }
+      } catch {
+        return false;
+      }
+    }
+    return false;
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -95,17 +127,58 @@ export const ContactPage: React.FC = () => {
       const lower = preselectedReason.toLowerCase();
       const match = REASONS.find((r) => r.toLowerCase().includes(lower));
       if (match) {
-        setFormData((prev) => ({ ...prev, reason: match }));
+        setFormData((prev) => {
+          const next = { ...prev, reason: match };
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            try {
+              sessionStorage.setItem(
+                CONTACT_FORM_STORAGE_KEY,
+                JSON.stringify({
+                  name: next.name,
+                  email: next.email,
+                  phone: next.phone,
+                  reason: next.reason,
+                  message: next.message
+                })
+              );
+            } catch {}
+          }
+          return next;
+        });
       }
     }
   }, [preselectedReason]);
 
-  const validateField = (field: string, value: string): string | undefined => {
+  const handleClearDraft = () => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        sessionStorage.removeItem(CONTACT_FORM_STORAGE_KEY);
+      } catch (err) {
+        console.warn('Failed to clear contact form draft from sessionStorage:', err);
+      }
+    }
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      reason: '',
+      message: '',
+      website: ''
+    });
+    setTouched({});
+    setErrors({});
+    setValidationSummary([]);
+    setDraftRestored(false);
+  };
+
+  const validateField = (field: string, value: string, isLiveTyping = false): string | undefined => {
     const trimmed = value.trim();
     switch (field) {
       case 'name':
         if (!trimmed) {
-          return 'Please enter your name (minimum 2 characters required).';
+          return isLiveTyping && value.length === 0 && !touched.name
+            ? undefined
+            : 'Please enter your name (minimum 2 characters required).';
         }
         if (trimmed.length < 2) {
           return `Name must be at least 2 characters (currently ${trimmed.length} character).`;
@@ -117,10 +190,12 @@ export const ContactPage: React.FC = () => {
 
       case 'email':
         if (!trimmed) {
-          return 'Please enter your email address.';
+          return isLiveTyping && value.length === 0 && !touched.email
+            ? undefined
+            : 'Please enter your email address.';
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-          return 'Please enter a valid email address.';
+          return 'Please enter a valid email address (e.g. name@domain.com).';
         }
         if (trimmed.length > 150) {
           return 'Email address cannot exceed 150 characters.';
@@ -139,13 +214,17 @@ export const ContactPage: React.FC = () => {
 
       case 'reason':
         if (!value) {
-          return 'Please select a reason for your inquiry.';
+          return isLiveTyping && !touched.reason
+            ? undefined
+            : 'Please select a reason for your inquiry.';
         }
         return undefined;
 
       case 'message':
         if (!trimmed) {
-          return 'Please enter your message (minimum 10 characters required).';
+          return isLiveTyping && value.length === 0 && !touched.message
+            ? undefined
+            : 'Please enter your message (minimum 10 characters required).';
         }
         if (trimmed.length < 10) {
           const needed = 10 - trimmed.length;
@@ -163,19 +242,19 @@ export const ContactPage: React.FC = () => {
 
   const validate = (): FormErrors => {
     const errs: FormErrors = {};
-    const nameErr = validateField('name', formData.name);
+    const nameErr = validateField('name', formData.name, false);
     if (nameErr) errs.name = nameErr;
 
-    const emailErr = validateField('email', formData.email);
+    const emailErr = validateField('email', formData.email, false);
     if (emailErr) errs.email = emailErr;
 
-    const phoneErr = validateField('phone', formData.phone);
+    const phoneErr = validateField('phone', formData.phone, false);
     if (phoneErr) errs.phone = phoneErr;
 
-    const reasonErr = validateField('reason', formData.reason);
+    const reasonErr = validateField('reason', formData.reason, false);
     if (reasonErr) errs.reason = reasonErr;
 
-    const messageErr = validateField('message', formData.message);
+    const messageErr = validateField('message', formData.message, false);
     if (messageErr) errs.message = messageErr;
 
     return errs;
@@ -183,21 +262,45 @@ export const ContactPage: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const nextForm = { ...formData, [name]: value };
+    setFormData(nextForm);
 
-    // Real-time live validation if the user has already touched this field or if it currently displays an error
-    if (touched[name] || errors[name as keyof FormErrors]) {
-      const err = validateField(name, value);
-      setErrors((prev) => ({ ...prev, [name]: err }));
+    // Save form input data (Name, Email, Topic, Message) to sessionStorage whenever the user types
+    if (name !== 'website' && typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        sessionStorage.setItem(
+          CONTACT_FORM_STORAGE_KEY,
+          JSON.stringify({
+            name: nextForm.name,
+            email: nextForm.email,
+            phone: nextForm.phone,
+            reason: nextForm.reason,
+            message: nextForm.message
+          })
+        );
+      } catch (err) {
+        console.warn('Failed to save contact form draft to sessionStorage:', err);
+      }
     }
+
+    // Real-time live validation for Name, Email, and Message (and other fields) as the user types
+    const liveErr = validateField(name, value, true);
+    setErrors((prev) => {
+      const updated = { ...prev };
+      if (liveErr) {
+        updated[name as keyof FormErrors] = liveErr;
+      } else {
+        delete updated[name as keyof FormErrors];
+      }
+      return updated;
+    });
 
     // Live update of validation error summary banner if currently displayed
     if (validationSummary.length > 0) {
       setTimeout(() => {
-        const nextForm = { ...formData, [name]: value };
         const nextErrs: FormErrors = {};
         ['name', 'email', 'phone', 'reason', 'message'].forEach((f) => {
-          const eMsg = validateField(f, nextForm[f as keyof FormState] || '');
+          const eMsg = validateField(f, nextForm[f as keyof FormState] || '', false);
           if (eMsg) nextErrs[f as keyof FormErrors] = eMsg;
         });
         setValidationSummary(Object.values(nextErrs).filter(Boolean) as string[]);
@@ -208,8 +311,16 @@ export const ContactPage: React.FC = () => {
   const handleBlur = (field: string) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
     const val = formData[field as keyof FormState] || '';
-    const err = validateField(field, val);
-    setErrors((prev) => ({ ...prev, [field]: err }));
+    const err = validateField(field, val, false);
+    setErrors((prev) => {
+      const updated = { ...prev };
+      if (err) {
+        updated[field as keyof FormErrors] = err;
+      } else {
+        delete updated[field as keyof FormErrors];
+      }
+      return updated;
+    });
     if (err) {
       triggerShake([field]);
     }
@@ -337,6 +448,14 @@ export const ContactPage: React.FC = () => {
         });
         setTouched({});
         setValidationSummary([]);
+        setDraftRestored(false);
+
+        // Clear saved draft from sessionStorage on successful submission
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          try {
+            sessionStorage.removeItem(CONTACT_FORM_STORAGE_KEY);
+          } catch {}
+        }
 
         // Temporary banner auto-reset after 7 seconds
         if (successTimeoutRef.current) {
@@ -464,6 +583,14 @@ export const ContactPage: React.FC = () => {
       });
       setTouched({});
       setValidationSummary([]);
+      setDraftRestored(false);
+
+      // Clear saved draft from sessionStorage on successful email client launch
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        try {
+          sessionStorage.removeItem(CONTACT_FORM_STORAGE_KEY);
+        } catch {}
+      }
 
       // Temporary banner auto-reset after 7 seconds
       if (successTimeoutRef.current) {
@@ -758,6 +885,47 @@ export const ContactPage: React.FC = () => {
           </div>
         )}
 
+        {/* Draft Restored Banner */}
+        {draftRestored && submitStatus !== 'success' && (
+          <div
+            style={{
+              backgroundColor: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: '8px',
+              padding: '0.85rem 1.15rem',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              fontSize: '0.88rem',
+              color: '#166534'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span aria-hidden="true" style={{ fontSize: '1.1rem' }}>💾</span>
+              <span>Draft restored from your previous session (auto-saved as you type).</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearDraft}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#15803d',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.4rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Clear draft
+            </button>
+          </div>
+        )}
+
         {/* Form Element */}
         {submitStatus !== 'success' && (
           <form
@@ -851,6 +1019,49 @@ export const ContactPage: React.FC = () => {
                 color: #b91c1c;
               }
 
+              /* Input Icon Containers with Absolute Positioning */
+              .contact-form .input-icon-wrapper {
+                position: relative;
+                display: flex;
+                align-items: center;
+                width: 100%;
+              }
+
+              .contact-form .input-icon-wrapper .input-icon {
+                position: absolute;
+                left: 0.85rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: var(--muted);
+                pointer-events: none;
+                z-index: 2;
+                transition: color 0.18s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+
+              .contact-form .input-icon-wrapper.textarea-icon-wrapper {
+                align-items: flex-start;
+              }
+
+              .contact-form .input-icon-wrapper.textarea-icon-wrapper .input-icon {
+                top: 0.85rem;
+                transform: none;
+              }
+
+              .contact-form .input-icon-wrapper:focus-within .input-icon {
+                color: var(--accent) !important;
+              }
+
+              .contact-form .input-icon-wrapper.has-error .input-icon {
+                color: #dc2626 !important;
+              }
+
+              .contact-form .input-icon-wrapper.is-valid .input-icon {
+                color: #059669 !important;
+              }
+
               @media (prefers-reduced-motion: reduce) {
                 .contact-form input,
                 textarea,
@@ -906,7 +1117,7 @@ export const ContactPage: React.FC = () => {
                 <User size={16} style={{ color: errors.name ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
                 <span>Full Name <span style={{ color: errors.name ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${errors.name ? 'has-error' : touched.name && formData.name.trim().length >= 2 ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.name ? 'has-error' : formData.name.trim().length >= 2 && !errors.name ? 'is-valid' : ''}`}>
                 <User className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-name"
@@ -934,7 +1145,7 @@ export const ContactPage: React.FC = () => {
                     border:
                       errors.name
                         ? '2px solid #dc2626'
-                        : touched.name && formData.name.trim().length >= 2
+                        : formData.name.trim().length >= 2
                         ? '1px solid #10b981'
                         : '1px solid var(--line)',
                     boxShadow: errors.name ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
@@ -946,10 +1157,11 @@ export const ContactPage: React.FC = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
                 {errors.name ? (
-                  <p id="contact-name-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500 }}>
-                    {errors.name}
+                  <p id="contact-name-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span aria-hidden="true">⚠️</span>
+                    <span>{errors.name}</span>
                   </p>
-                ) : touched.name && formData.name.trim().length >= 2 ? (
+                ) : formData.name.trim().length >= 2 ? (
                   <span id="contact-name-hint" style={{ color: '#059669', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span>✓</span> Name meets length requirement
                   </span>
@@ -959,7 +1171,7 @@ export const ContactPage: React.FC = () => {
                   </span>
                 )}
                 {formData.name.length > 0 && (
-                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                  <span style={{ fontSize: '0.8rem', color: formData.name.trim().length > 100 ? '#dc2626' : 'var(--muted)' }}>
                     {formData.name.trim().length}/100
                   </span>
                 )}
@@ -983,7 +1195,7 @@ export const ContactPage: React.FC = () => {
                 <Mail size={16} style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
                 <span>Email Address <span style={{ color: errors.email ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper ${errors.email ? 'has-error' : touched.email && formData.email.trim() && !errors.email ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper ${errors.email ? 'has-error' : formData.email.trim() && !errors.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? 'is-valid' : ''}`}>
                 <Mail className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <input
                   id="contact-email"
@@ -993,7 +1205,7 @@ export const ContactPage: React.FC = () => {
                   required
                   aria-required="true"
                   aria-invalid={Boolean(errors.email)}
-                  aria-describedby={errors.email ? 'contact-email-error' : undefined}
+                  aria-describedby={errors.email ? 'contact-email-error' : 'contact-email-hint'}
                   value={formData.email}
                   onChange={handleChange}
                   onBlur={() => handleBlur('email')}
@@ -1002,7 +1214,7 @@ export const ContactPage: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.5rem',
-                    border: errors.email ? '2px solid #dc2626' : '1px solid var(--line)',
+                    border: errors.email ? '2px solid #dc2626' : formData.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? '1px solid #10b981' : '1px solid var(--line)',
                     boxShadow: errors.email ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
                     borderRadius: '6px',
                     fontSize: '0.95rem',
@@ -1010,11 +1222,27 @@ export const ContactPage: React.FC = () => {
                   }}
                 />
               </div>
-              {errors.email && (
-                <p id="contact-email-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0.3rem 0 0', fontWeight: 500 }}>
-                  {errors.email}
-                </p>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
+                {errors.email ? (
+                  <p id="contact-email-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span aria-hidden="true">⚠️</span>
+                    <span>{errors.email}</span>
+                  </p>
+                ) : formData.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()) ? (
+                  <span id="contact-email-hint" style={{ color: '#059669', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>✓</span> Valid email address format
+                  </span>
+                ) : (
+                  <span id="contact-email-hint" style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
+                    Standard email format (e.g. alex@example.com)
+                  </span>
+                )}
+                {formData.email.length > 0 && (
+                  <span style={{ fontSize: '0.8rem', color: formData.email.trim().length > 150 ? '#dc2626' : 'var(--muted)' }}>
+                    {formData.email.trim().length}/150
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Optional Phone */}
@@ -1141,7 +1369,7 @@ export const ContactPage: React.FC = () => {
                 <MessageSquare size={16} style={{ color: errors.message ? '#dc2626' : 'var(--accent)' }} aria-hidden="true" />
                 <span>Message <span style={{ color: errors.message ? '#dc2626' : 'var(--accent)' }}>*</span></span>
               </label>
-              <div className={`input-icon-wrapper textarea-icon-wrapper ${errors.message ? 'has-error' : touched.message && formData.message.trim().length >= 10 ? 'is-valid' : ''}`}>
+              <div className={`input-icon-wrapper textarea-icon-wrapper ${errors.message ? 'has-error' : formData.message.trim().length >= 10 && !errors.message ? 'is-valid' : ''}`}>
                 <MessageSquare className="input-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <textarea
                   id="contact-message"
@@ -1168,7 +1396,7 @@ export const ContactPage: React.FC = () => {
                     border:
                       errors.message
                         ? '2px solid #dc2626'
-                        : touched.message && formData.message.trim().length >= 10
+                        : formData.message.trim().length >= 10
                         ? '1px solid #10b981'
                         : '1px solid var(--line)',
                     boxShadow: errors.message ? '0 0 0 1px #dc2626, 0 0 0 3px rgba(220, 38, 38, 0.15)' : undefined,
@@ -1181,10 +1409,11 @@ export const ContactPage: React.FC = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
                 {errors.message ? (
-                  <p id="contact-message-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500 }}>
-                    {errors.message}
+                  <p id="contact-message-error" role="alert" style={{ color: '#dc2626', fontSize: '0.82rem', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span aria-hidden="true">⚠️</span>
+                    <span>{errors.message}</span>
                   </p>
-                ) : touched.message && formData.message.trim().length >= 10 ? (
+                ) : formData.message.trim().length >= 10 ? (
                   <span id="contact-message-hint" style={{ fontSize: '0.82rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span>✓</span> Minimum length met ({formData.message.trim().length} characters)
                   </span>
@@ -1193,7 +1422,7 @@ export const ContactPage: React.FC = () => {
                     Minimum 10 characters required{formData.message.trim().length > 0 ? ` (${10 - formData.message.trim().length} more needed)` : ''}.
                   </span>
                 )}
-                <span style={{ fontSize: '0.8rem', color: formData.message.length > 2900 ? '#dc2626' : 'var(--muted)' }}>
+                <span style={{ fontSize: '0.8rem', color: formData.message.length > 3000 ? '#dc2626' : formData.message.length > 2900 ? '#eab308' : 'var(--muted)' }}>
                   {formData.message.length}/3000
                 </span>
               </div>
