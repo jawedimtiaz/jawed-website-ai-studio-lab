@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { HardwareShowcase3D } from '../components/hardware/HardwareShowcase3D';
 
 interface WorkPageProps {
   initialTab?: 'overview' | 'experience' | 'skills' | 'certifications' | 'projects';
@@ -126,6 +127,18 @@ export const WorkPage: React.FC<WorkPageProps> = ({ initialTab }) => {
               </Link>
             </article>
           </div>
+
+          {/* Interactive 3D Hardware Infrastructure Showcase */}
+          <section className="content-section" style={{ marginTop: '2.5rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <p className="eyebrow">Interactive 3D Field Demonstration</p>
+              <h2 style={{ margin: '0 0 0.5rem' }}>Hands-On Hardware &amp; Rack Infrastructure</h2>
+              <p style={{ color: 'var(--muted)', margin: 0, maxWidth: '48rem' }}>
+                Explore my hands-on field experience with enterprise server racks, 10G SFP+ switches, SAS RAID arrays, dual redundant PDUs, and modular motherboard diagnostics. Click any component below to view field triage experience, failure modes, and credentials.
+              </p>
+            </div>
+            <HardwareShowcase3D />
+          </section>
 
           <section className="content-section" style={{ marginTop: '3rem' }}>
             <h2>Selected Work Evidence &amp; Methodology</h2>
