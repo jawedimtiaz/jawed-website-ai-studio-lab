@@ -237,6 +237,115 @@ export function checkDeterministicReply(
     }
   }
 
+  // 12. Field Tech Topic: Crimping T568B vs T568A Pinouts
+  const isCrimpQuery =
+    normalized.includes('t568') ||
+    normalized.includes('crimp') ||
+    normalized.includes('rj45') ||
+    normalized.includes('pinout') ||
+    normalized.includes('straight through') ||
+    normalized.includes('color code');
+  if (isCrimpQuery) {
+    return {
+      reply:
+        "🔧 **Senior IT Field Tech Guide: T568B vs T568A Ethernet Pinouts**\n\n" +
+        "• **T568B Standard (North American Commercial Standard)**:\n" +
+        "  1. White-Orange\n" +
+        "  2. Orange\n" +
+        "  3. White-Green\n" +
+        "  4. Blue\n" +
+        "  5. White-Blue\n" +
+        "  6. Green\n" +
+        "  7. White-Brown\n" +
+        "  8. Brown\n\n" +
+        "• **T568A Standard (US Government / Residential)**:\n" +
+        "  1. White-Green\n" +
+        "  2. Green\n" +
+        "  3. White-Orange\n" +
+        "  4. Blue\n" +
+        "  5. White-Blue\n" +
+        "  6. Orange\n" +
+        "  7. White-Brown\n" +
+        "  8. Brown\n\n" +
+        "💡 **Field Tip**: For straight-through patch cables, match T568B on both ends. To create a 10/100 Ethernet crossover cable, crimp T568A on one end and T568B on the other (swapping pins 1&2 with 3&6). Modern Gigabit Auto-MDIX switches handle pin swapping automatically.\n\n" +
+        "Source: [IT Troubleshooting Assistant](/tools/it-troubleshooting-assistant/)",
+      sources: [{ url: '/tools/it-troubleshooting-assistant/', title: 'IT Troubleshooting Assistant' }],
+      isDeterministic: true
+    };
+  }
+
+  // 13. Field Tech Topic: Subnetting & CIDR Masks
+  const isSubnetQuery =
+    normalized.includes('subnet') ||
+    normalized.includes('cidr') ||
+    normalized.includes('host range') ||
+    normalized.includes('broadcast ip') ||
+    normalized.includes('netmask') ||
+    normalized.includes('ip address range');
+  if (isSubnetQuery) {
+    return {
+      reply:
+        "🌐 **Senior IT Field Tech Guide: Common Subnet Mask & CIDR Cheat Sheet**\n\n" +
+        "• **/24 (255.255.255.0)**: 256 Total IPs → **254 Usable Hosts** (Standard LAN segment).\n" +
+        "• **/27 (255.255.255.224)**: 32 Total IPs → **30 Usable Hosts** (Small office VLAN).\n" +
+        "• **/28 (255.255.255.240)**: 16 Total IPs → **14 Usable Hosts** (Management / iDRAC subnet).\n" +
+        "• **/29 (255.255.255.248)**: 8 Total IPs → **6 Usable Hosts** (ISP Public IP block).\n" +
+        "• **/30 (255.255.255.252)**: 4 Total IPs → **2 Usable Hosts** (Point-to-point WAN link).\n" +
+        "• **/32 (255.255.255.255)**: Single Host IP address.\n\n" +
+        "💡 **Field Tip**: Network ID is always the first IP (even number) and Broadcast ID is the last IP (odd number). Usable hosts lie between `Network + 1` and `Broadcast - 1`.\n\n" +
+        "Source: [IT Troubleshooting Assistant](/tools/it-troubleshooting-assistant/)",
+      sources: [{ url: '/tools/it-troubleshooting-assistant/', title: 'IT Troubleshooting Assistant' }],
+      isDeterministic: true
+    };
+  }
+
+  // 14. Field Tech Topic: BIOS Beep Codes
+  const isBeepQuery =
+    normalized.includes('beep') ||
+    normalized.includes('bios code') ||
+    normalized.includes('post code') ||
+    normalized.includes('post error');
+  if (isBeepQuery) {
+    return {
+      reply:
+        "💻 **Senior IT Field Tech Guide: Standard Motherboard BIOS Beep Codes**\n\n" +
+        "• **1 Short Beep**: Normal POST success — system passed all initial hardware checks.\n" +
+        "• **1 Long + 2 or 3 Short Beeps**: Display / Graphics Card failure (unseated GPU or faulty PCIe slot connection).\n" +
+        "• **2 or 3 Short Beeps**: Memory / RAM Parity Error (reseat RAM DIMMs or clean gold edge contacts with isopropyl alcohol).\n" +
+        "• **5 Short Beeps**: CPU / Processor fault (bent LGA socket pins or improper VCORE power delivery).\n" +
+        "• **Continuous High-Pitched Beeping**: Thermal Overheat or Power Supply Rail overload (verify VRM heatsinks, thermal paste & PSU 12V rails).\n\n" +
+        "💡 **Field Tip**: Always check the motherboard's debug 7-segment hex display or Q-LED status lights (CPU, DRAM, VGA, BOOT) first for precise hardware fault isolation.\n\n" +
+        "Source: [AI Hardware Diagnostic](/diagnostic/)",
+      sources: [{ url: '/diagnostic/', title: 'AI Hardware Diagnostic' }],
+      isDeterministic: true
+    };
+  }
+
+  // 15. Field Tech Topic: Network Latency Checks & Ping Diagnostics
+  const isLatencyQuery =
+    normalized.includes('latency') ||
+    normalized.includes('ping') ||
+    normalized.includes('traceroute') ||
+    normalized.includes('rtt') ||
+    normalized.includes('packet loss') ||
+    normalized.includes('jitter');
+  if (isLatencyQuery) {
+    return {
+      reply:
+        "📡 **Senior IT Field Tech Guide: Network Latency & Path Triage**\n\n" +
+        "• **Local Gateway (LAN)**: `< 1ms` on Cat6A wired ethernet; `< 5ms` on 5GHz/6GHz Wi-Fi.\n" +
+        "• **WAN / Cloud DNS (e.g. 8.8.8.8, 1.1.1.1)**: `10ms – 35ms` for normal fiber broadband.\n" +
+        "• **Intercontinental / VPN**: `100ms – 220ms` expected due to optical propagation speed.\n\n" +
+        "🔍 **Field Diagnostic Steps**:\n" +
+        "1. `ping -c 100 <Gateway_IP>`: Check local packet loss % and round-trip time variance (jitter).\n" +
+        "2. `traceroute <Destination_IP>`: Pinpoint the exact hop where latency spikes or drops occur.\n" +
+        "3. `ping -M do -s 1472 <Target>`: Test Path MTU to rule out packet fragmentation on VPN tunnels.\n\n" +
+        "Source: [IT Troubleshooting Assistant](/tools/it-troubleshooting-assistant/)",
+      sources: [{ url: '/tools/it-troubleshooting-assistant/', title: 'IT Troubleshooting Assistant' }],
+      isDeterministic: true
+    };
+  }
+
   return null;
 }
 

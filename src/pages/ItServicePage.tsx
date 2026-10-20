@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Server,
   Monitor,
@@ -113,12 +114,38 @@ export const ItServicePage: React.FC = () => {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
+  const location = useLocation();
+
   // Pre-fill user name when logging in
   useEffect(() => {
     if (user?.displayName && !clientName) {
       setClientName(user.displayName);
     }
   }, [user]);
+
+  // Listen for prefill state from Field Tech AI Assistant widget
+  useEffect(() => {
+    if (location.state) {
+      const state = location.state as {
+        prefillDevice?: DeviceType;
+        prefillPriority?: PriorityLevel;
+        prefillLocation?: string;
+        prefillDescription?: string;
+        prefillClientName?: string;
+      };
+
+      if (state.prefillDevice) setDeviceType(state.prefillDevice);
+      if (state.prefillPriority) setPriority(state.prefillPriority);
+      if (state.prefillLocation) setSiteLocation(state.prefillLocation);
+      if (state.prefillDescription) setIssueDescription(state.prefillDescription);
+      if (state.prefillClientName) setClientName(state.prefillClientName);
+
+      setActiveTab('client');
+      setTimeout(() => {
+        window.scrollTo({ top: 350, behavior: 'smooth' });
+      }, 100);
+    }
+  }, [location.state]);
 
   // Default to tech tab if tech logs in
   useEffect(() => {
