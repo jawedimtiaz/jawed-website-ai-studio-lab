@@ -17,6 +17,7 @@ import { InflationGoalPlanningCalculator } from '../components/tools/InflationGo
 import { PersonalFinanceSnapshot } from '../components/tools/PersonalFinanceSnapshot';
 import { RetirementPlanningCalculator } from '../components/tools/RetirementPlanningCalculator';
 import { FinancePlanningWorkspace } from '../components/tools/FinancePlanningWorkspace';
+import { HardwareDiagnosticPage } from './HardwareDiagnosticPage';
 
 export const ToolDetailPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -45,6 +46,8 @@ export const ToolDetailPage: React.FC = () => {
   // Render the appropriate interactive tool component
   const renderToolComponent = () => {
     switch (tool.slug) {
+      case 'hardware-diagnostic':
+        return <HardwareDiagnosticPage />;
       case 'service-desk-note-formatter':
         return <ServiceDeskNoteFormatter />;
       case 'it-troubleshooting-assistant':

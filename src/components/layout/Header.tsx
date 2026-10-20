@@ -135,6 +135,28 @@ export const Header: React.FC = () => {
               />
               IT Service Desk
             </Link>
+            <Link
+              to="/diagnostic"
+              aria-current={isActive('/diagnostic') || isActive('/hardware-diagnostic') ? 'page' : undefined}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontWeight: 600,
+                color: (isActive('/diagnostic') || isActive('/hardware-diagnostic')) ? 'var(--accent)' : undefined
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  backgroundColor: '#38bdf8'
+                }}
+              />
+              Hardware Inspector
+            </Link>
 
             <button
               type="button"

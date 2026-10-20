@@ -25,6 +25,7 @@ const ContactPage = lazy(() => import('./pages/ContactPage').then((m) => ({ defa
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const ItServicePage = lazy(() => import('./pages/ItServicePage').then((m) => ({ default: m.ItServicePage })));
+const HardwareDiagnosticPage = lazy(() => import('./pages/HardwareDiagnosticPage').then((m) => ({ default: m.HardwareDiagnosticPage })));
 
 import { AuthProvider } from './context/AuthContext';
 import { DocumentHead } from './components/common/DocumentHead';
@@ -151,6 +152,14 @@ export const App: React.FC = () => {
                 <Route path="/service-desk/" element={<ItServicePage />} />
                 <Route path="/it-portal" element={<ItServicePage />} />
                 <Route path="/it-portal/" element={<ItServicePage />} />
+
+                {/* AI Hardware Diagnostic & Image Inspector */}
+                <Route path="/diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/diagnostic/" element={<HardwareDiagnosticPage />} />
+                <Route path="/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
+                <Route path="/tools/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/tools/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
 
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />

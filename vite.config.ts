@@ -254,11 +254,64 @@ function contactApiDevPlugin(): Plugin {
   };
 }
 
+function hardwareDiagnosticPlugin(): Plugin {
+  return {
+    name: 'hardware-diagnostic-api',
+    configureServer(server) {
+      server.middlewares.use('/api/hardware-diagnostic', async (req, res, next) => {
+        if (req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: true, status: 'ready', model: 'gemini-3.8-flash' }));
+          return;
+        }
+
+        if (req.method !== 'POST') {
+          next();
+          return;
+        }
+
+        let bodyRaw = '';
+        req.on('data', (chunk) => {
+          bodyRaw += chunk;
+        });
+
+        req.on('end', async () => {
+          res.setHeader('Content-Type', 'application/json');
+          try {
+            const data = JSON.parse(bodyRaw);
+            if (!data.imageBase64) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: 'Missing imageBase64 payload in request.' }));
+              return;
+            }
+
+            const { analyzeHardwareImage } = await import('./src/server/geminiHardwareDiagnostic');
+            const result = await analyzeHardwareImage({
+              imageBase64: data.imageBase64,
+              mimeType: data.mimeType || 'image/jpeg',
+              deviceCategory: data.deviceCategory,
+              symptoms: data.symptoms
+            });
+
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, result }));
+          } catch (err: any) {
+            console.error('[HardwareDiagnostic Server Error]:', err);
+            res.statusCode = 500;
+            res.end(JSON.stringify({ success: false, error: err.message || 'Diagnostic analysis failed.' }));
+          }
+        });
+      });
+    }
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    contactApiDevPlugin()
+    contactApiDevPlugin(),
+    hardwareDiagnosticPlugin()
   ],
   server: {
     host: '0.0.0.0',
