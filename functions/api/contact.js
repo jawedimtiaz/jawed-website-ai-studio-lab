@@ -2,8 +2,8 @@
 // A contact submission is acknowledged only after durable D1 persistence.
 
 const MAX_BODY_BYTES = 10_000;
-const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
-const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\\s./0-9]{6,20}$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,20}$/;
 
 const json = (body, status = 200, extraHeaders = {}) =>
   new Response(JSON.stringify(body), {
@@ -75,7 +75,7 @@ async function readBoundedText(request, maxBytes) {
 
 function cleanText(value, maxLength) {
   return typeof value === 'string'
-    ? value.replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]/g, '').trim().slice(0, maxLength)
+    ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, maxLength)
     : '';
 }
 
@@ -107,8 +107,8 @@ async function sendNotificationEmail({ env, submission }) {
   const recipientEmail = env?.NOTIFICATION_EMAIL || 'jawedimtiaz@gmail.com';
   const senderEmail = env?.SENDER_EMAIL || 'no-reply@jawed.co.in';
 
-  const safeReason = submission.reason.replace(/[\\r\\n]/g, ' ');
-  const safeName = submission.name.replace(/[\\r\\n]/g, ' ');
+  const safeReason = submission.reason.replace(/[\r\n]/g, ' ');
+  const safeName = submission.name.replace(/[\r\n]/g, ' ');
   const subject = `[Jawed.co.in Contact] ${safeReason} from ${safeName}`;
   const textContent = [
     'New contact enquiry received via Jawed.co.in',
@@ -123,7 +123,7 @@ async function sendNotificationEmail({ env, submission }) {
     'Message:',
     submission.message,
     '--------------------------------------------------'
-  ].join('\\n');
+  ].join('\n');
 
   if (env.RESEND_API_KEY) {
     try {
