@@ -22,7 +22,7 @@ Both `wrangler.toml` and `wrangler.jsonc` now contain the D1 binding named `CONT
 [[d1_databases]]
 binding = "CONTACT_DB"
 database_name = "jawed-contact-submissions"
-database_id = "REPLACE_WITH_THE_REAL_CLOUDFLARE_D1_DATABASE_ID"
+database_id = "645619c4-264f-4ef2-b29f-8c500434aa8f"
 migrations_dir = "migrations"
 ```
 
@@ -58,7 +58,6 @@ After D1 creation and binding, verify in a non-production preview first:
 
 ## Not included
 
-- No Cloudflare database was created or bound.
-- No Worker deployment or production setting was changed.
+- The D1 database was created and the schema applied; the live Worker has not yet been deployed with the binding.
 - No automatic notification retry queue, admin dashboard, retention job, or rate-limit binding was added.
 - No changes were made to the personal production website.
