@@ -6,31 +6,17 @@ This change makes the Worker contact endpoint persist a submission before acknow
 
 ## Important deployment prerequisite
 
-The Worker must have a Cloudflare D1 database binding named `CONTACT_DB` before the new contact endpoint can accept submissions. Until that binding and migration are configured, the endpoint intentionally returns HTTP 503 rather than falsely claiming that a message was saved.
-
-No database ID or Cloudflare resource has been created by this code change.
+The Cloudflare D1 database `jawed-contact-submissions` has now been created in the APAC region. Its database ID is recorded in both Wrangler configuration files on this feature branch. The schema migration has been applied and the two application tables and indexes were verified through the Cloudflare D1 API. The live Worker has not yet been updated with this binding because no deployment was performed.
 
 ## D1 schema
 
 Migration: `migrations/0001_contact_persistence.sql`
 
-Create a D1 database in the Cloudflare dashboard (Workers & Pages → D1) or with Wrangler after confirming the correct Cloudflare account:
-
-```sh
-npx wrangler d1 create jawed-contact-submissions
-```
-
-Record the returned database ID privately. Do not commit credentials or secrets.
-
-Apply the migration after the database exists:
-
-```sh
-npx wrangler d1 migrations apply jawed-contact-submissions --remote
-```
+The D1 database has already been created and the SQL schema applied directly. The committed migration remains in `migrations/0001_contact_persistence.sql` so the schema is documented and reproducible.
 
 ## Bind D1 to the Worker
 
-Add a D1 binding named `CONTACT_DB` to the Worker configuration used by the deployment. The database name and ID must be the exact values returned by Cloudflare:
+Both `wrangler.toml` and `wrangler.jsonc` now contain the D1 binding named `CONTACT_DB`, using the actual database ID returned by Cloudflare:
 
 ```toml
 [[d1_databases]]
@@ -40,7 +26,7 @@ database_id = "REPLACE_WITH_THE_REAL_CLOUDFLARE_D1_DATABASE_ID"
 migrations_dir = "migrations"
 ```
 
-This repository currently contains both `wrangler.toml` and `wrangler.jsonc`. Confirm which config is used by the Cloudflare Worker deployment before adding the real binding. Keep the two files consistent if both are actively used. Never commit a placeholder database ID.
+This repository contains both `wrangler.toml` and `wrangler.jsonc`; both have been updated consistently. Confirm which config is used by the Cloudflare Worker deployment before deployment.
 
 ## Email configuration
 
