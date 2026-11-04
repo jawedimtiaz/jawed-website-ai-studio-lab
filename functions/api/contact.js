@@ -291,6 +291,9 @@ export async function onRequestLogPost({ request, env }) {
   } catch {
     return json({ error: 'Invalid log payload.', code: 'INVALID_JSON' }, 400, cors);
   }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return json({ error: 'Invalid log entry.', code: 'VALIDATION_ERROR' }, 400, cors);
+  }
   if (!env?.CONTACT_DB) {
     return json({ error: 'Contact logging is temporarily unavailable.', code: 'CONTACT_STORAGE_UNAVAILABLE' }, 503, cors);
   }
