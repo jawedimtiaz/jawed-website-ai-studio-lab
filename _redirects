@@ -22,5 +22,4 @@
 /Tips_&_Tricks2 /resources/ 301
 /fortune_ / 301
 
-# SPA routing fallback for client-side routes
-/* /index.html 200
+# SPA fallback is handled by wrangler assets.not_found_handling
