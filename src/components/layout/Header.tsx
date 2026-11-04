@@ -113,50 +113,7 @@ export const Header: React.FC = () => {
             <Link to="/contact/" aria-current={isActive('/contact') ? 'page' : undefined}>
               Contact
             </Link>
-            <Link
-              to="/it-service"
-              aria-current={isActive('/it-service') || isActive('/it-portal') ? 'page' : undefined}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontWeight: 600,
-                color: (isActive('/it-service') || isActive('/it-portal')) ? 'var(--accent)' : undefined
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  backgroundColor: '#0284c7'
-                }}
-              />
-              IT Service Desk
-            </Link>
-            <Link
-              to="/diagnostic"
-              aria-current={isActive('/diagnostic') || isActive('/hardware-diagnostic') ? 'page' : undefined}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontWeight: 600,
-                color: (isActive('/diagnostic') || isActive('/hardware-diagnostic')) ? 'var(--accent)' : undefined
-              }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  backgroundColor: '#38bdf8'
-                }}
-              />
-              Hardware Inspector
-            </Link>
+
 
             <button
               type="button"
