@@ -12,7 +12,7 @@ The Cloudflare D1 database `jawed-contact-submissions` has now been created in t
 
 Migration: `migrations/0001_contact_persistence.sql`
 
-The D1 database has already been created and the SQL schema applied directly. The committed migration remains in `migrations/0001_contact_persistence.sql` so the schema is documented and reproducible.
+The D1 database has already been created and the SQL schema applied directly through the Cloudflare D1 API. The committed migration remains in `migrations/0001_contact_persistence.sql` so the schema is documented and reproducible. A direct SQL application does **not** automatically register the migration in Wrangler's `d1_migrations` history table; inspection confirmed that this history table is currently absent. Because this migration uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, the next controlled `wrangler d1 migrations apply jawed-contact-submissions --remote` can safely create the Wrangler history table and record/apply this migration without replacing the already-created tables. Verify the Wrangler migration list/history before any Worker deployment. Do not manually fabricate a migration-history row.
 
 ## Bind D1 to the Worker
 
