@@ -188,6 +188,13 @@ export async function onRequestPost({ request, env }) {
     return json({ error: 'Malformed or invalid JSON payload.', code: 'INVALID_JSON' }, 400, cors);
   }
 
+  if (data && Number.isFinite(data.form_loaded_at)) {
+    const elapsed = Date.now() - data.form_loaded_at;
+    if (elapsed < 1500) {
+      return json({ error: 'Submission received too quickly. Please try again.', code: 'SUBMISSION_TOO_FAST' }, 400, cors);
+    }
+  }
+
   const validated = validateSubmission(data);
   if (validated.honeypot) {
     return json({ success: true, message: 'Thank you! Your message has been received.' }, 200, cors);
