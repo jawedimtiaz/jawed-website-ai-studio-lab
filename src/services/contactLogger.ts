@@ -1,18 +1,12 @@
 /**
- * Client-side logging service for tracking contact form submission attempts.
- * Reports attempt outcomes (success/fail), reason codes, and validation metadata
- * to the server-side API, which persists them to a local JSON file.
+ * Privacy-minimized client-side contact attempt logger.
+ * Names, email addresses, message contents, user-agent strings and raw errors
+ * are intentionally not sent to the logging endpoint.
  */
 
 export interface ContactSubmissionLogEntry {
   status: 'success' | 'fail';
-  reason:
-    | 'SUBMISSION_SUCCESS'
-    | 'VALIDATION_ERROR'
-    | 'NETWORK_ERROR'
-    | 'SERVER_ERROR'
-    | 'EMAIL_CLIENT_OPENED'
-    | string;
+  reason: string;
   name?: string;
   email?: string;
   topic?: string;
@@ -28,21 +22,20 @@ export interface ContactLogServiceResponse {
   error?: string;
 }
 
-/**
- * Dispatches a contact form submission attempt log to the server-side API.
- * Uses keepalive where supported so that logs finish even if the user closes or navigates.
- * Fails gracefully and silently to ensure user submission is never blocked.
- */
 export async function logContactAttempt(entry: ContactSubmissionLogEntry): Promise<boolean> {
   try {
     const payload = {
-      ...entry,
+      status: entry.status,
+      reason: String(entry.reason || 'UNKNOWN').slice(0, 80),
+      messageLength: Number.isInteger(entry.messageLength)
+        ? Math.max(0, Math.min(Number(entry.messageLength), 3000))
+        : undefined,
+      submissionMethod: entry.submissionMethod === 'email-client' ? 'email-client' : 'api',
       timestamp: entry.timestamp || new Date().toISOString(),
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       url: typeof window !== 'undefined' ? window.location.pathname : '/contact/'
     };
 
-    const res = await fetch('/api/contact/log', {
+    const response = await fetch('/api/contact/log', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,12 +45,9 @@ export async function logContactAttempt(entry: ContactSubmissionLogEntry): Promi
       keepalive: true
     });
 
-    return res.ok;
-  } catch (err) {
-    // Non-blocking: Logging failure should never degrade user experience
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('[ContactLogger] Log dispatch error:', err);
-    }
+    return response.ok;
+  } catch {
+    // Logging is best-effort and must never block the contact form.
     return false;
   }
 }
