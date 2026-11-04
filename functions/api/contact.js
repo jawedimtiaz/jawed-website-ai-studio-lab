@@ -104,11 +104,8 @@ function validateSubmission(data) {
 }
 
 async function sendNotificationEmail({ env, submission }) {
-  const recipientEmail = env.NOTIFICATION_EMAIL;
-  const senderEmail = env.SENDER_EMAIL;
-  if (!recipientEmail || !senderEmail) {
-    return { sent: false, provider: 'none', error: 'EMAIL_CONFIGURATION_MISSING' };
-  }
+  const recipientEmail = env?.NOTIFICATION_EMAIL || 'jawedimtiaz@gmail.com';
+  const senderEmail = env?.SENDER_EMAIL || 'no-reply@jawed.co.in';
 
   const safeReason = submission.reason.replace(/[\\r\\n]/g, ' ');
   const safeName = submission.name.replace(/[\\r\\n]/g, ' ');
@@ -244,7 +241,7 @@ export async function onRequestPost({ request, env }) {
   return json({
     success: true,
     id,
-    notificationStatus: emailResult.sent ? 'sent' : 'pending',
+    notificationStatus: emailResult.sent ? 'sent' : 'failed',
     message: 'Thank you! Your message has been securely received. I will review it and get back to you shortly.'
   }, 200, cors);
 }
