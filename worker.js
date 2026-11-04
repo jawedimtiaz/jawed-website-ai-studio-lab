@@ -1,5 +1,11 @@
 import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
-import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
+import {
+  onRequestGet as contactGet,
+  onRequestPost as contactPost,
+  onRequestOptions as contactOptions,
+  onRequestLogGet as contactLogGet,
+  onRequestLogPost as contactLogPost
+} from './functions/api/contact.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -39,16 +45,21 @@ const SECURITY_HEADERS = {
 };
 
 function addSecurityHeaders(response) {
-  const newHeaders = new Headers(response.headers);
+  const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-    if (!newHeaders.has(key)) {
-      newHeaders.set(key, value);
-    }
+    if (!headers.has(key)) headers.set(key, value);
   }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: newHeaders
+    headers
+  });
+}
+
+function methodNotAllowed() {
+  return new Response(JSON.stringify({ error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' }), {
+    status: 405,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
   });
 }
 
@@ -56,115 +67,63 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathname = url.pathname;
+    const context = { request, env, ctx, params: {}, waitUntil: (promise) => ctx?.waitUntil?.(promise) };
 
-    // 1. Check legacy redirects
     if (LEGACY_REDIRECTS[pathname]) {
       const destination = new URL(LEGACY_REDIRECTS[pathname], url.origin);
       destination.search = url.search;
       return Response.redirect(destination.toString(), 301);
     }
 
-    // 2. Handle /api/ai endpoints
+    let response;
+
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
-      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
-      if (request.method === 'OPTIONS') {
-        return await aiOptions(context);
-      }
-      if (request.method === 'GET') {
-        return await aiGet(context);
-      }
-      if (request.method === 'POST') {
-        return await aiPost(context);
-      }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      if (request.method === 'OPTIONS') response = await aiOptions(context);
+      else if (request.method === 'GET') response = await aiGet(context);
+      else if (request.method === 'POST') response = await aiPost(context);
+      else response = methodNotAllowed();
+      return addSecurityHeaders(response);
     }
 
-    // 3. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
-      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
-      if (request.method === 'OPTIONS') {
-        return await contactOptions(context);
-      }
-      if (request.method === 'GET') {
-        return await contactGet(context);
-      }
-      if (request.method === 'POST') {
-        return await contactPost(context);
-      }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      if (request.method === 'OPTIONS') response = await contactOptions(context);
+      else if (request.method === 'GET') response = await contactGet(context);
+      else if (request.method === 'POST') response = await contactPost(context);
+      else response = methodNotAllowed();
+      return addSecurityHeaders(response);
     }
 
-    // 4. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'access-control-allow-origin': '*',
-            'access-control-allow-methods': 'POST, GET, OPTIONS',
-            'access-control-allow-headers': 'content-type'
-          }
-        });
-      }
-      if (request.method === 'POST') {
-        let entry = {};
-        try {
-          entry = await request.json();
-        } catch {}
-        return new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'access-control-allow-origin': '*'
-          }
-        });
-      }
-      if (request.method === 'GET') {
-        return new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'access-control-allow-origin': '*'
-          }
-        });
-      }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      if (request.method === 'OPTIONS') response = await contactOptions(context);
+      else if (request.method === 'GET') response = await contactLogGet(context);
+      else if (request.method === 'POST') response = await contactLogPost(context);
+      else response = methodNotAllowed();
+      return addSecurityHeaders(response);
     }
 
-    // 5. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
-      return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({
+        error: 'API endpoint not found',
+        code: 'NOT_FOUND'
+      }), {
         status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      }));
     }
 
-    // 5. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
-        if (assetResponse.status !== 404) {
-          return addSecurityHeaders(assetResponse);
-        }
-        // If client requested HTML route that doesn't exist as static file, fallback to /index.html (SPA routing)
+        if (assetResponse.status !== 404) return addSecurityHeaders(assetResponse);
+
         const accept = request.headers.get('accept') || '';
         if (request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.')) {
           const indexRequest = new Request(new URL('/index.html', request.url), request);
-          const indexResponse = await env.ASSETS.fetch(indexRequest);
-          return addSecurityHeaders(indexResponse);
+          return addSecurityHeaders(await env.ASSETS.fetch(indexRequest));
         }
         return addSecurityHeaders(assetResponse);
-      } catch (err) {
-        console.error('Static asset fetch failed:', err);
+      } catch (error) {
+        console.error('Static asset fetch failed:', error);
       }
     }
 
