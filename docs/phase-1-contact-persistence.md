@@ -12,7 +12,7 @@ The Cloudflare D1 database `jawed-contact-submissions` has now been created in t
 
 Migration: `migrations/0001_contact_persistence.sql`
 
-The D1 database and application tables were initially created through the Cloudflare D1 API. On 2026-11-04, Wrangler successfully ran `npx wrangler d1 migrations apply jawed-contact-submissions --remote`; the terminal reported that `0001_contact_persistence.sql` was executed successfully (5 SQL commands). This registers the migration through Wrangler rather than manually fabricating a history row. A final read-only `wrangler d1 migrations list jawed-contact-submissions --remote` check remains to be recorded before Worker deployment.
+The D1 database and application tables were initially created through the Cloudflare D1 API. On 2026-11-04, Wrangler successfully ran `npx wrangler d1 migrations apply jawed-contact-submissions --remote`; the terminal reported that `0001_contact_persistence.sql` was executed successfully (5 SQL commands). A subsequent read-only Cloudflare D1 query verified the `d1_migrations` history row: `id = 1`, `name = 0001_contact_persistence.sql`, `applied_at = 2026-11-04 17:53:38`. The two application tables are present and currently contain zero records. Migration registration is verified.
 
 ## Bind D1 to the Worker
 
