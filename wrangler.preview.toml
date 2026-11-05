@@ -1,0 +1,27 @@
+# Isolated Phase 1 preview only.
+# Deploy with: npx wrangler deploy --config wrangler.preview.toml
+# Never use this file for the lab or production Worker.
+
+name = "jawed-contact-phase1-preview"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[ai]
+binding = "AI"
+
+[vars]
+ENVIRONMENT = "preview"
+CANONICAL_ORIGIN = "https://jawed-contact-phase1-preview.jawed-eee.workers.dev"
+DISABLE_CONTACT_EMAIL = "true"
+
+[[d1_databases]]
+binding = "CONTACT_DB"
+database_name = "jawed-contact-preview"
+database_id = "09eba512-2949-4dec-ab58-070ac2160a6a"
+migrations_dir = "migrations"
