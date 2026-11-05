@@ -16,13 +16,17 @@ const json = (body, status = 200, extraHeaders = {}) =>
     }
   });
 
-function isAllowedOrigin(origin) {
+function isAllowedOrigin(origin, env = {}) {
   if (!origin) return true;
   try {
     const url = new URL(origin);
     if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) return false;
     const host = url.hostname.toLowerCase();
-    return host === 'jawed.co.in' ||
+    const canonicalOrigin = typeof env?.CANONICAL_ORIGIN === 'string'
+      ? new URL(env.CANONICAL_ORIGIN).origin
+      : null;
+    return origin === canonicalOrigin ||
+      host === 'jawed.co.in' ||
       host.endsWith('.jawed.co.in') ||
       host === 'localhost' ||
       host === '127.0.0.1';
@@ -31,9 +35,9 @@ function isAllowedOrigin(origin) {
   }
 }
 
-function corsHeaders(request) {
+function corsHeaders(request, env) {
   const origin = request.headers.get('origin');
-  return origin && isAllowedOrigin(origin)
+  return origin && isAllowedOrigin(origin, env)
     ? { 'access-control-allow-origin': origin, 'vary': 'Origin' }
     : {};
 }
@@ -104,6 +108,9 @@ function validateSubmission(data) {
 }
 
 async function sendNotificationEmail({ env, submission }) {
+  if (env?.DISABLE_CONTACT_EMAIL === 'true') {
+    return { sent: false, provider: 'disabled', skipped: true };
+  }
   const recipientEmail = env?.NOTIFICATION_EMAIL || 'jawedimtiaz@gmail.com';
   const senderEmail = env?.SENDER_EMAIL || 'no-reply@jawed.co.in';
 
@@ -170,9 +177,9 @@ async function sendNotificationEmail({ env, submission }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const cors = corsHeaders(request);
+  const cors = corsHeaders(request, env);
   const origin = request.headers.get('origin');
-  if (!isAllowedOrigin(origin)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
+  if (!isAllowedOrigin(origin, env)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
 
   if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
     return json({ error: 'Expected application/json.', code: 'INVALID_CONTENT_TYPE' }, 415, cors);
@@ -232,23 +239,25 @@ export async function onRequestPost({ request, env }) {
   }
 
   const emailResult = await sendNotificationEmail({ env, submission });
-  try {
-    await env.CONTACT_DB.prepare(
-      'UPDATE contact_submissions SET notification_status = ?, notification_provider = ?, notification_attempted_at = ? WHERE id = ?'
-    ).bind(
-      emailResult.sent ? 'sent' : 'failed',
-      emailResult.provider,
-      new Date().toISOString(),
-      id
-    ).run();
-  } catch (error) {
-    console.error('Contact notification status could not be updated.', { id, error: String(error?.message || error) });
+  if (!emailResult.skipped) {
+    try {
+      await env.CONTACT_DB.prepare(
+        'UPDATE contact_submissions SET notification_status = ?, notification_provider = ?, notification_attempted_at = ? WHERE id = ?'
+      ).bind(
+        emailResult.sent ? 'sent' : 'failed',
+        emailResult.provider,
+        new Date().toISOString(),
+        id
+      ).run();
+    } catch (error) {
+      console.error('Contact notification status could not be updated.', { id, error: String(error?.message || error) });
+    }
   }
 
   return json({
     success: true,
     id,
-    notificationStatus: emailResult.sent ? 'sent' : 'failed',
+    notificationStatus: emailResult.skipped ? 'pending' : (emailResult.sent ? 'sent' : 'failed'),
     message: 'Thank you! Your message has been securely received. I will review it and get back to you shortly.'
   }, 200, cors);
 }
@@ -256,16 +265,16 @@ export async function onRequestPost({ request, env }) {
 export async function onRequestGet({ request, env } = {}) {
   const cors = request ? corsHeaders(request) : {};
   const origin = request?.headers?.get('origin');
-  if (!isAllowedOrigin(origin)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
+  if (!isAllowedOrigin(origin, env)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
   if (!env?.CONTACT_DB) {
     return json({ ok: false, service: 'jawed-contact-api', status: 'storage-not-configured' }, 503, cors);
   }
   return json({ ok: true, service: 'jawed-contact-api', status: 'ready' }, 200, cors);
 }
 
-export async function onRequestOptions({ request } = {}) {
+export async function onRequestOptions({ request, env } = {}) {
   const origin = request?.headers?.get('origin');
-  if (!isAllowedOrigin(origin)) return new Response(null, { status: 403 });
+  if (!isAllowedOrigin(origin, env)) return new Response(null, { status: 403 });
   return new Response(null, {
     status: 204,
     headers: {
@@ -278,8 +287,8 @@ export async function onRequestOptions({ request } = {}) {
 }
 
 export async function onRequestLogPost({ request, env }) {
-  const cors = corsHeaders(request);
-  if (!isAllowedOrigin(request.headers.get('origin'))) {
+  const cors = corsHeaders(request, env);
+  if (!isAllowedOrigin(request.headers.get('origin'), env)) {
     return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
   }
   if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
@@ -319,8 +328,8 @@ export async function onRequestLogPost({ request, env }) {
 }
 
 export async function onRequestLogGet({ request, env }) {
-  const cors = corsHeaders(request);
-  if (!isAllowedOrigin(request.headers.get('origin'))) {
+  const cors = corsHeaders(request, env);
+  if (!isAllowedOrigin(request.headers.get('origin'), env)) {
     return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
   }
   if (!env?.CONTACT_DB) return json({ error: 'Contact logging is temporarily unavailable.' }, 503, cors);
