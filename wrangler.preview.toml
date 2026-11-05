@@ -19,6 +19,7 @@ binding = "AI"
 ENVIRONMENT = "preview"
 CANONICAL_ORIGIN = "https://jawed-contact-phase1-preview.jawed-eee.workers.dev"
 DISABLE_CONTACT_EMAIL = "true"
+DISABLE_AI_API = "true"
 
 [[d1_databases]]
 binding = "CONTACT_DB"
