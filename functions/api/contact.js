@@ -263,7 +263,7 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestGet({ request, env } = {}) {
-  const cors = request ? corsHeaders(request) : {};
+  const cors = request ? corsHeaders(request, env) : {};
   const origin = request?.headers?.get('origin');
   if (!isAllowedOrigin(origin, env)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
   if (!env?.CONTACT_DB) {
@@ -278,7 +278,7 @@ export async function onRequestOptions({ request, env } = {}) {
   return new Response(null, {
     status: 204,
     headers: {
-      ...corsHeaders(request),
+      ...corsHeaders(request, env),
       'access-control-allow-methods': 'GET, POST, OPTIONS',
       'access-control-allow-headers': 'content-type',
       'access-control-max-age': '86400'
