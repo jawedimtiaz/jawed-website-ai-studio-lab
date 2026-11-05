@@ -8,6 +8,46 @@ This change makes the Worker contact endpoint persist a submission before acknow
 
 The Cloudflare D1 database `jawed-contact-submissions` has now been created in the APAC region. Its database ID is recorded in both Wrangler configuration files on this feature branch. The schema migration has been applied and the two application tables and indexes were verified through the Cloudflare D1 API. The live Worker has not yet been updated with this binding because no deployment was performed.
 
+## Isolated preview environment
+
+A separate preview environment has been created for Phase 1 validation. It is intentionally isolated from the existing lab Worker and the real contact database.
+
+- Worker name: `jawed-contact-phase1-preview`
+- Config file: `wrangler.preview.toml`
+- Preview D1 database: `jawed-contact-preview`
+- Preview D1 database ID: `09eba512-2949-4dec-ab58-070ac2160a6a`
+- workers.dev origin configured in the preview file: `https://jawed-contact-phase1-preview.jawed-eee.workers.dev`
+- `DISABLE_CONTACT_EMAIL = "true"`: submissions are persisted, but neither Resend nor MailChannels is called.
+- `DISABLE_AI_API = "true"`: the AI endpoint returns a controlled 503 in preview.
+- No custom domain or route is configured.
+
+The preview database schema and Wrangler migration-history row were verified through Cloudflare. Both application tables currently contain zero rows. The preview Worker itself has **not** been deployed yet.
+
+### Preview deployment (when using the authorized personal Windows development machine)
+
+Run these commands from the existing repository checkout. Do not run a generic `wrangler deploy` command; the explicit preview config is mandatory.
+
+```powershell
+cd C:\Users\user\jawed-website-ai-studio-lab
+git fetch origin
+git checkout feat/phase-1-contact-persistence
+git pull
+npm install
+npm run build
+npx.cmd wrangler deploy --config wrangler.preview.toml
+```
+
+After deployment, test only the workers.dev preview URL. Do not attach a custom domain, add a route, deploy with `wrangler.toml` or `wrangler.jsonc`, or deploy the existing lab Worker as part of this step.
+
+### Preview verification
+
+1. `GET /api/contact` should return `200` with `status: ready`.
+2. `GET /api/ai` should return `503` with `AI_DISABLED_IN_PREVIEW`.
+3. A valid contact form submission should return success with `notificationStatus: pending`.
+4. Verify the submission exists in the preview database only.
+5. Confirm no email provider request was made.
+6. Confirm the existing lab Worker and the production website remain unchanged.
+
 ## D1 schema
 
 Migration: `migrations/0001_contact_persistence.sql`
