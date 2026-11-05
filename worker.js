@@ -78,7 +78,18 @@ export default {
     let response;
 
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
-      if (request.method === 'OPTIONS') response = await aiOptions(context);
+      if (env?.DISABLE_AI_API === 'true') {
+        response = new Response(JSON.stringify({
+          error: 'AI is disabled on this isolated preview environment.',
+          code: 'AI_DISABLED_IN_PREVIEW'
+        }), {
+          status: 503,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store'
+          }
+        });
+      } else if (request.method === 'OPTIONS') response = await aiOptions(context);
       else if (request.method === 'GET') response = await aiGet(context);
       else if (request.method === 'POST') response = await aiPost(context);
       else response = methodNotAllowed();
