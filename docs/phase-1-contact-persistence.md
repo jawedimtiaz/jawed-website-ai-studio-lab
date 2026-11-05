@@ -12,7 +12,7 @@ The Cloudflare D1 database `jawed-contact-submissions` has now been created in t
 
 Migration: `migrations/0001_contact_persistence.sql`
 
-The D1 database has already been created and the SQL schema applied directly through the Cloudflare D1 API. The committed migration remains in `migrations/0001_contact_persistence.sql` so the schema is documented and reproducible. A direct SQL application does **not** automatically register the migration in Wrangler's `d1_migrations` history table; inspection confirmed that this history table is currently absent. Because this migration uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, the next controlled `wrangler d1 migrations apply jawed-contact-submissions --remote` can safely create the Wrangler history table and record/apply this migration without replacing the already-created tables. Verify the Wrangler migration list/history before any Worker deployment. Do not manually fabricate a migration-history row.
+The D1 database and application tables were initially created through the Cloudflare D1 API. On 2026-11-04, Wrangler successfully ran `npx wrangler d1 migrations apply jawed-contact-submissions --remote`; the terminal reported that `0001_contact_persistence.sql` was executed successfully (5 SQL commands). This registers the migration through Wrangler rather than manually fabricating a history row. A final read-only `wrangler d1 migrations list jawed-contact-submissions --remote` check remains to be recorded before Worker deployment.
 
 ## Bind D1 to the Worker
 
@@ -46,7 +46,7 @@ Contact submissions necessarily contain the information the visitor enters. Rest
 
 ## Verification checklist
 
-After D1 creation and binding, verify in a non-production preview first:
+After the migration and binding are in place, verify in a non-production preview first:
 
 1. `GET /api/contact` returns `200` and `status: ready`.
 2. Submit a valid contact form and confirm the returned `id` exists in `contact_submissions`.
@@ -54,7 +54,7 @@ After D1 creation and binding, verify in a non-production preview first:
 4. Submit invalid JSON, an oversized body, invalid email and a populated honeypot; confirm expected status/behavior.
 5. Submit an attempt log and confirm one row is inserted in `contact_attempt_logs`; verify no name/email/message columns exist in that table.
 6. Confirm API responses include the Worker security headers.
-7. Run `npm run lint` and `npm run build` in the repository checkout. Record actual results; do not infer success from GitHub commits.
+7. GitHub Actions Phase 1 workflow run `41841754334` completed successfully: 12 contact API tests, `npm run lint`, and `npm run build` all passed. These tests use mocked D1 and mocked email fetch; they do not prove live Worker/D1/email-provider integration.
 
 ## Not included
 
