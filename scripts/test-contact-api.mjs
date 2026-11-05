@@ -78,6 +78,16 @@ try {
     assert.equal(response.status, 403);
   });
 
+  await test('allows the explicitly configured preview origin', async () => {
+    const previewOrigin = 'https://phase1-preview.example.workers.dev';
+    const response = await onRequestGet({
+      request: new Request('https://example.test/api/contact', { headers: { origin: previewOrigin } }),
+      env: { CONTACT_DB: makeDb(), CANONICAL_ORIGIN: previewOrigin }
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), previewOrigin);
+  });
+
   await test('rejects invalid content type', async () => {
     const response = await onRequestPost({ request: request('/api/contact', '{}', { contentType: 'text/plain' }), env: { CONTACT_DB: makeDb() } });
     assert.equal(response.status, 415);
@@ -122,6 +132,26 @@ try {
     assert.equal(db.calls.length, 2);
     assert.match(db.calls[0].sql, /INSERT INTO contact_submissions/);
     assert.match(db.calls[1].sql, /UPDATE contact_submissions/);
+  });
+
+  await test('preview mode persists submissions but skips all email providers', async () => {
+    const db = makeDb();
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      throw new Error('Preview must not call email providers');
+    };
+    const response = await onRequestPost({
+      request: request('/api/contact', JSON.stringify(validSubmission())),
+      env: { CONTACT_DB: db, ENVIRONMENT: 'preview', DISABLE_CONTACT_EMAIL: 'true' }
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.notificationStatus, 'pending');
+    assert.equal(fetchCalls, 0);
+    assert.equal(db.calls.length, 1);
+    assert.match(db.calls[0].sql, /INSERT INTO contact_submissions/);
   });
 
   await test('rejects null, array and string contact-log payloads cleanly', async () => {
