@@ -113,6 +113,14 @@ export const Header: React.FC = () => {
             <Link to="/contact/" aria-current={isActive('/contact') ? 'page' : undefined}>
               Contact
             </Link>
+            <a
+              href="https://www.jawed.co.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Visit main professional website (opens in a new tab)"
+            >
+              Main Website ↗
+            </a>
 
 
             <button

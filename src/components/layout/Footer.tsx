@@ -13,11 +13,25 @@ export const Footer: React.FC = () => {
           <Link to="/notes/">Notes</Link>
           <Link to="/tools/">Tools</Link>
           <Link to="/ai/">AI</Link>
+          <a
+            href="https://www.jawed.co.in/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Main Website ↗
+          </a>
         </nav>
 
         <div className="footer-bottom">
           <p>© {currentYear} Jawed Imtiaz</p>
           <div>
+            <a
+              href="https://www.jawed.co.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Main Website
+            </a>
             <Link to="/contact/">Contact</Link>
             <a
               href="https://www.linkedin.com/in/jawedimtiaz/"
