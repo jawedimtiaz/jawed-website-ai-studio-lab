@@ -73,7 +73,7 @@ export const StudioHqPage: React.FC = () => {
     setClientError('');
     try {
       const token = await user.getIdToken();
-      const query = showArchived ? '?includeArchived=true' : '';
+      const query = showArchived ? '?archivedOnly=true' : '';
       const response = await fetch('/api/hq/clients' + query, {
         headers: { authorization: `Bearer ${token}` },
         cache: 'no-store',
