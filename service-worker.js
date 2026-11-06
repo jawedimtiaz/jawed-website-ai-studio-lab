@@ -51,8 +51,10 @@ self.addEventListener('message', (event) => {
 const isDynamicRequest = (request) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return true;
-  if (request.method !== 'GET') return true;
+  // Never cache the private Studio HQ shell or any API response.
+  if (url.pathname === '/studio-hq' || url.pathname.startsWith('/studio-hq/')) return true;
   if (url.pathname.startsWith('/api/')) return true;
+  if (request.method !== 'GET') return true;
   return false;
 };
 
