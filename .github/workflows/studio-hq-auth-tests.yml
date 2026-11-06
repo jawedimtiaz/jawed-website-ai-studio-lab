@@ -15,6 +15,7 @@ on:
       - 'functions/api/hq/session.js'
       - 'functions/api/hq/clients.js'
       - 'functions/api/hq/projects.js'
+      - 'worker.js'
       - 'tests/hq-owner-authorization.test.js'
       - 'package.json'
       - '.github/workflows/studio-hq-auth-tests.yml'
