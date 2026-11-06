@@ -116,3 +116,16 @@ test('denies a token issued in the future', async () => {
   const result = await verify(await tokenFor(ctx.privateKey, { iat: seconds + 60 }), ctx);
   assert.equal(result.ok, false);
 });
+
+test('denies an authentication time in the future', async () => {
+  const ctx = await setup();
+  const result = await verify(await tokenFor(ctx.privateKey, { auth_time: seconds + 60 }), ctx);
+  assert.equal(result.ok, false);
+});
+
+test('normalizes the allowlisted owner email', async () => {
+  const ctx = await setup();
+  const result = await verify(await tokenFor(ctx.privateKey, { email: '  JAWED@JAWED.CO.IN  ' }), ctx);
+  assert.equal(result.ok, true);
+  assert.equal(result.identity.email, 'jawed@jawed.co.in');
+});
