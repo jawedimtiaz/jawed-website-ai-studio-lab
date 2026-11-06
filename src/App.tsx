@@ -76,6 +76,9 @@ const ScrollToTop: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  const location = useLocation();
+  const isStudioHq = location.pathname === '/studio-hq' || location.pathname.startsWith('/studio-hq/');
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -83,7 +86,7 @@ export const App: React.FC = () => {
         <DocumentHead />
         <ErrorBoundary>
           <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <Header />
+        {!isStudioHq && <Header />}
         
         <div style={{ flex: 1 }}>
           <RouteErrorBoundary>
@@ -173,9 +176,9 @@ export const App: React.FC = () => {
           </RouteErrorBoundary>
         </div>
 
-        <Footer />
-        <JawedAiWidget />
-        <PwaInstallPrompt />
+        {!isStudioHq && <Footer />}
+        {!isStudioHq && <JawedAiWidget />}
+        {!isStudioHq && <PwaInstallPrompt />
       </div>
     </ErrorBoundary>
     </AuthProvider>
