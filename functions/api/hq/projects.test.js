@@ -172,8 +172,8 @@ test('disabled Projects owner cannot create a project or append an audit record'
       .run(identity.uid, identity.email);
     db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)")
       .run('client-disabled-project-owner', 'Acme', identity.uid);
-    db.sqlite.prepare("INSERT INTO audit_logs (id, actor_uid, action, entity_type, entity_id) VALUES (?, ?, ?, ?, ?)")
-      .run('baseline-project-audit', identity.uid, 'test.seed', 'client', 'client-disabled-project-owner');
+    db.sqlite.prepare("INSERT INTO audit_logs (id, actor_uid, actor_email, action, entity_type, entity_id) VALUES (?, ?, ?, ?, ?, ?)")
+      .run('baseline-project-audit', identity.uid, identity.email, 'test.seed', 'client', 'client-disabled-project-owner');
     db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
 
     const response = await call(db, request('/api/hq/projects', 'POST', {
