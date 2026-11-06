@@ -34,6 +34,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: Verify Firebase owner authorization
         run: npm run test:hq-auth
+      - name: Verify CRM client input validation
+        run: node --test functions/api/hq/clients.test.js
       - name: Verify D1 schema
         run: node scripts/test-hq-migration.mjs
       - name: TypeScript and production build
