@@ -2,6 +2,7 @@ import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiO
 import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
 import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
 import { handleHqClients } from './functions/api/hq/clients.js';
+import { handleHqProjects } from './functions/api/hq/projects.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -84,7 +85,14 @@ export default {
       return addSecurityHeaders(response);
     }
 
-    // 4. Handle /api/ai endpoints
+    // 4. Private Studio HQ project endpoints.
+    if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
+      const segments = pathname.replace(/\\/$/, '').split('/').slice(4);
+      const response = await handleHqProjects({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 5. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -102,7 +110,7 @@ export default {
       });
     }
 
-    // 5. Handle /api/contact endpoints
+    // 6. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -120,7 +128,7 @@ export default {
       });
     }
 
-    // 6. Handle /api/contact/log endpoint
+    // 7. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
@@ -160,7 +168,7 @@ export default {
       });
     }
 
-    // 7. Reject other /api/* with standard 404 JSON
+    // 8. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
@@ -168,7 +176,7 @@ export default {
       });
     }
 
-    // 8. Serve static assets via Cloudflare Workers Assets binding if present
+    // 9. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
