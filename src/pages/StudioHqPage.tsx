@@ -4,6 +4,8 @@ import { auth, googleProvider } from '../lib/firebase';
 
 type HqIdentity = { uid: string; email: string };
 type HqProject = { id: string; name: string; client_id: string; client_name: string; project_type: string; status: string; priority: string; target_date: string | null; archived_at: string | null };
+type HqTask = { id: string; title: string; status: string; priority: string; due_date: string | null; milestone_name: string | null };
+type HqMilestone = { id: string; name: string; status: string; due_date: string | null };
 type HqClient = {
   id: string;
   name: string;
@@ -36,6 +38,11 @@ export const StudioHqPage: React.FC = () => {
   const [projectType, setProjectType] = useState('business-website');
   const [projectError, setProjectError] = useState('');
   const [savingProject, setSavingProject] = useState(false);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [projectWork, setProjectWork] = useState<Record<string, { tasks: HqTask[]; milestones: HqMilestone[] }>>({});
+  const [workLoading, setWorkLoading] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newMilestoneName, setNewMilestoneName] = useState('');
 
   useEffect(() => onAuthStateChanged(auth, (currentUser) => {
     setUser(currentUser);
@@ -173,6 +180,111 @@ export const StudioHqPage: React.FC = () => {
       await loadClients();
     } catch (err) {
       setClientError(err instanceof Error ? err.message : 'Unable to update client.');
+    }
+  };
+
+  const loadProjectWork = async (projectId: string) => {
+    if (!user) return;
+    setWorkLoading(true);
+    setProjectError('');
+    try {
+      const token = await user.getIdToken();
+      const headers = { authorization: `Bearer ${token}` };
+      const [taskResponse, milestoneResponse] = await Promise.all([
+        fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/tasks`, { headers, cache: 'no-store', credentials: 'same-origin' }),
+        fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/milestones`, { headers, cache: 'no-store', credentials: 'same-origin' })
+      ]);
+      const [taskPayload, milestonePayload] = await Promise.all([taskResponse.json(), milestoneResponse.json()]);
+      if (!taskResponse.ok || !taskPayload.ok || !milestoneResponse.ok || !milestonePayload.ok) {
+        throw new Error('Unable to load project tasks and milestones.');
+      }
+      setProjectWork(current => ({ ...current, [projectId]: { tasks: taskPayload.tasks || [], milestones: milestonePayload.milestones || [] } }));
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : 'Unable to load project work.');
+    } finally {
+      setWorkLoading(false);
+    }
+  };
+
+  const addProjectMilestone = async (event: React.FormEvent<HTMLFormElement>, projectId: string) => {
+    event.preventDefault();
+    if (!user || !newMilestoneName.trim()) return;
+    setProjectError('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/milestones`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: newMilestoneName }),
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to add milestone.');
+      setNewMilestoneName('');
+      await loadProjectWork(projectId);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : 'Unable to add milestone.');
+    }
+  };
+
+  const addProjectTask = async (event: React.FormEvent<HTMLFormElement>, projectId: string) => {
+    event.preventDefault();
+    if (!user || !newTaskTitle.trim()) return;
+    setProjectError('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/tasks`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ title: newTaskTitle }),
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to add task.');
+      setNewTaskTitle('');
+      await loadProjectWork(projectId);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : 'Unable to add task.');
+    }
+  };
+
+  const updateTaskStatus = async (projectId: string, taskId: string, status: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to update task.');
+      await loadProjectWork(projectId);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : 'Unable to update task.');
+    }
+  };
+
+  const updateMilestoneStatus = async (projectId: string, milestoneId: string, status: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/hq/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to update milestone.');
+      await loadProjectWork(projectId);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : 'Unable to update milestone.');
     }
   };
 
@@ -368,9 +480,41 @@ export const StudioHqPage: React.FC = () => {
             <div style={{ display: 'grid', gap: 10 }}>
               {projects.map(project => (
                 <article key={project.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: 16, border: '1px solid var(--line)', borderRadius: 12 }}>
-                  <div>
+                  <div style={{ flex: 1, minWidth: 220 }}>
                     <strong>{project.name}</strong>
                     <p style={{ color: 'var(--muted)', margin: '4px 0 0' }}>{project.client_name} · {project.status} · {project.priority}{project.target_date ? ' · Due ' + project.target_date : ''}</p>
+                    {!project.archived_at ? (
+                      <button type="button" style={{ marginTop: 10 }} onClick={() => {
+                        const next = expandedProjectId === project.id ? null : project.id;
+                        setExpandedProjectId(next);
+                        if (next) void loadProjectWork(project.id);
+                      }}>{expandedProjectId === project.id ? 'Hide tasks & milestones' : 'Manage tasks & milestones'}</button>
+                    ) : null}
+                    {expandedProjectId === project.id && !project.archived_at ? (
+                      <div style={{ marginTop: 16, padding: 14, borderRadius: 10, background: 'var(--surface-muted, #f7f8fa)' }}>
+                        {workLoading ? <p role="status">Loading project work…</p> : null}
+                        <form onSubmit={event => void addProjectMilestone(event, project.id)} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                          <input value={newMilestoneName} onChange={event => setNewMilestoneName(event.target.value)} required maxLength={160} placeholder="New milestone name" />
+                          <button type="submit">Add milestone</button>
+                        </form>
+                        {(projectWork[project.id]?.milestones || []).map(milestone => (
+                          <div key={milestone.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 0' }}>
+                            <span>{milestone.name} · {milestone.status}</span>
+                            <button type="button" onClick={() => void updateMilestoneStatus(project.id, milestone.id, milestone.status === 'completed' ? 'in-progress' : 'completed')}>{milestone.status === 'completed' ? 'Reopen' : 'Complete'}</button>
+                          </div>
+                        ))}
+                        <form onSubmit={event => void addProjectTask(event, project.id)} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '14px 0 8px' }}>
+                          <input value={newTaskTitle} onChange={event => setNewTaskTitle(event.target.value)} required maxLength={160} placeholder="New task" />
+                          <button type="submit">Add task</button>
+                        </form>
+                        {(projectWork[project.id]?.tasks || []).map(task => (
+                          <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 0' }}>
+                            <span>{task.title} · {task.status}</span>
+                            <button type="button" onClick={() => void updateTaskStatus(project.id, task.id, task.status === 'done' ? 'todo' : 'done')}>{task.status === 'done' ? 'Reopen' : 'Complete'}</button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   {project.archived_at
                     ? <button type="button" onClick={() => void setProjectArchived(project, true)}>Restore</button>
