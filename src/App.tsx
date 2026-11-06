@@ -178,7 +178,7 @@ export const App: React.FC = () => {
 
         {!isStudioHq && <Footer />}
         {!isStudioHq && <JawedAiWidget />}
-        {!isStudioHq && <PwaInstallPrompt />
+        {!isStudioHq && <PwaInstallPrompt />}
       </div>
     </ErrorBoundary>
     </AuthProvider>
