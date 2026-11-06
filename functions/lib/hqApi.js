@@ -18,7 +18,7 @@ export function isHqSameOrigin(request) {
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none';
 }
 
-export async function authorizeHqOwner(request, env) {
+export async function authorizeHqOwner(request, env, options = {}) {
   if (!isHqSameOrigin(request)) {
     return { ok: false, response: hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403) };
   }
@@ -26,7 +26,8 @@ export async function authorizeHqOwner(request, env) {
   const match = authorization.match(/^Bearer\\s+(.+)$/i);
   if (!match) return { ok: false, response: hqJson({ ok: false, error: 'AUTH_REQUIRED' }, 401) };
 
-  const result = await verifyHqFirebaseToken(match[1]);
+  const verifyToken = options.verifyToken || verifyHqFirebaseToken;
+  const result = await verifyToken(match[1]);
   if (!result.ok) {
     return { ok: false, response: hqJson({ ok: false, error: result.code }, result.status) };
   }
