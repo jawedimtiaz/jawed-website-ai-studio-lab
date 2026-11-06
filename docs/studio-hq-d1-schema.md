@@ -19,7 +19,7 @@ The dedicated D1 database has now been created empty. This branch prepares the S
 - Timestamps are UTC ISO-8601 strings.
 - Money is integer minor units (paise for INR), never floating point.
 - Business records use `archived_at` and `archived_by` for reversible soft deletion.
-- Foreign keys use RESTRICT to prevent accidental cascade deletion.
+- Foreign keys use RESTRICT to prevent accidental cascade deletion; Cloudflare D1 enforces foreign keys by default.
 - Audit logs reject UPDATE and DELETE through SQLite triggers.
 - File content should live in an approved object store or versioned repository, not D1.
 
