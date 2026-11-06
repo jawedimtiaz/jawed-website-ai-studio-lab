@@ -42,7 +42,7 @@ The database was created on 6 November 2026. The initial schema migration was ap
 - `d1_migrations` contains `0001_studio_hq_schema.sql`.
 - D1 reported 18 application/migration tables (Cloudflare's internal `_cf_KV` table is excluded from that count).
 - `PRAGMA foreign_key_check` returned no violations.
-- `PRAGMA quick_check` returned `ok`.
+- `PRAGMA quick_check` returned `ok`.\n- Live D1 smoke test verified insert/RETURNING, FK enforcement, archive/restore, and cleanup; final owner/client/audit counts are all zero.
 - The same migration passed isolated in-memory SQLite tests for table creation, archive/restore, FK restrictions, append-only audit triggers, and JSON validity.
 
 ## Security boundary
