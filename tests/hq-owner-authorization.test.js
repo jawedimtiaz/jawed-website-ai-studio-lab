@@ -93,7 +93,7 @@ test('owner last-seen statement cannot insert or reactivate an owner', () => {
   };
   ownerUpsertStatement(db, { uid: 'firebase-owner-uid', email: 'jawedimtiaz@gmail.com' });
   assert.match(capturedSql, /^UPDATE hq_users/i);
-  assert.doesNotMatch(capturedSql, /INSERT|status\s*=\s*'active'/i);
-  assert.match(capturedSql, /status\s*=\s*'active'/i);
+  assert.doesNotMatch(capturedSql, /INSERT|SET\s+status/i);
+  assert.match(capturedSql, /WHERE uid = \? AND lower\(email\) = \? AND status = 'active'/i);
   assert.deepEqual(capturedValues, ['firebase-owner-uid', 'jawedimtiaz@gmail.com']);
 });
