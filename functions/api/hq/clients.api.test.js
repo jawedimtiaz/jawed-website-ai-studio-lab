@@ -133,3 +133,27 @@ test('CRM fails closed when the D1 binding is unavailable', async () => {
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, 'HQ_DATABASE_UNAVAILABLE');
 });
+
+
+test('disabled CRM owner cannot mutate a client or append an audit record', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
+      .run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)")
+      .run('client-disabled-owner', 'Original Name', identity.uid);
+    db.sqlite.prepare("INSERT INTO audit_logs (id, actor_uid, action, entity_type, entity_id) VALUES (?, ?, ?, ?, ?)")
+      .run('baseline-audit', identity.uid, 'test.seed', 'client', 'client-disabled-owner');
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/clients/client-disabled-owner', 'PATCH', {
+      name: 'Unauthorized Change'
+    }), ['client-disabled-owner']);
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT name FROM clients WHERE id = ?').get('client-disabled-owner').name, 'Original Name');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 1);
+  } finally {
+    db.close();
+  }
+});
