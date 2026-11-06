@@ -3,9 +3,9 @@
 ## Target
 Dedicated Cloudflare D1 database: `jawed-studio-hq`.
 
-This branch prepares the SQL migration only. It does not create the database, configure Wrangler, add a binding, apply migrations, or deploy.
+The dedicated D1 database has now been created empty. This branch prepares the SQL migration and Wrangler binding only; it does not apply migrations or deploy.
 
-## Data model
+## Database resource\n- Name: `jawed-studio-hq`\n- Database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`\n- Primary region: APAC\n- Read replication: disabled\n- Initial state at creation: 0 tables\n\n## Data model
 - Identity: `hq_users` stores the two owner identities after server-side authorization.
 - CRM: `clients`, `client_contacts`, `activity_notes`.
 - Projects and delivery: `projects`, `project_milestones`, `project_tasks`, `repositories`, `deployments`.
