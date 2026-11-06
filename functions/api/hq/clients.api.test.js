@@ -70,7 +70,7 @@ test('CRM client lifecycle creates, lists, reads, updates, archives and restores
     assert.equal(listPayload.clients.length, 1);
     assert.equal(listPayload.clients[0].id, id);
 
-    const getResponse = await call(db, request('/api/hq/clients/' + id), 'GET', undefined, [id]);
+    const getResponse = await call(db, request('/api/hq/clients/' + id), [id]);
     const getPayload = await getResponse.json();
     assert.equal(getPayload.client.name, 'Acme Limited');
 
