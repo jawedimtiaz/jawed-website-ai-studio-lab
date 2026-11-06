@@ -75,12 +75,11 @@ const ScrollToTop: React.FC = () => {
   return null;
 };
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const location = useLocation();
   const isStudioHq = location.pathname === '/studio-hq' || location.pathname.startsWith('/studio-hq/');
 
   return (
-    <BrowserRouter>
       <AuthProvider>
         <ScrollToTop />
         <DocumentHead />
@@ -182,6 +181,11 @@ export const App: React.FC = () => {
       </div>
     </ErrorBoundary>
     </AuthProvider>
+  );
+};
+
+export const App: React.FC = () => (
+  <BrowserRouter>
+    <AppContent />
   </BrowserRouter>
 );
-};
