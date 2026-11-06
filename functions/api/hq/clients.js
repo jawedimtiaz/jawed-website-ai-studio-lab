@@ -28,8 +28,12 @@ function cleanText(value, max, field) {
   return { ok: true, value: normalized || null };
 }
 
-function validateClient(input, partial = false) {
+export function validateClient(input, partial = false) {
   const output = {};
+  const allowed = new Set([...CLIENT_FIELDS, 'status']);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) return { ok: false, error: 'FIELD_NOT_ALLOWED' };
+  }
   for (const field of CLIENT_FIELDS) {
     if (!(field in input)) continue;
     const result = cleanText(input[field], FIELD_LIMITS[field], field.toUpperCase());
