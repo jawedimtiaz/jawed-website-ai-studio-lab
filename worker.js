@@ -69,12 +69,12 @@ export default {
     // 2. Private Studio HQ session endpoint. No public CORS and no cacheable response.
     if (pathname === '/api/hq/session' || pathname === '/api/hq/session/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
-      if (request.method === 'OPTIONS') return await hqSessionOptions(context);
-      if (request.method === 'POST') return await hqSessionPost(context);
-      return new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
+      if (request.method === 'OPTIONS') return addSecurityHeaders(await hqSessionOptions(context));
+      if (request.method === 'POST') return addSecurityHeaders(await hqSessionPost(context));
+      return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
         status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
-      });
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+      }));
     }
 
     // 3. Private Studio HQ CRM client endpoints.
