@@ -88,7 +88,7 @@ export default {
 
     // 4. Private Studio HQ approvals and QA endpoints.
     if (pathname.startsWith('/api/hq/projects/') || pathname.startsWith('/api/hq/approvals/') || pathname.startsWith('/api/hq/qa/')) {
-      const hqParts = pathname.replace(/\\/$/, '').split('/').slice(3);
+      const hqParts = pathname.replace(/\/$/, '').split('/').slice(3);
       const isReleaseRoute = (hqParts[0] === 'projects' && ['approvals', 'qa'].includes(hqParts[2])) ||
         ['approvals', 'qa'].includes(hqParts[0]);
       if (isReleaseRoute) {
