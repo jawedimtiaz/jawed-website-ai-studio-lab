@@ -18,19 +18,41 @@ export function isHqSameOrigin(request) {
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none';
 }
 
-export async function authorizeHqOwner(request) {
+export async function authorizeHqOwner(request, env) {
   if (!isHqSameOrigin(request)) {
     return { ok: false, response: hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403) };
   }
   const authorization = request.headers.get('authorization') || '';
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const match = authorization.match(/^Bearer\\s+(.+)$/i);
   if (!match) return { ok: false, response: hqJson({ ok: false, error: 'AUTH_REQUIRED' }, 401) };
 
   const result = await verifyHqFirebaseToken(match[1]);
   if (!result.ok) {
     return { ok: false, response: hqJson({ ok: false, error: result.code }, result.status) };
   }
-  return { ok: true, identity: result.identity };
+
+  const dbResult = requireHqDatabase(env);
+  if (!dbResult.ok) return { ok: false, response: dbResult.response };
+
+  try {
+    const owner = await dbResult.db.prepare(
+      'SELECT uid, email, status FROM hq_users WHERE uid = ?'
+    ).bind(result.identity.uid).first();
+
+    if (!owner) {
+      return { ok: false, response: hqJson({ ok: false, error: 'OWNER_NOT_ENROLLED' }, 403) };
+    }
+    if (typeof owner.email !== 'string' ||
+        owner.email.trim().toLowerCase() !== result.identity.email) {
+      return { ok: false, response: hqJson({ ok: false, error: 'OWNER_EMAIL_MISMATCH' }, 403) };
+    }
+    if (owner.status !== 'active') {
+      return { ok: false, response: hqJson({ ok: false, error: 'OWNER_DISABLED' }, 403) };
+    }
+    return { ok: true, identity: result.identity };
+  } catch {
+    return { ok: false, response: hqJson({ ok: false, error: 'HQ_DATABASE_UNAVAILABLE' }, 503) };
+  }
 }
 
 export async function readHqJson(request, maxBytes = 16384) {
@@ -56,13 +78,13 @@ export function requireHqDatabase(env) {
   return { ok: true, db: env.HQ_DB };
 }
 
+// This statement only updates an already-authorized active owner.
+// It deliberately cannot insert an owner or change a disabled owner's status.
 export function ownerUpsertStatement(db, identity) {
-  return db.prepare(`INSERT INTO hq_users (uid, email, status, last_seen_at)
-    VALUES (?, ?, 'active', strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(uid) DO UPDATE SET
-      email = excluded.email,
-      status = 'active',
-      last_seen_at = excluded.last_seen_at`).bind(identity.uid, identity.email);
+  return db.prepare(`UPDATE hq_users
+    SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE uid = ? AND lower(email) = ? AND status = 'active'`)
+    .bind(identity.uid, identity.email);
 }
 
 export function auditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
