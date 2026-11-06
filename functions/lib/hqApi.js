@@ -79,13 +79,18 @@ export function requireHqDatabase(env) {
   return { ok: true, db: env.HQ_DB };
 }
 
-// This statement only updates an already-authorized active owner.
-// It deliberately cannot insert an owner or change a disabled owner's status.
-export function ownerUpsertStatement(db, identity) {
-  return db.prepare(`UPDATE hq_users
-    SET last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    WHERE uid = ? AND lower(email) = ? AND status = 'active'`)
-    .bind(identity.uid, identity.email);
+// This statement is the first statement in every mutating D1 batch.
+// An invalid JSON value deliberately raises a SQLite error if the owner is
+// absent, disabled, or no longer matches the verified Firebase identity.
+// D1 rolls back the complete batch when this guard fails.
+export function ownerAuthorizationGuardStatement(db, identity) {
+  return db.prepare(`SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM hq_users
+      WHERE uid = ? AND lower(email) = ? AND status = 'active'
+    ) THEN 1
+    ELSE json('invalid-owner-authorization')
+  END`).bind(identity.uid, identity.email);
 }
 
 export function auditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
