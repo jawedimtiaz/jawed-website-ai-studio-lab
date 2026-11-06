@@ -401,10 +401,22 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
       if (request.method === 'POST') return await createProject(request, db, identity);
       return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
     }
-    const [id, action] = segments;
+    const [id, action, childId] = segments;
     if (!id || id.length > 80) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
-    if (action === 'archive' && request.method === 'POST') return await archiveProject(db, identity, id, false);
-    if (action === 'restore' && request.method === 'POST') return await archiveProject(db, identity, id, true);
+    if (action === 'archive' && segments.length === 2 && request.method === 'POST') return await archiveProject(db, identity, id, false);
+    if (action === 'restore' && segments.length === 2 && request.method === 'POST') return await archiveProject(db, identity, id, true);
+    if (action === 'tasks') {
+      if (segments.length === 2 && request.method === 'GET') return await listProjectTasks(request, db, id);
+      if (segments.length === 2 && request.method === 'POST') return await createProjectTask(request, db, identity, id);
+      if (segments.length === 3 && request.method === 'PATCH') return await updateProjectTask(request, db, identity, id, childId);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    }
+    if (action === 'milestones') {
+      if (segments.length === 2 && request.method === 'GET') return await listProjectMilestones(request, db, id);
+      if (segments.length === 2 && request.method === 'POST') return await createProjectMilestone(request, db, identity, id);
+      if (segments.length === 3 && request.method === 'PATCH') return await updateProjectMilestone(request, db, identity, id, childId);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    }
     if (action) return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
     if (request.method === 'GET') {
       const project = await getProject(db, id);
