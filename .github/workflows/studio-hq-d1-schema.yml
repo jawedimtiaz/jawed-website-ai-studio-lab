@@ -1,0 +1,29 @@
+name: Studio HQ D1 Schema Validation
+
+on:
+  push:
+    branches:
+      - feat/studio-hq-d1-schema
+  pull_request:
+    branches:
+      - feat/studio-hq-firebase-auth
+    paths:
+      - 'migrations/hq/**'
+      - 'scripts/test-hq-migration.mjs'
+      - '.github/workflows/studio-hq-d1-schema.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-hq-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.12.0
+      - name: Execute migration in isolated in-memory SQLite
+        run: node scripts/test-hq-migration.mjs
