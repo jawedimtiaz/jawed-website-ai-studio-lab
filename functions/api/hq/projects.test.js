@@ -54,7 +54,7 @@ const call = (db, req, segments = []) => handleAuthorizedHqProjects({
 
 test('validates project name, client, status, currency and date range', () => {
   assert.equal(validateProject({ client_id: 'client-1', name: 'Business Site', status: 'discovery', currency: 'INR' }).ok, true);
-  assert.deepEqual(validateProject({ client_id: 'client-1', name: 'X', start_date: '2026-12-10', target_date: '2026-12-01' }), {
+  assert.deepEqual(validateProject({ client_id: 'client-1', name: 'Website', start_date: '2026-12-10', target_date: '2026-12-01' }), {
     ok: false, error: 'TARGET_DATE_BEFORE_START_DATE'
   });
   assert.deepEqual(validateProject({ client_id: 'client-1', name: 'Site', project_type: 'malware' }), {
