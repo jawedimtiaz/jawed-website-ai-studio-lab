@@ -15,7 +15,13 @@ First project-management slice. It provides project records linked to active CRM
 | GET | `/api/hq/projects/:id` | Read project and client details |
 | PATCH | `/api/hq/projects/:id` | Update allowed project fields |
 | POST | `/api/hq/projects/:id/archive` | Soft-archive project |
-| POST | `/api/hq/projects/:id/restore` | Restore archived project |\n| GET | `/api/hq/projects/:id/milestones` | List project milestones |\n| POST | `/api/hq/projects/:id/milestones` | Create milestone |\n| PATCH | `/api/hq/projects/:id/milestones/:milestoneId` | Update milestone |\n| GET | `/api/hq/projects/:id/tasks` | List project tasks |\n| POST | `/api/hq/projects/:id/tasks` | Create task |\n| PATCH | `/api/hq/projects/:id/tasks/:taskId` | Update task |
+| POST | `/api/hq/projects/:id/restore` | Restore archived project |
+| GET | `/api/hq/projects/:id/milestones` | List project milestones |
+| POST | `/api/hq/projects/:id/milestones` | Create milestone |
+| PATCH | `/api/hq/projects/:id/milestones/:milestoneId` | Update milestone |
+| GET | `/api/hq/projects/:id/tasks` | List project tasks |
+| POST | `/api/hq/projects/:id/tasks` | Create task |
+| PATCH | `/api/hq/projects/:id/tasks/:taskId` | Update task |
 
 ## Validation
 - Project must reference an existing, non-archived client.
