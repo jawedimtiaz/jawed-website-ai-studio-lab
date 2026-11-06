@@ -82,7 +82,7 @@ test('fails closed when the D1 owner lookup throws', async () => {
   assert.equal(result.response.status, 503);
 });
 
-test('transaction guard rejects missing, mismatched, or disabled owners inside D1 batches', () => {
+test('transaction guard checks the active owner and raises SQL failure when unauthorized', () => {
   let capturedSql = '';
   let capturedValues = [];
   const db = {
@@ -92,6 +92,12 @@ test('transaction guard rejects missing, mismatched, or disabled owners inside D
     }
   };
   ownerAuthorizationGuardStatement(db, { uid: 'firebase-owner-uid', email: 'jawedimtiaz@gmail.com' });
+  assert.match(capturedSql, /SELECT CASE/i);
+  assert.match(capturedSql, /EXISTS\s*\(/i);
+  assert.match(capturedSql, /uid = \? AND lower\(email\) = \? AND status = 'active'/i);
+  assert.match(capturedSql, /json\('invalid-owner-authorization'\)/i);
+  assert.deepEqual(capturedValues, ['firebase-owner-uid', 'jawedimtiaz@gmail.com']);
+});
   assert.match(capturedSql, /^UPDATE hq_users/i);
   assert.doesNotMatch(capturedSql, /INSERT|SET\s+status/i);
   assert.match(capturedSql, /WHERE uid = \? AND lower\(email\) = \? AND status = 'active'/i);
