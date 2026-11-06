@@ -98,8 +98,3 @@ test('transaction guard checks the active owner and raises SQL failure when unau
   assert.match(capturedSql, /json\('invalid-owner-authorization'\)/i);
   assert.deepEqual(capturedValues, ['firebase-owner-uid', 'jawedimtiaz@gmail.com']);
 });
-  assert.match(capturedSql, /^UPDATE hq_users/i);
-  assert.doesNotMatch(capturedSql, /INSERT|SET\s+status/i);
-  assert.match(capturedSql, /WHERE uid = \? AND lower\(email\) = \? AND status = 'active'/i);
-  assert.deepEqual(capturedValues, ['firebase-owner-uid', 'jawedimtiaz@gmail.com']);
-});
