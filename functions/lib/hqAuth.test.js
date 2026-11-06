@@ -96,7 +96,7 @@ test('fails closed when certificate endpoint is unavailable', async () => {
 test('rejects unsupported signing algorithm before fetching certificates', async () => {
   const ctx = await setup();
   const header = btoa(JSON.stringify({ alg: 'HS256', kid: 'unit-test-key' }))
-    .replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');
+    .replaceAll('=', '').replaceAll('+', '-').replaceAll('/', '_');
   const token = header + '.e30.signature';
   const result = await verify(token, ctx);
   assert.equal(result.code, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
