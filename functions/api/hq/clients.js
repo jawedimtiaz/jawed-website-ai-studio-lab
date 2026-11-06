@@ -3,7 +3,7 @@ import {
   hqJson,
   readHqJson,
   requireHqDatabase,
-  ownerUpsertStatement,
+  ownerAuthorizationGuardStatement,
   auditStatement
 } from '../../lib/hqApi.js';
 
@@ -111,7 +111,7 @@ async function createClient(request, db, identity) {
       client.phone ?? null, client.website_url ?? null, client.billing_address ?? null,
       client.notes ?? null, client.source ?? null, identity.uid, identity.uid);
   const statements = [
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     created,
     auditStatement(db, identity, 'client.create', 'client', id, requestId, null,
       { name: client.name, business_name: client.business_name ?? null, status: client.status ?? 'lead' })
@@ -139,7 +139,7 @@ async function updateClient(request, db, identity, id) {
     .bind(...keys.map(key => fields[key]), identity.uid, id);
   const after = { ...existing, ...fields };
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, 'client.update', 'client', id, requestId,
       { name: existing.name, business_name: existing.business_name, status: existing.status },
@@ -160,7 +160,7 @@ async function archiveClient(db, identity, id, restore = false) {
     ? db.prepare("UPDATE clients SET archived_at = NULL, archived_by = NULL, updated_by = ?, updated_at = ? WHERE id = ? AND archived_at IS NOT NULL").bind(identity.uid, now, id)
     : db.prepare("UPDATE clients SET archived_at = ?, archived_by = ?, updated_by = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL").bind(now, identity.uid, identity.uid, now, id);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, restore ? 'client.restore' : 'client.archive', 'client', id, requestId,
       { name: existing.name, archived: !!existing.archived_at },
@@ -198,7 +198,7 @@ export async function handleAuthorizedHqClients({ request, env, segments, identi
 }
 
 export async function handleHqClients({ request, env, segments }) {
-  const auth = await authorizeHqOwner(request);
+  const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
   return handleAuthorizedHqClients({ request, env, segments, identity: auth.identity });
 }

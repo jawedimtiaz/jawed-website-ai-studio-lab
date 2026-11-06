@@ -3,7 +3,7 @@ import {
   hqJson,
   readHqJson,
   requireHqDatabase,
-  ownerUpsertStatement,
+  ownerAuthorizationGuardStatement,
   auditStatement
 } from '../../lib/hqApi.js';
 
@@ -117,7 +117,7 @@ async function createProject(request, db, identity) {
       project.scope_markdown ?? null, project.start_date ?? null, project.target_date ?? null,
       project.currency ?? 'INR', project.quoted_amount_minor ?? null, identity.uid, identity.uid);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     insert,
     auditStatement(db, identity, 'project.create', 'project', id, requestId, null,
       { name: project.name, client_id: project.client_id, status: project.status ?? 'discovery' })
@@ -150,7 +150,7 @@ async function updateProject(request, db, identity, id) {
   const update = db.prepare(`UPDATE projects SET ${assignments.join(', ')} WHERE id = ? AND archived_at IS NULL`)
     .bind(...keys.map(key => fields[key]), identity.uid, id);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, 'project.update', 'project', id, crypto.randomUUID(),
       { name: existing.name, status: existing.status, target_date: existing.target_date },
@@ -168,7 +168,7 @@ async function archiveProject(db, identity, id, restore = false) {
     ? db.prepare("UPDATE projects SET archived_at = NULL, archived_by = NULL, updated_by = ?, updated_at = ? WHERE id = ? AND archived_at IS NOT NULL").bind(identity.uid, now, id)
     : db.prepare("UPDATE projects SET archived_at = ?, archived_by = ?, updated_by = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL").bind(now, identity.uid, identity.uid, now, id);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, restore ? 'project.restore' : 'project.archive', 'project', id, crypto.randomUUID(),
       { name: existing.name, archived: !!existing.archived_at },
@@ -292,7 +292,7 @@ async function createProjectTask(request, db, identity, projectId) {
       task.status ?? 'todo', task.priority ?? 'normal', task.assigned_to ?? null,
       task.due_date ?? null, identity.uid, identity.uid);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     insert,
     auditStatement(db, identity, 'project.task.create', 'project_task', id, crypto.randomUUID(), null,
       { project_id: projectId, title: task.title, status: task.status ?? 'todo' })
@@ -324,7 +324,7 @@ async function updateProjectTask(request, db, identity, projectId, taskId) {
   const update = db.prepare(`UPDATE project_tasks SET ${assignments.join(', ')} WHERE id = ? AND project_id = ? AND archived_at IS NULL`)
     .bind(...keys.map(key => fields[key]), identity.uid, taskId, projectId);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, 'project.task.update', 'project_task', taskId, crypto.randomUUID(),
       { title: existing.title, status: existing.status }, { title: fields.title ?? existing.title, status: fields.status ?? existing.status })
@@ -357,7 +357,7 @@ async function createProjectMilestone(request, db, identity, projectId) {
     .bind(id, projectId, milestone.name, milestone.description ?? null, milestone.status ?? 'not-started',
       milestone.due_date ?? null, milestone.sort_order ?? 0);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     insert,
     auditStatement(db, identity, 'project.milestone.create', 'project_milestone', id, crypto.randomUUID(), null,
       { project_id: projectId, name: milestone.name, status: milestone.status ?? 'not-started' })
@@ -381,7 +381,7 @@ async function updateProjectMilestone(request, db, identity, projectId, mileston
   const update = db.prepare(`UPDATE project_milestones SET ${assignments.join(', ')} WHERE id = ? AND project_id = ? AND archived_at IS NULL`)
     .bind(...keys.map(key => fields[key]), milestoneId, projectId);
   const results = await db.batch([
-    ownerUpsertStatement(db, identity),
+    ownerAuthorizationGuardStatement(db, identity),
     update,
     auditStatement(db, identity, 'project.milestone.update', 'project_milestone', milestoneId, crypto.randomUUID(),
       { name: existing.name, status: existing.status }, { name: fields.name ?? existing.name, status: fields.status ?? existing.status })
@@ -431,7 +431,7 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
 }
 
 export async function handleHqProjects({ request, env, segments }) {
-  const auth = await authorizeHqOwner(request);
+  const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
   return handleAuthorizedHqProjects({ request, env, segments, identity: auth.identity });
 }

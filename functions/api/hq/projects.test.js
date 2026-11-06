@@ -30,7 +30,7 @@ class TestD1 {
     this.sqlite.exec('BEGIN');
     try {
       const results = statements.map(statement =>
-        /\bRETURNING\b/i.test(statement.sql) ? statement.all() : statement.run()
+        (/^\s*SELECT\b/i.test(statement.sql) || /\bRETURNING\b/i.test(statement.sql)) ? statement.all() : statement.run()
       );
       this.sqlite.exec('COMMIT');
       return results;
@@ -159,6 +159,30 @@ test('creates and updates project milestones and tasks with audit entries', asyn
     assert.equal(tasks.tasks.length, 1);
     assert.equal(tasks.tasks[0].milestone_name, 'Design approval');
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 4);
+  } finally {
+    db.close();
+  }
+});
+
+
+test('disabled Projects owner cannot create a project or append an audit record', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
+      .run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)")
+      .run('client-disabled-project-owner', 'Acme', identity.uid);
+    db.sqlite.prepare("INSERT INTO audit_logs (id, actor_uid, actor_email, action, entity_type, entity_id) VALUES (?, ?, ?, ?, ?, ?)")
+      .run('baseline-project-audit', identity.uid, identity.email, 'test.seed', 'client', 'client-disabled-project-owner');
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/projects', 'POST', {
+      client_id: 'client-disabled-project-owner', name: 'Unauthorized Project'
+    }));
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM projects').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 1);
   } finally {
     db.close();
   }
