@@ -78,9 +78,9 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     const seconds = Math.floor(now / 1000);
 
     if (
-      typeof claims.exp !== 'number' || claims.exp <= seconds ||
-      typeof claims.iat !== 'number' || claims.iat > seconds + 5 ||
-      typeof claims.auth_time !== 'number' || claims.auth_time > seconds + 5 ||
+      typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) || claims.exp <= seconds ||
+      typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) || claims.iat > seconds + 5 ||
+      typeof claims.auth_time !== 'number' || !Number.isFinite(claims.auth_time) || claims.auth_time > seconds + 5 ||
       typeof claims.sub !== 'string' || !claims.sub ||
       claims.email_verified !== true || typeof claims.email !== 'string'
     ) return denied(401, 'AUTH_CLAIMS_INVALID');
