@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { validateProject, handleAuthorizedHqProjects } from './projects.js';
+import { validateProject, validateTask, validateMilestone, handleAuthorizedHqProjects } from './projects.js';
 
 class TestD1 {
   constructor() {
@@ -110,6 +110,55 @@ test('rejects projects linked to a missing client', async () => {
     const response = await call(db, request('/api/hq/projects','POST', { client_id: 'missing', name: 'Invalid project' }));
     assert.equal(response.status, 404);
     assert.equal((await response.json()).error, 'CLIENT_NOT_FOUND');
+  } finally {
+    db.close();
+  }
+});
+
+test('validates task and milestone contracts', () => {
+  assert.equal(validateTask({ title: 'Prepare homepage', status: 'todo', priority: 'high' }).ok, true);
+  assert.deepEqual(validateTask({ title: 'Task', status: 'owner' }), { ok: false, error: 'TASK_STATUS_INVALID' });
+  assert.deepEqual(validateTask({ title: 'Task', due_date: '2026-02-30' }), { ok: false, error: 'DUE_DATE_INVALID' });
+  assert.equal(validateMilestone({ name: 'Design approval', due_date: '2026-12-01' }).ok, true);
+  assert.deepEqual(validateMilestone({ name: 'Milestone', sort_order: -1 }), { ok: false, error: 'SORT_ORDER_INVALID' });
+});
+
+test('creates and updates project milestones and tasks with audit entries', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid,email) VALUES (?,?)").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id,name,created_by) VALUES (?,?,?)").run('client-2','Beta',identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id,client_id,name,created_by) VALUES (?,?,?,?)")
+      .run('project-2','client-2','Beta Website',identity.uid);
+
+    const milestoneResponse = await call(db, request('/api/hq/projects/project-2/milestones','POST', {
+      name: 'Design approval', due_date: '2026-12-01'
+    }), ['project-2','milestones']);
+    assert.equal(milestoneResponse.status, 201);
+    const milestone = (await milestoneResponse.json()).milestone;
+
+    const taskResponse = await call(db, request('/api/hq/projects/project-2/tasks','POST', {
+      title: 'Prepare homepage', milestone_id: milestone.id, assigned_to: identity.uid, due_date: '2026-11-20'
+    }), ['project-2','tasks']);
+    assert.equal(taskResponse.status, 201);
+    const task = (await taskResponse.json()).task;
+
+    const taskUpdate = await call(db, request('/api/hq/projects/project-2/tasks/' + task.id,'PATCH', {
+      status: 'in-progress'
+    }), ['project-2','tasks',task.id]);
+    assert.equal(taskUpdate.status, 200);
+    assert.equal((await taskUpdate.json()).task.status, 'in-progress');
+
+    const milestoneUpdate = await call(db, request('/api/hq/projects/project-2/milestones/' + milestone.id,'PATCH', {
+      status: 'completed'
+    }), ['project-2','milestones',milestone.id]);
+    assert.equal(milestoneUpdate.status, 200);
+    assert.equal((await milestoneUpdate.json()).milestone.status, 'completed');
+
+    const tasks = await (await call(db, request('/api/hq/projects/project-2/tasks'), ['project-2','tasks'])).json();
+    assert.equal(tasks.tasks.length, 1);
+    assert.equal(tasks.tasks[0].milestone_name, 'Design approval');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 4);
   } finally {
     db.close();
   }
