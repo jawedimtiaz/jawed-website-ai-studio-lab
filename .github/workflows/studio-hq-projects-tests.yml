@@ -1,0 +1,44 @@
+name: Studio HQ Projects API Tests
+
+on:
+  push:
+    branches:
+      - feat/studio-hq-projects-api
+  pull_request:
+    branches:
+      - feat/studio-hq-crm-api
+    paths:
+      - 'functions/api/hq/**'
+      - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqAuth.js'
+      - 'src/pages/StudioHqPage.tsx'
+      - 'worker.js'
+      - 'migrations/hq/**'
+      - 'scripts/test-hq-migration.mjs'
+      - '.github/workflows/studio-hq-projects-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-projects:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.12.0
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Verify Firebase owner authorization
+        run: npm run test:hq-auth
+      - name: Verify CRM client input validation and lifecycle
+        run: node --test functions/api/hq/clients.test.js functions/api/hq/clients.api.test.js
+      - name: Verify project validation and lifecycle
+        run: node --test functions/api/hq/projects.test.js
+      - name: Verify D1 schema
+        run: node scripts/test-hq-migration.mjs
+      - name: TypeScript and production build
+        run: npm run build
