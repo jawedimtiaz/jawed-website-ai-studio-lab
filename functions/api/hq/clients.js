@@ -72,7 +72,7 @@ async function getClient(db, id) {
 
 async function listClients(request, db) {
   const url = new URL(request.url);
-  const includeArchived = url.searchParams.get('includeArchived') === 'true';
+  const archivedOnly = url.searchParams.get('archivedOnly') === 'true';
   const status = url.searchParams.get('status');
   if (status && !CLIENT_STATUSES.has(status)) return hqJson({ ok: false, error: 'STATUS_INVALID' }, 400);
   const limitRaw = Number.parseInt(url.searchParams.get('limit') || '50', 10);
@@ -81,7 +81,7 @@ async function listClients(request, db) {
   const offset = Number.isFinite(offsetRaw) ? Math.min(10000, Math.max(0, offsetRaw)) : 0;
   const clauses = [];
   const params = [];
-  if (!includeArchived) clauses.push('archived_at IS NULL');
+  if (archivedOnly) clauses.push('archived_at IS NOT NULL');\n  else clauses.push('archived_at IS NULL');
   if (status) { clauses.push('status = ?'); params.push(status); }
   const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
   const result = await db.prepare(`SELECT id, client_code, name, business_name, status, email, phone, website_url, source, created_at, updated_at, archived_at
