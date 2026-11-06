@@ -79,7 +79,7 @@ export default {
 
     // 3. Private Studio HQ CRM client endpoints.
     if (pathname === '/api/hq/clients' || pathname === '/api/hq/clients/' || pathname.startsWith('/api/hq/clients/')) {
-      const segments = pathname.replace(/\\/$/, '').split('/').slice(4);
+      const segments = pathname.replace(/\/$/, '').split('/').slice(4);
       const response = await handleHqClients({ request, env, segments });
       return addSecurityHeaders(response);
     }
