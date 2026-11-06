@@ -26,6 +26,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ defa
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const ItServicePage = lazy(() => import('./pages/ItServicePage').then((m) => ({ default: m.ItServicePage })));
 const HardwareDiagnosticPage = lazy(() => import('./pages/HardwareDiagnosticPage').then((m) => ({ default: m.HardwareDiagnosticPage })));
+const StudioHqPage = lazy(() => import('./pages/StudioHqPage').then((m) => ({ default: m.StudioHqPage })));
 
 import { AuthProvider } from './context/AuthContext';
 import { DocumentHead } from './components/common/DocumentHead';
@@ -88,6 +89,10 @@ export const App: React.FC = () => {
           <RouteErrorBoundary>
             <Suspense fallback={<PageLoadingFallback />}>
               <Routes>
+                {/* Private Jawed Web Studio HQ */}
+                <Route path="/studio-hq" element={<StudioHqPage />} />
+                <Route path="/studio-hq/" element={<StudioHqPage />} />
+
                 {/* Home */}
                 <Route path="/" element={<HomePage />} />
 
