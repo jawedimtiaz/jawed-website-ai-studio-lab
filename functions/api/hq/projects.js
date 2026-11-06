@@ -182,7 +182,7 @@ async function archiveProject(db, identity, id, restore = false) {
 const TASK_STATUSES = new Set(['todo','in-progress','blocked','done','cancelled']);
 const MILESTONE_STATUSES = new Set(['not-started','in-progress','blocked','completed','skipped']);
 
-function validateTask(input, partial = false) {
+export function validateTask(input, partial = false) {
   const allowed = new Set(['title','description','status','priority','assigned_to','due_date','milestone_id']);
   for (const key of Object.keys(input)) if (!allowed.has(key)) return { ok: false, error: 'FIELD_NOT_ALLOWED' };
   const out = {};
@@ -220,7 +220,7 @@ function validateTask(input, partial = false) {
   return { ok: true, value: out };
 }
 
-function validateMilestone(input, partial = false) {
+export function validateMilestone(input, partial = false) {
   const allowed = new Set(['name','description','status','due_date','sort_order']);
   for (const key of Object.keys(input)) if (!allowed.has(key)) return { ok: false, error: 'FIELD_NOT_ALLOWED' };
   const out = {};
