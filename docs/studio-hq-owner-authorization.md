@@ -64,3 +64,8 @@ npm run build
 ```
 
 The authorization tests cover active owner access, disabled owner rejection, missing owner rejection, email mismatch, missing/unavailable D1, and the non-reactivation SQL contract. A successful local test run does not replace deployed lab verification.
+
+
+## Transaction-time authorization guard
+
+Every mutating CRM and project D1 batch starts with an owner authorization guard. The guard checks the verified Firebase UID, normalized email, and active D1 status inside the same D1 transaction as the data mutation and audit insert. If the owner is missing, disabled, or mismatched, the guard raises a SQL error; Cloudflare D1 rolls back the complete batch. This closes the gap where an owner could be disabled after the initial request authorization check but before the write batch executes.
