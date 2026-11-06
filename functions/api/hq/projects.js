@@ -178,6 +178,219 @@ async function archiveProject(db, identity, id, restore = false) {
   return hqJson({ ok: true, id, archived: !restore });
 }
 
+
+const TASK_STATUSES = new Set(['todo','in-progress','blocked','done','cancelled']);
+const MILESTONE_STATUSES = new Set(['not-started','in-progress','blocked','completed','skipped']);
+
+function validateTask(input, partial = false) {
+  const allowed = new Set(['title','description','status','priority','assigned_to','due_date','milestone_id']);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) return { ok: false, error: 'FIELD_NOT_ALLOWED' };
+  const out = {};
+  if ('title' in input) {
+    const result = textField(input.title, 160, 'title');
+    if (!result.ok) return result;
+    out.title = result.value;
+  }
+  if (!partial && (!out.title || out.title.length < 2)) return { ok: false, error: 'TITLE_REQUIRED' };
+  if (partial && 'title' in out && (!out.title || out.title.length < 2)) return { ok: false, error: 'TITLE_REQUIRED' };
+  if ('description' in input) {
+    const result = textField(input.description, 4000, 'description');
+    if (!result.ok) return result;
+    out.description = result.value;
+  }
+  if ('status' in input) {
+    if (typeof input.status !== 'string' || !TASK_STATUSES.has(input.status)) return { ok: false, error: 'TASK_STATUS_INVALID' };
+    out.status = input.status;
+  }
+  if ('priority' in input) {
+    if (typeof input.priority !== 'string' || !PRIORITIES.has(input.priority)) return { ok: false, error: 'TASK_PRIORITY_INVALID' };
+    out.priority = input.priority;
+  }
+  if ('due_date' in input) {
+    const result = validDate(input.due_date, 'DUE_DATE');
+    if (!result.ok) return result;
+    out.due_date = result.value;
+  }
+  for (const field of ['assigned_to','milestone_id']) {
+    if (!(field in input)) continue;
+    if (input[field] === null || input[field] === '') out[field] = null;
+    else if (typeof input[field] !== 'string' || input[field].length > 80) return { ok: false, error: field.toUpperCase() + '_INVALID' };
+    else out[field] = input[field];
+  }
+  return { ok: true, value: out };
+}
+
+function validateMilestone(input, partial = false) {
+  const allowed = new Set(['name','description','status','due_date','sort_order']);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) return { ok: false, error: 'FIELD_NOT_ALLOWED' };
+  const out = {};
+  if ('name' in input) {
+    const result = textField(input.name, 160, 'name');
+    if (!result.ok) return result;
+    out.name = result.value;
+  }
+  if (!partial && (!out.name || out.name.length < 2)) return { ok: false, error: 'NAME_REQUIRED' };
+  if (partial && 'name' in out && (!out.name || out.name.length < 2)) return { ok: false, error: 'NAME_REQUIRED' };
+  if ('description' in input) {
+    const result = textField(input.description, 4000, 'description');
+    if (!result.ok) return result;
+    out.description = result.value;
+  }
+  if ('status' in input) {
+    if (typeof input.status !== 'string' || !MILESTONE_STATUSES.has(input.status)) return { ok: false, error: 'MILESTONE_STATUS_INVALID' };
+    out.status = input.status;
+  }
+  if ('due_date' in input) {
+    const result = validDate(input.due_date, 'DUE_DATE');
+    if (!result.ok) return result;
+    out.due_date = result.value;
+  }
+  if ('sort_order' in input) {
+    if (!Number.isSafeInteger(input.sort_order) || input.sort_order < 0 || input.sort_order > 100000) return { ok: false, error: 'SORT_ORDER_INVALID' };
+    out.sort_order = input.sort_order;
+  }
+  return { ok: true, value: out };
+}
+
+async function projectExists(db, projectId) {
+  return db.prepare('SELECT id FROM projects WHERE id = ? AND archived_at IS NULL').bind(projectId).first();
+}
+
+async function listProjectTasks(request, db, projectId) {
+  const archivedOnly = new URL(request.url).searchParams.get('archivedOnly') === 'true';
+  const exists = await projectExists(db, projectId);
+  if (!exists) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+  const result = await db.prepare(`SELECT t.*, m.name AS milestone_name
+    FROM project_tasks t LEFT JOIN project_milestones m ON m.id = t.milestone_id
+    WHERE t.project_id = ? AND ${archivedOnly ? 't.archived_at IS NOT NULL' : 't.archived_at IS NULL'}
+    ORDER BY t.sort_order ASC, t.due_date ASC, t.created_at ASC`).bind(projectId).all();
+  return hqJson({ ok: true, tasks: result.results || [] });
+}
+
+async function createProjectTask(request, db, identity, projectId) {
+  const exists = await projectExists(db, projectId);
+  if (!exists) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+  const parsed = await readHqJson(request);
+  if (!parsed.ok) return parsed.response;
+  const valid = validateTask(parsed.value);
+  if (!valid.ok) return hqJson({ ok: false, error: valid.error }, 400);
+  const task = valid.value;
+  if (task.milestone_id) {
+    const milestone = await db.prepare('SELECT id FROM project_milestones WHERE id = ? AND project_id = ? AND archived_at IS NULL').bind(task.milestone_id, projectId).first();
+    if (!milestone) return hqJson({ ok: false, error: 'MILESTONE_NOT_FOUND' }, 404);
+  }
+  if (task.assigned_to) {
+    const assignee = await db.prepare("SELECT uid FROM hq_users WHERE uid = ? AND status = 'active'").bind(task.assigned_to).first();
+    if (!assignee) return hqJson({ ok: false, error: 'ASSIGNEE_NOT_FOUND' }, 404);
+  }
+  const id = crypto.randomUUID();
+  const insert = db.prepare(`INSERT INTO project_tasks
+    (id, project_id, milestone_id, title, description, status, priority, assigned_to, due_date, created_by, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    RETURNING id, project_id, milestone_id, title, description, status, priority, assigned_to, due_date, created_at, updated_at`)
+    .bind(id, projectId, task.milestone_id ?? null, task.title, task.description ?? null,
+      task.status ?? 'todo', task.priority ?? 'normal', task.assigned_to ?? null,
+      task.due_date ?? null, identity.uid, identity.uid);
+  const results = await db.batch([
+    ownerUpsertStatement(db, identity),
+    insert,
+    auditStatement(db, identity, 'project.task.create', 'project_task', id, crypto.randomUUID(), null,
+      { project_id: projectId, title: task.title, status: task.status ?? 'todo' })
+  ]);
+  const row = results?.[1]?.results?.[0] || null;
+  return row ? hqJson({ ok: true, task: row }, 201) : hqJson({ ok: false, error: 'TASK_CREATE_FAILED' }, 500);
+}
+
+async function updateProjectTask(request, db, identity, projectId, taskId) {
+  const existing = await db.prepare('SELECT * FROM project_tasks WHERE id = ? AND project_id = ? AND archived_at IS NULL').bind(taskId, projectId).first();
+  if (!existing) return hqJson({ ok: false, error: 'TASK_NOT_FOUND' }, 404);
+  const parsed = await readHqJson(request);
+  if (!parsed.ok) return parsed.response;
+  const valid = validateTask(parsed.value, true);
+  if (!valid.ok) return hqJson({ ok: false, error: valid.error }, 400);
+  const fields = valid.value;
+  const keys = Object.keys(fields);
+  if (!keys.length) return hqJson({ ok: false, error: 'NO_VALID_FIELDS' }, 400);
+  if (fields.milestone_id) {
+    const milestone = await db.prepare('SELECT id FROM project_milestones WHERE id = ? AND project_id = ? AND archived_at IS NULL').bind(fields.milestone_id, projectId).first();
+    if (!milestone) return hqJson({ ok: false, error: 'MILESTONE_NOT_FOUND' }, 404);
+  }
+  if (fields.assigned_to) {
+    const assignee = await db.prepare("SELECT uid FROM hq_users WHERE uid = ? AND status = 'active'").bind(fields.assigned_to).first();
+    if (!assignee) return hqJson({ ok: false, error: 'ASSIGNEE_NOT_FOUND' }, 404);
+  }
+  const assignments = keys.map(key => key + ' = ?');
+  assignments.push("updated_by = ?", "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+  const update = db.prepare(`UPDATE project_tasks SET ${assignments.join(', ')} WHERE id = ? AND project_id = ? AND archived_at IS NULL`)
+    .bind(...keys.map(key => fields[key]), identity.uid, taskId, projectId);
+  const results = await db.batch([
+    ownerUpsertStatement(db, identity),
+    update,
+    auditStatement(db, identity, 'project.task.update', 'project_task', taskId, crypto.randomUUID(),
+      { title: existing.title, status: existing.status }, { title: fields.title ?? existing.title, status: fields.status ?? existing.status })
+  ]);
+  if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'TASK_NOT_FOUND' }, 404);
+  const task = await db.prepare('SELECT * FROM project_tasks WHERE id = ?').bind(taskId).first();
+  return hqJson({ ok: true, task });
+}
+
+async function listProjectMilestones(request, db, projectId) {
+  const archivedOnly = new URL(request.url).searchParams.get('archivedOnly') === 'true';
+  const exists = await projectExists(db, projectId);
+  if (!exists) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+  const result = await db.prepare(`SELECT * FROM project_milestones WHERE project_id = ? AND ${archivedOnly ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'} ORDER BY sort_order ASC, due_date ASC`).bind(projectId).all();
+  return hqJson({ ok: true, milestones: result.results || [] });
+}
+
+async function createProjectMilestone(request, db, identity, projectId) {
+  const exists = await projectExists(db, projectId);
+  if (!exists) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+  const parsed = await readHqJson(request);
+  if (!parsed.ok) return parsed.response;
+  const valid = validateMilestone(parsed.value);
+  if (!valid.ok) return hqJson({ ok: false, error: valid.error }, 400);
+  const milestone = valid.value;
+  const id = crypto.randomUUID();
+  const insert = db.prepare(`INSERT INTO project_milestones (id, project_id, name, description, status, due_date, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    RETURNING id, project_id, name, description, status, due_date, sort_order, created_at, updated_at`)
+    .bind(id, projectId, milestone.name, milestone.description ?? null, milestone.status ?? 'not-started',
+      milestone.due_date ?? null, milestone.sort_order ?? 0);
+  const results = await db.batch([
+    ownerUpsertStatement(db, identity),
+    insert,
+    auditStatement(db, identity, 'project.milestone.create', 'project_milestone', id, crypto.randomUUID(), null,
+      { project_id: projectId, name: milestone.name, status: milestone.status ?? 'not-started' })
+  ]);
+  const row = results?.[1]?.results?.[0] || null;
+  return row ? hqJson({ ok: true, milestone: row }, 201) : hqJson({ ok: false, error: 'MILESTONE_CREATE_FAILED' }, 500);
+}
+
+async function updateProjectMilestone(request, db, identity, projectId, milestoneId) {
+  const existing = await db.prepare('SELECT * FROM project_milestones WHERE id = ? AND project_id = ? AND archived_at IS NULL').bind(milestoneId, projectId).first();
+  if (!existing) return hqJson({ ok: false, error: 'MILESTONE_NOT_FOUND' }, 404);
+  const parsed = await readHqJson(request);
+  if (!parsed.ok) return parsed.response;
+  const valid = validateMilestone(parsed.value, true);
+  if (!valid.ok) return hqJson({ ok: false, error: valid.error }, 400);
+  const fields = valid.value;
+  const keys = Object.keys(fields);
+  if (!keys.length) return hqJson({ ok: false, error: 'NO_VALID_FIELDS' }, 400);
+  const assignments = keys.map(key => key + ' = ?');
+  assignments.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+  const update = db.prepare(`UPDATE project_milestones SET ${assignments.join(', ')} WHERE id = ? AND project_id = ? AND archived_at IS NULL`)
+    .bind(...keys.map(key => fields[key]), milestoneId, projectId);
+  const results = await db.batch([
+    ownerUpsertStatement(db, identity),
+    update,
+    auditStatement(db, identity, 'project.milestone.update', 'project_milestone', milestoneId, crypto.randomUUID(),
+      { name: existing.name, status: existing.status }, { name: fields.name ?? existing.name, status: fields.status ?? existing.status })
+  ]);
+  if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'MILESTONE_NOT_FOUND' }, 404);
+  const milestone = await db.prepare('SELECT * FROM project_milestones WHERE id = ?').bind(milestoneId).first();
+  return hqJson({ ok: true, milestone });
+}
+
 export async function handleAuthorizedHqProjects({ request, env, segments, identity }) {
   const dbResult = requireHqDatabase(env);
   if (!dbResult.ok) return dbResult.response;
