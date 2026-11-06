@@ -63,7 +63,7 @@ npm run lint
 npm run build
 ```
 
-The authorization tests cover active owner access, disabled owner rejection, missing owner rejection, email mismatch, missing/unavailable D1, and the non-reactivation SQL contract. A successful local test run does not replace deployed lab verification.
+The authorization tests cover active owner access, disabled owner rejection, missing owner rejection, email mismatch, missing/unavailable D1, and the transaction-time SQL guard. A successful CI run does not replace deployed lab verification.
 
 
 ## Transaction-time authorization guard
