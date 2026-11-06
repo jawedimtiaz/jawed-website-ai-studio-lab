@@ -57,13 +57,46 @@ export async function authorizeHqOwner(request, env, options = {}) {
 }
 
 export async function readHqJson(request, maxBytes = 16384) {
-  const length = Number(request.headers.get('content-length') || 0);
-  if (length > maxBytes) return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) {
-    return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (Number.isFinite(length) && length > maxBytes) {
+      return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+    }
   }
+
+  const chunks = [];
+  let totalBytes = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+        }
+        chunks.push(value);
+      }
+    } catch {
+      try { await reader.cancel(); } catch {}
+      return { ok: false, response: hqJson({ ok: false, error: 'REQUEST_BODY_UNREADABLE' }, 400) };
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   try {
+    const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     const value = JSON.parse(raw || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
     return { ok: true, value };
