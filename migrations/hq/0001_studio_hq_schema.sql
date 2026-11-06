@@ -4,8 +4,6 @@
 -- Monetary values use integer minor units (e.g. paise for INR).
 -- Archive fields implement soft deletion; do not hard-delete business records.
 
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS hq_users (
   uid TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
