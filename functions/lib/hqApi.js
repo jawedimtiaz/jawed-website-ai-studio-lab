@@ -23,7 +23,7 @@ export async function authorizeHqOwner(request, env, options = {}) {
     return { ok: false, response: hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403) };
   }
   const authorization = request.headers.get('authorization') || '';
-  const match = authorization.match(/^Bearer\\s+(.+)$/i);
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
   if (!match) return { ok: false, response: hqJson({ ok: false, error: 'AUTH_REQUIRED' }, 401) };
 
   const verifyToken = options.verifyToken || verifyHqFirebaseToken;
