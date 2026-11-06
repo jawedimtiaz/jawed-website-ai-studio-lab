@@ -56,6 +56,10 @@ const call = (db, req, segments = []) => handleAuthorizedHqClients({
 test('CRM client lifecycle creates, lists, reads, updates, archives and restores', async () => {
   const db = new TestD1();
   try {
+    // The new authorization policy requires an administrator-enrolled active owner.
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
+      .run(identity.uid, identity.email);
+
     const createdResponse = await call(db, request('/api/hq/clients', 'POST', {
       name: 'Acme Limited', business_name: 'Acme', email: 'owner@acme.example'
     }));
