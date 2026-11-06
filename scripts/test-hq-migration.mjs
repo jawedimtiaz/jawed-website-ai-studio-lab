@@ -6,7 +6,7 @@ const sql = readFileSync('migrations/hq/0001_studio_hq_schema.sql', 'utf8');
 const db = new DatabaseSync(':memory:');
 
 try {
-  db.exec(sql);
+  // D1 enforces foreign keys by default; mirror that behavior in local SQLite.\n  db.exec('PRAGMA foreign_keys = ON');\n  db.exec(sql);
 
   const expectedTables = [
     'hq_users', 'clients', 'client_contacts', 'projects',
