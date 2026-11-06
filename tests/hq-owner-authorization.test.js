@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { authorizeHqOwner, ownerAuthorizationGuardStatement } from '../functions/lib/hqApi.js';
+import worker from '../worker.js';
 
 function makeRequest() {
   return new Request('https://lab.jawed.co.in/api/hq/session', {
@@ -97,4 +98,27 @@ test('transaction guard checks the active owner and raises SQL failure when unau
   assert.match(capturedSql, /uid = \? AND lower\(email\) = \? AND status = 'active'/i);
   assert.match(capturedSql, /json\('invalid-owner-authorization'\)/i);
   assert.deepEqual(capturedValues, ['firebase-owner-uid', 'jawedimtiaz@gmail.com']);
+});
+
+test('Worker routes project API paths, including trailing slashes, to HQ authorization', async () => {
+  for (const path of ['/api/hq/projects', '/api/hq/projects/', '/api/hq/projects/project-1/tasks']) {
+    const response = await worker.fetch(
+      new Request('https://lab.jawed.co.in' + path, { method: 'GET' }),
+      {},
+      {}
+    );
+    assert.equal(response.status, 401, path);
+    assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal((await response.json()).error, 'AUTH_REQUIRED', path);
+  }
+});
+
+test('Worker routes CRM API paths to HQ authorization', async () => {
+  const response = await worker.fetch(
+    new Request('https://lab.jawed.co.in/api/hq/clients', { method: 'GET' }),
+    {},
+    {}
+  );
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, 'AUTH_REQUIRED');
 });
