@@ -15,7 +15,7 @@ First project-management slice. It provides project records linked to active CRM
 | GET | `/api/hq/projects/:id` | Read project and client details |
 | PATCH | `/api/hq/projects/:id` | Update allowed project fields |
 | POST | `/api/hq/projects/:id/archive` | Soft-archive project |
-| POST | `/api/hq/projects/:id/restore` | Restore archived project |
+| POST | `/api/hq/projects/:id/restore` | Restore archived project |\n| GET | `/api/hq/projects/:id/milestones` | List project milestones |\n| POST | `/api/hq/projects/:id/milestones` | Create milestone |\n| PATCH | `/api/hq/projects/:id/milestones/:milestoneId` | Update milestone |\n| GET | `/api/hq/projects/:id/tasks` | List project tasks |\n| POST | `/api/hq/projects/:id/tasks` | Create task |\n| PATCH | `/api/hq/projects/:id/tasks/:taskId` | Update task |
 
 ## Validation
 - Project must reference an existing, non-archived client.
@@ -35,7 +35,7 @@ First project-management slice. It provides project records linked to active CRM
 - Responses are no-store and receive Worker security headers.
 
 ## Remaining
-- Milestones and task management API/UI.
+- Milestone and task APIs are implemented and covered by lifecycle tests; dedicated milestone/task UI and archive/restore controls remain outstanding.
 - Live Worker preview verification.
 - Rate limiting and Firebase token revocation strategy.
 - Customer approval, QA and release workflows.
