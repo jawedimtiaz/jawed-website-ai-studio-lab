@@ -36,6 +36,8 @@ jobs:
         run: npm run test:hq-auth
       - name: Verify CRM client input validation
         run: node --test functions/api/hq/clients.test.js
+      - name: Verify CRM API lifecycle
+        run: node --test functions/api/hq/clients.api.test.js
       - name: Verify D1 schema
         run: node scripts/test-hq-migration.mjs
       - name: TypeScript and production build
