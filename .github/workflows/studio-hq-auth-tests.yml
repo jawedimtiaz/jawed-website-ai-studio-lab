@@ -8,10 +8,12 @@ on:
     branches:
       - main
       - feat/studio-hq-projects-api
+      - fix/studio-hq-owner-status-enforcement
     paths:
       - 'functions/lib/hqAuth.js'
       - 'functions/lib/hqAuth.test.js'
       - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqApi.test.js'
       - 'functions/api/hq/session.js'
       - 'functions/api/hq/clients.js'
       - 'functions/api/hq/clients.test.js'
