@@ -170,31 +170,35 @@ async function archiveClient(db, identity, id, restore = false) {
   return hqJson({ ok: true, id, archived: !restore });
 }
 
-export async function handleHqClients({ request, env, segments }) {
-  const auth = await authorizeHqOwner(request);
-  if (!auth.ok) return auth.response;
+export async function handleAuthorizedHqClients({ request, env, segments, identity }) {
   const dbResult = requireHqDatabase(env);
   if (!dbResult.ok) return dbResult.response;
   const db = dbResult.db;
   try {
     if (segments.length === 0) {
       if (request.method === 'GET') return await listClients(request, db);
-      if (request.method === 'POST') return await createClient(request, db, auth.identity);
+      if (request.method === 'POST') return await createClient(request, db, identity);
       return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
     }
     const [id, action] = segments;
     if (!id || id.length > 80) return hqJson({ ok: false, error: 'CLIENT_NOT_FOUND' }, 404);
-    if (action === 'archive' && request.method === 'POST') return await archiveClient(db, auth.identity, id, false);
-    if (action === 'restore' && request.method === 'POST') return await archiveClient(db, auth.identity, id, true);
+    if (action === 'archive' && request.method === 'POST') return await archiveClient(db, identity, id, false);
+    if (action === 'restore' && request.method === 'POST') return await archiveClient(db, identity, id, true);
     if (action) return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
     if (request.method === 'GET') {
       const client = await getClient(db, id);
       return client ? hqJson({ ok: true, client: publicClient(client) }) : hqJson({ ok: false, error: 'CLIENT_NOT_FOUND' }, 404);
     }
-    if (request.method === 'PATCH') return await updateClient(request, db, auth.identity, id);
+    if (request.method === 'PATCH') return await updateClient(request, db, identity, id);
     return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
   } catch (error) {
     console.error('[Studio HQ] Client API operation failed:', error);
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
+}
+
+export async function handleHqClients({ request, env, segments }) {
+  const auth = await authorizeHqOwner(request);
+  if (!auth.ok) return auth.response;
+  return handleAuthorizedHqClients({ request, env, segments, identity: auth.identity });
 }
