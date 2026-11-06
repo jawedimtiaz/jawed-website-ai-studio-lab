@@ -95,7 +95,24 @@ test('fails closed when certificate endpoint is unavailable', async () => {
 
 test('rejects unsupported signing algorithm before fetching certificates', async () => {
   const ctx = await setup();
-  const token = await tokenFor(ctx.privateKey, {}, 'unit-test-key', 'HS256');
+  const header = btoa(JSON.stringify({ alg: 'HS256', kid: 'unit-test-key' }))
+    .replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');
+  const token = header + '.e30.signature';
   const result = await verify(token, ctx);
   assert.equal(result.code, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
+});
+
+test('denies a token with a tampered signature', async () => {
+  const ctx = await setup();
+  const valid = await tokenFor(ctx.privateKey);
+  const parts = valid.split('.');
+  parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
+  const result = await verify(parts.join('.'), ctx);
+  assert.equal(result.ok, false);
+});
+
+test('denies a token issued in the future', async () => {
+  const ctx = await setup();
+  const result = await verify(await tokenFor(ctx.privateKey, { iat: seconds + 60 }), ctx);
+  assert.equal(result.ok, false);
 });
