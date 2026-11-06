@@ -431,7 +431,7 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
 }
 
 export async function handleHqProjects({ request, env, segments }) {
-  const auth = await authorizeHqOwner(request);
+  const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
   return handleAuthorizedHqProjects({ request, env, segments, identity: auth.identity });
 }
