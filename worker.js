@@ -87,7 +87,7 @@ export default {
 
     // 4. Private Studio HQ project endpoints.
     if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
-      const segments = pathname.replace(/\\/$/, '').split('/').slice(4);
+      const segments = pathname.replace(/\/$/, '').split('/').slice(4);
       const response = await handleHqProjects({ request, env, segments });
       return addSecurityHeaders(response);
     }
