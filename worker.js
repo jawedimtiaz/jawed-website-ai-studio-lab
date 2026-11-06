@@ -1,5 +1,6 @@
 import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
 import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
+import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -64,7 +65,18 @@ export default {
       return Response.redirect(destination.toString(), 301);
     }
 
-    // 2. Handle /api/ai endpoints
+    // 2. Private Studio HQ session endpoint. No public CORS and no cacheable response.
+    if (pathname === '/api/hq/session' || pathname === '/api/hq/session/') {
+      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
+      if (request.method === 'OPTIONS') return await hqSessionOptions(context);
+      if (request.method === 'POST') return await hqSessionPost(context);
+      return new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
+        status: 405,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      });
+    }
+
+    // 3. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -82,7 +94,7 @@ export default {
       });
     }
 
-    // 3. Handle /api/contact endpoints
+    // 4. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -100,7 +112,7 @@ export default {
       });
     }
 
-    // 4. Handle /api/contact/log endpoint
+    // 5. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
@@ -140,7 +152,7 @@ export default {
       });
     }
 
-    // 5. Reject other /api/* with standard 404 JSON
+    // 6. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
@@ -148,7 +160,7 @@ export default {
       });
     }
 
-    // 5. Serve static assets via Cloudflare Workers Assets binding if present
+    // 7. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);

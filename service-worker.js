@@ -51,8 +51,10 @@ self.addEventListener('message', (event) => {
 const isDynamicRequest = (request) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return true;
-  if (request.method !== 'GET') return true;
-  if (url.pathname.startsWith('/api/')) return true;
+  // Never cache the private Studio HQ shell or any API response.
+  if (url.pathname === '/studio-hq' || url.pathname.startsWith('/studio-hq/')) return true;
+  if (url.pathname.startsWith("/api/")) return true;
+  if (request.method!=="GET") return true;
   return false;
 };
 
@@ -65,14 +67,14 @@ const networkFirstNavigation = async (request) => {
     }
     return networkResponse;
   } catch (error) {
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) return cachedResponse;
+    const cached=await caches.match(request);
+    if (cached) return cached;
 
-    const homeFallback = await caches.match('/');
-    if (homeFallback) return homeFallback;
+    const home=await caches.match("/");
+    if (home) return home;
 
-    const offlineFallback = await caches.match('/offline.html');
-    if (offlineFallback) return offlineFallback;
+    const offline=await caches.match("/offline.html");
+    if (offline) return offline;
 
     return Response.error();
   }
@@ -101,7 +103,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // For HTML navigation requests, use network-first with offline fallback
-  if (request.mode === 'navigate') {
+  if (request.mode==="navigate") {
     event.respondWith(networkFirstNavigation(request));
     return;
   }
