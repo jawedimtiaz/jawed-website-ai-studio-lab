@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authorizeHqOwner, ownerUpsertStatement } from '../functions/lib/hqApi.js';
+import { authorizeHqOwner, ownerAuthorizationGuardStatement } from '../functions/lib/hqApi.js';
 
 function makeRequest() {
   return new Request('https://lab.jawed.co.in/api/hq/session', {
@@ -82,7 +82,7 @@ test('fails closed when the D1 owner lookup throws', async () => {
   assert.equal(result.response.status, 503);
 });
 
-test('owner last-seen statement cannot insert or reactivate an owner', () => {
+test('transaction guard rejects missing, mismatched, or disabled owners inside D1 batches', () => {
   let capturedSql = '';
   let capturedValues = [];
   const db = {
@@ -91,7 +91,7 @@ test('owner last-seen statement cannot insert or reactivate an owner', () => {
       return { bind(...values) { capturedValues = values; return { sql, values }; } };
     }
   };
-  ownerUpsertStatement(db, { uid: 'firebase-owner-uid', email: 'jawedimtiaz@gmail.com' });
+  ownerAuthorizationGuardStatement(db, { uid: 'firebase-owner-uid', email: 'jawedimtiaz@gmail.com' });
   assert.match(capturedSql, /^UPDATE hq_users/i);
   assert.doesNotMatch(capturedSql, /INSERT|SET\s+status/i);
   assert.match(capturedSql, /WHERE uid = \? AND lower\(email\) = \? AND status = 'active'/i);
