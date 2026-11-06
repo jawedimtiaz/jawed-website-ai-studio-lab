@@ -81,7 +81,8 @@ async function listClients(request, db) {
   const offset = Number.isFinite(offsetRaw) ? Math.min(10000, Math.max(0, offsetRaw)) : 0;
   const clauses = [];
   const params = [];
-  if (archivedOnly) clauses.push('archived_at IS NOT NULL');\n  else clauses.push('archived_at IS NULL');
+  if (archivedOnly) clauses.push('archived_at IS NOT NULL');
+  else clauses.push('archived_at IS NULL');
   if (status) { clauses.push('status = ?'); params.push(status); }
   const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
   const result = await db.prepare(`SELECT id, client_code, name, business_name, status, email, phone, website_url, source, created_at, updated_at, archived_at
