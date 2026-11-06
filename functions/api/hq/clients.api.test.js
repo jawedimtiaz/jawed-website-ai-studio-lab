@@ -30,7 +30,7 @@ class TestD1 {
     this.sqlite.exec('BEGIN');
     try {
       const results = statements.map(statement =>
-        /\bRETURNING\b/i.test(statement.sql) ? statement.all() : statement.run()
+        (/^\s*SELECT\b/i.test(statement.sql) || /\bRETURNING\b/i.test(statement.sql)) ? statement.all() : statement.run()
       );
       this.sqlite.exec('COMMIT');
       return results;
