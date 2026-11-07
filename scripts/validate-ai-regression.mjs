@@ -84,6 +84,7 @@ for(const [name,path,completion] of checks){
   }
 }
 
+// Exercise the actual allowlist behavior before checking its source contract.
 const originTest=execFileSync(process.execPath,["scripts/test-ai-origin-boundary.mjs"],{stdio:"pipe",encoding:"utf8",timeout:VALIDATOR_TIMEOUT_MS});
 assert.match(originTest,/AI origin boundary tests: PASS/);
 console.log("AI origin boundary behavior: PASS");
