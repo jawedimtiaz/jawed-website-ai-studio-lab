@@ -662,3 +662,36 @@ Created Issue #22: [SECURITY BLOCKER — Verify Firebase ID token signatures and
 ### Latest safe restart action
 
 Continue with the consolidated PR #20 gate remediation, beginning with the exact failing workflow logs (Deployment Runtime Reliability, Production AI GET/POST, Production Static Asset, Production Cache, AdSense Readiness and Security Supply Chain). Do not weaken validators. Separately keep PR #14–#18 draft/unmerged until the secure auth, schema, private route, PWA and supply-chain requirements are reviewed together. Do not merge or deploy without explicit approval.
+
+
+## 11. PR #20 failure-log diagnosis and deployment-contract findings — 2026-11-07
+
+Downloaded and inspected the actual GitHub Actions job logs for PR #20 head `a70798fd657d7ce5da12a28ae7b29ab5d511592b`. These findings supersede the shorter status-only summary above for that exact commit.
+
+### Exact failing diagnostics
+
+- Production AI GET workflow run #130: `/api/ai` returned HTTP 404, `text/html; charset=utf-8`, no `x-request-id`, and a non-JSON body.
+- Production AI POST workflow run #129: `/api/ai` returned HTTP 405 instead of expected HTTP 403, and the response was not JSON.
+- Production Cache workflow run #94: `/assets/css/style.css` and `/assets/js/main.js` returned 404 and did not carry the expected public cache policy; `/api/ai` returned 404.
+- Production Static Asset workflow run #96: `/assets/css/style.css`, `/assets/js/main.js`, and `/assets/js/analytics.js` returned 404 HTML rather than the expected asset content types.
+- AdSense Readiness workflow run #210: all listed privacy, inventory, activation, content, placement, technical, slot, mobile, consent, performance and final-readiness checks passed; the final pre-activation guard failed because `index.html` does not contain exactly one exact publisher association tag. This remains intentionally blocked pending explicit owner approval; do not restore the tag automatically.
+- Security Supply Chain workflow run #179: the validator flagged a credential-like literal in `firebase-applet-config.json` and an unexpected dependency manifest `package.json`.
+- Deployment Runtime workflow run #96: the deployment contract sets `no_package_manifest_required=true`, but `package.json` exists.
+
+### Deployment contract mismatch requiring architectural decision
+
+The current `config/deployment-runtime-contract.json` says Cloudflare Pages, build output directory `.`, no build command, and no package manifest. The current repository has a Vite/TypeScript/React `package.json` with a build command that outputs to `dist`. The production cache/static-asset contracts still probe legacy paths such as `/assets/css/style.css` and `/assets/js/main.js`, which are not the Vite hashed asset manifest contract. These are not safely fixed by merely changing expected status codes. Reconcile the actual production deployment owner, build configuration, output directory, and current deployed asset manifest before changing contracts or site files.
+
+### Security supply-chain policy mismatch
+
+- `package.json` is actively used by the React/Vite application and must not be deleted just to satisfy the old no-manifest rule.
+- There is no committed package lockfile in the current PR #20 branch inventory. A secure fix should explicitly adopt a pinned dependency policy, generate and commit the matching lockfile using the approved package manager, use reproducible installation (for example `npm ci`), and update the validator to enforce rather than prohibit the manifest/lockfile pair.
+- The Firebase web API key pattern is flagged by a generic `AIza...` scanner. Do not print, rotate or suppress the finding blindly. Review whether the key is a browser-visible Firebase client key, verify Google API key restrictions and Firebase authorized domains/security rules, and then implement a narrow documented scanner exception only if the review establishes that it is a public client identifier rather than a secret. Keep the value out of logs and documentation.
+
+### Safety and current decision
+
+No production site files, DNS, Cloudflare Pages settings, Worker routes, AdSense tags, Firebase credentials, package manifests or dependency lockfiles were modified during this diagnosis. The current production endpoint and asset 404s are treated as real deployment/runtime failures until the owner confirms the intended production deployment architecture. Do not change `jawed.co.in` without explicit approval.
+
+### Next bounded action
+
+Before changing PR #20 contracts, perform a read-only inventory of the current repository build/deployment configuration and the live production asset URLs. Then prepare a proposed deployment contract that accurately models the real Cloudflare Pages build output and current React/Vite assets. Keep production changes and AdSense publisher association as separate approval gates.
