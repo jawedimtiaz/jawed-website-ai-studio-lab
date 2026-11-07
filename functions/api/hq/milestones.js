@@ -50,6 +50,16 @@ export async function onRequestPost({ request, env }) {
   if (!title || !projectId) return errorResponse(400, 'INVALID_INPUT', 'Milestone title and project are required');
   if (!STATUSES.has(status)) return errorResponse(400, 'INVALID_STATUS', 'Unsupported milestone status');
 
+  try {
+    const project = await env.HQ_DB.prepare(
+      'SELECT id FROM projects WHERE id = ? AND archived_at IS NULL LIMIT 1'
+    ).bind(projectId).first();
+    if (!project) return errorResponse(404, 'PROJECT_NOT_FOUND', 'The selected project does not exist or is archived');
+  } catch (error) {
+    console.error('[HQ Milestone Project Check Error]', String(error?.message || error));
+    return errorResponse(503, 'DATABASE_UNAVAILABLE', 'Milestone project could not be validated');
+  }
+
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   try {
