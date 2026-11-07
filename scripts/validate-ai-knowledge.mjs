@@ -14,8 +14,27 @@ const allSitemapLocs=[...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match=>ma
 const sitemapPaths=allSitemapLocs.filter(url=>url.startsWith("https://jawed.co.in/")).map(url=>url.slice("https://jawed.co.in".length)||"/");
 const workflow=fs.readFileSync(".github/workflows/ai-regression.yml","utf8");
 const indexPaths=knowledge.entries.map(entry=>entry.url);
-const sourcePath=(url)=>url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
-const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!fs.existsSync(sourcePath(path)));
+const sourcePath=(url)=>url==="/"?"src/pages/HomePage.tsx":url.replace(/^\\/+|\\/+$/g,"")+"/index.html";
+const toolsDataPath="src/data/toolsData.ts";
+const toolDetailPath="src/pages/ToolDetailPage.tsx";
+const appRoutePath="src/App.tsx";
+const toolsData=fs.existsSync(toolsDataPath)?fs.readFileSync(toolsDataPath,"utf8"):"";
+const toolDetail=fs.existsSync(toolDetailPath)?fs.readFileSync(toolDetailPath,"utf8"):"";
+const appRoutes=fs.existsSync(appRoutePath)?fs.readFileSync(appRoutePath,"utf8"):"";
+function sourceFilesForPath(path){
+  const toolMatch=path.match(/^\\/tools\\/([a-z0-9-]+)\\/$/);
+  if(toolMatch){
+    const slug=toolMatch[1];
+    const slugRegistered=new RegExp("slug\\\\s*:\\\\s*['\\\"]"+slug+"['\\\"]").test(toolsData);
+    const componentRouted=toolDetail.includes("case '"+slug+"'")||toolDetail.includes('case "'+slug+'"');
+    const routeRegistered=appRoutes.includes('path="/tools/:slug"')||appRoutes.includes("path='/tools/:slug'");
+    return slugRegistered&&componentRouted&&routeRegistered?[toolsDataPath,toolDetailPath,appRoutePath]:[];
+  }
+  if(path==="/")return fs.existsSync("src/pages/HomePage.tsx")?["src/pages/HomePage.tsx"]:[];
+  const candidate=sourcePath(path);
+  return fs.existsSync(candidate)?[candidate]:[];
+}
+const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>sourceFilesForPath(path).length===0);
 const duplicates=indexPaths.filter((path,index)=>indexPaths.indexOf(path)!==index);
 const missing=sitemapPaths.filter(path=>!excluded.has(path)&&!indexPaths.includes(path));
 const unexpected=indexPaths.filter(path=>!sitemapPaths.includes(path));
@@ -61,7 +80,7 @@ assert.equal(kbGuide?.keywords.includes("incident sanitization")&&kbGuide?.keywo
 
 const reviewDate=knowledge.reviewed_against_sitemap_on;
 const reviewDateMs=typeof reviewDate==="string"&&!Number.isNaN(Date.parse(reviewDate+"T23:59:59Z"))?Date.parse(reviewDate+"T23:59:59Z"):NaN;
-const groundingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).map(sourcePath);
+const groundingSourceFiles=[...new Set(sitemapPaths.filter(path=>!excluded.has(path)).flatMap(sourceFilesForPath))].filter(file=>file!=="index.html");
 const sourceFreshnessErrors=[];
 const changedSourceFiles=Number.isNaN(reviewDateMs)?[]:groundingSourceFiles.filter(file=>{
   try{return Boolean(execFileSync("git",["log","--since="+reviewDate+"T23:59:59Z","--format=%H","--",file],{encoding:"utf8"}).trim());}
@@ -105,7 +124,7 @@ console.log("AI knowledge coverage OK");
 console.log("Sitemap URLs:",sitemapPaths.length);
 console.log("Excluded:",excluded.size);
 console.log("Grounding entries:",indexPaths.length);
-console.log("Sitemap source files verified:",sitemapPaths.filter(path=>!excluded.has(path)).length);
+console.log("Sitemap source files verified:",sitemapPaths.filter(path=>!excluded.has(path)).length);\nconsole.log("React tool routes verified against tool registry, renderer and router:",sitemapPaths.filter(path=>/^\\/tools\\/[a-z0-9-]+\\/$/.test(path)&&!excluded.has(path)).length);
 console.log("Reviewed against sitemap:",knowledge.reviewed_against_sitemap_on||"not recorded");
 console.log("Source freshness since review date: clean");
 console.log("Primary-query priority over contextual source text exercised: yes");
