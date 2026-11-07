@@ -1,0 +1,22 @@
+name = "jawed-studio-hq-preview"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[ai]
+binding = "AI"
+
+[vars]
+ENVIRONMENT = "preview"
+CANONICAL_ORIGIN = "https://jawed-studio-hq-preview.jawed-eee.workers.dev"
+
+[[d1_databases]]
+binding = "HQ_DB"
+database_name = "jawed-studio-hq-preview"
+database_id = "623a828d-2909-47e7-a228-130b4eeefef5"
+migrations_dir = "migrations/hq"
