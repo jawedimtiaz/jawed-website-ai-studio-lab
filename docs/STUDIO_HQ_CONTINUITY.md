@@ -753,3 +753,8 @@ No Cloudflare resource, production domain, DNS record, Worker route or Pages dep
 - No application PR was merged. No production website, Cloudflare Pages project, DNS, Worker route, D1 database, owner record, AdSense tag, or customer data was modified in this session.
 
 **Next exact task:** review Issue #23 and design the smallest isolated change that removes cross-repository `jawed.co.in` production probes from routine Studio Lab PR checks while retaining strict Lab runtime verification. Before implementing, obtain reliable runtime evidence for `https://lab.jawed.co.in` or use a safe isolated preview Worker test. Keep personal-site monitoring with the `jawed-website` repository. Then address the pinned dependency manifest/lockfile contract and AdSense approval gate separately.
+
+
+### PR #12 documentation-branch CI recheck — 2026-11-07
+
+Latest PR #12 head `6c894d37db8acee6d4e4e7dbd2114b3c8e40e87c` has one workflow run, Security Supply Chain Gate, which failed. The actual log repeats the existing repository-wide findings: `firebase-applet-config.json` matched the generic credential-like literal scanner, and `package.json` violates the old no-dependency-manifest contract. No new failure specific to `docs/STUDIO_HQ_CONTINUITY.md` was reported. PR #12 remains open and unmerged; its raw Pull Request API currently reports mergeable=true / mergeable_state=unstable on the latest read. No merge was attempted.
