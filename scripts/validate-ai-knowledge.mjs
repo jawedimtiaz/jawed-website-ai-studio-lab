@@ -28,7 +28,12 @@ function sourceFilesForPath(path){
     const slugRegistered=toolsData.includes("slug: '"+slug+"'")||toolsData.includes('slug: "'+slug+'"');
     const componentRouted=toolDetail.includes("case '"+slug+"'")||toolDetail.includes('case "'+slug+'"');
     const routeRegistered=appRoutes.includes('path="/tools/:slug"')||appRoutes.includes("path='/tools/:slug'");
-    return slugRegistered&&componentRouted&&routeRegistered?[toolsDataPath,toolDetailPath,appRoutePath]:[];
+    const componentSources={
+      "apple-macos-jamf-support-helper":"src/components/tools/AppleMacOsJamfSupportHelper.tsx",
+      "m365-workplace-sign-in-diagnostic":"src/components/tools/M365WorkplaceSignInDiagnostic.tsx"
+    };
+    const componentSource=componentSources[slug];
+    return slugRegistered&&componentRouted&&routeRegistered&&componentSource&&fs.existsSync(componentSource)?[toolsDataPath,toolDetailPath,appRoutePath,componentSource]:[];
   }
   if(path==="/")return fs.existsSync("src/pages/HomePage.tsx")?["src/pages/HomePage.tsx"]:[];
   const candidate=sourcePath(path);
