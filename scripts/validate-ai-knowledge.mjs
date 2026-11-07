@@ -28,8 +28,9 @@ function sourceFilesForPath(path){
     const slug=path.split("/")[2];
     if(!slug||path!=="/tools/"+slug+"/")return [];
     const slugRegistered=toolsData.includes("slug: '"+slug+"'")||toolsData.includes('slug: "'+slug+'"');
-    const caseLine=toolDetail.split(/\r?\n/).find(line=>line.includes("case '"+slug+"'")||line.includes('case "'+slug+'"'));
-    const componentName=caseLine?.match(/return\s*<([A-Za-z0-9_]+)\s*\/>/)?.[1];
+    const caseIndex=toolDetail.indexOf("case '"+slug+"':")>=0?toolDetail.indexOf("case '"+slug+"':"):toolDetail.indexOf('case "'+slug+'":');
+    const caseBlock=caseIndex>=0?toolDetail.slice(caseIndex,caseIndex+180):"";
+    const componentName=caseBlock.match(/return\s*<([A-Za-z0-9_]+)\s*\/>/)?.[1];
     const importLine=componentName?toolDetail.split(/\r?\n/).find(line=>line.startsWith("import {")&&line.includes(componentName)&&line.includes(" from ")):null;
     const importPath=importLine?.match(/from ['"]([^'"]+)['"]/)?.[1];
     const componentSource=importPath?pathNormalize(importPath):null;
