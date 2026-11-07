@@ -1,5 +1,11 @@
 import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
-import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
+import {
+  onRequestGet as contactGet,
+  onRequestPost as contactPost,
+  onRequestOptions as contactOptions,
+  onRequestLogGet as contactLogGet,
+  onRequestLogPost as contactLogPost
+} from './functions/api/contact.js';
 
 import { onRequestGet as hqSessionGet, onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
 import { onRequestGet as hqClientsGet, onRequestPost as hqClientsPost, onRequestPut as hqClientsPut, onRequestDelete as hqClientsDelete, onRequestOptions as hqClientsOptions } from './functions/api/hq/clients.js';
@@ -106,43 +112,21 @@ export default {
       }));
     }
 
-    // 4. Handle /api/contact/log endpoint
+    // 4. Handle privacy-minimized, D1-backed /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
+      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
-        return addSecurityHeaders(new Response(null, {
-          status: 204,
-          headers: {
-            'access-control-allow-origin': '*',
-            'access-control-allow-methods': 'POST, GET, OPTIONS',
-            'access-control-allow-headers': 'content-type'
-          }
-        }));
-      }
-      if (request.method === 'POST') {
-        let entry = {};
-        try {
-          entry = await request.json();
-        } catch {}
-        return addSecurityHeaders(new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'access-control-allow-origin': '*'
-          }
-        }));
+        return addSecurityHeaders(await contactOptions(context));
       }
       if (request.method === 'GET') {
-        return addSecurityHeaders(new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'access-control-allow-origin': '*'
-          }
-        }));
+        return addSecurityHeaders(await contactLogGet(context));
       }
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      if (request.method === 'POST') {
+        return addSecurityHeaders(await contactLogPost(context));
+      }
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' }), {
         status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
       }));
     }
 
