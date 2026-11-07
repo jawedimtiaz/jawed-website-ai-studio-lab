@@ -21,8 +21,8 @@
   "d1_databases": [
     {
       "binding": "HQ_DB",
-      "database_name": "jawed-studio-hq",
-      "database_id": "d9ec83ea-7114-4179-af8e-a22ba5494508",
+      "database_name": "jawed-studio-hq-preview",
+      "database_id": "623a828d-2909-47e7-a228-130b4eeefef5",
       "migrations_dir": "migrations/hq"
     }
   ]
