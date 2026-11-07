@@ -26,6 +26,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ defa
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const ItServicePage = lazy(() => import('./pages/ItServicePage').then((m) => ({ default: m.ItServicePage })));
 const HardwareDiagnosticPage = lazy(() => import('./pages/HardwareDiagnosticPage').then((m) => ({ default: m.HardwareDiagnosticPage })));
+const StudioHqPage = lazy(() => import('./pages/StudioHqPage').then((m) => ({ default: m.StudioHqPage })));
 
 import { AuthProvider } from './context/AuthContext';
 import { DocumentHead } from './components/common/DocumentHead';
@@ -74,20 +75,25 @@ const ScrollToTop: React.FC = () => {
   return null;
 };
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const location = useLocation();
+  const isStudioHq = location.pathname === '/studio-hq' || location.pathname.startsWith('/studio-hq/');
   return (
-    <BrowserRouter>
       <AuthProvider>
         <ScrollToTop />
         <DocumentHead />
         <ErrorBoundary>
           <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <Header />
+        {!isStudioHq && <Header />}
         
         <div style={{ flex: 1 }}>
           <RouteErrorBoundary>
             <Suspense fallback={<PageLoadingFallback />}>
               <Routes>
+                {/* Private Jawed Web Studio HQ */}
+                <Route path="/studio-hq" element={<StudioHqPage />} />
+                <Route path="/studio-hq/" element={<StudioHqPage />} />
+
                 {/* Home */}
                 <Route path="/" element={<HomePage />} />
 
@@ -168,12 +174,17 @@ export const App: React.FC = () => {
           </RouteErrorBoundary>
         </div>
 
-        <Footer />
-        <JawedAiWidget />
-        <PwaInstallPrompt />
+        {!isStudioHq && <Footer />}
+        {!isStudioHq && <JawedAiWidget />}
+        {!isStudioHq && <PwaInstallPrompt />}
       </div>
     </ErrorBoundary>
     </AuthProvider>
+  );
+};
+
+export const App: React.FC = () => (
+  <BrowserRouter>
+    <AppContent />
   </BrowserRouter>
 );
-};
