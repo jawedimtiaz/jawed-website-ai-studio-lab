@@ -52,6 +52,31 @@ Do not merge these out of order or retarget them casually. First inspect each PR
 
 CI status changes over time. Re-query GitHub checks before acting.
 
+
+## 2A. Follow-up PR reconciliation — 2026-11-07
+
+A second read-only GitHub inspection refreshed PR metadata, changed-file lists, dependency SHAs and workflow runs.
+
+### Mergeability and branch relationships
+
+- PR #2 (`feat/phase-1-contact-persistence` → `main`) is currently reported `mergeable=false`. Its head is `16fd87b555542a3e291659344734a0a0423e4f41`. Do not merge until the GitHub conflict is identified and resolved. Its changes include the contact API, root Wrangler D1 binding for `jawed-contact-submissions`, migration, preview config and privacy notice update. Its documentation says the contact preview Worker was not yet deployed; this is separate from Studio HQ.
+- PR #3 (`feat/studio-hq-firebase-auth` → `main`) is currently reported `mergeable=false`. Its head is `3992cff6bf6c544bd638384d66dd778319df35d0`. Do not merge until the GitHub conflict is identified and resolved. It adds the Studio HQ route/shell, Firebase token verification and session endpoint.
+- PR #4 base SHA exactly matches PR #3 head SHA. PR #5 is based on `feat/studio-hq-d1-schema`, but its recorded base SHA (`75be8365a14817ed298a1d05dbbbcd113ac4f3db`) does not equal PR #4's recorded head SHA (`1877a58c7ee90a2b59026b823772a6a9e9ab72dc`). Investigate branch advancement/history before assuming a perfectly linear stack.
+- PR #6 base SHA matches PR #5 head SHA; PR #7 base SHA matches PR #6 head SHA; PR #8 and #9 both branch from PR #7 head; PR #10 branches from PR #9 head; PR #11 branches from PR #10 head.
+- PRs #4–#11 were reported mergeable at this inspection, but that does not authorize merging or establish CI success.
+
+### Current workflow evidence for key commits
+
+- PR #2: contact API build/tests succeeded. AdSense readiness, deployment runtime, security supply chain and AI regression workflows failed.
+- PR #3: Studio HQ Firebase Auth Tests and PWA Reliability passed. Security supply chain, performance baseline, site integrity, AI regression, deployment runtime, AdSense readiness, production AI POST/GET, Core Web Vitals, HTML SEO and accessibility workflows failed.
+- PR #8: Studio HQ Firebase Auth Tests passed. Deployment runtime, AdSense readiness, production AI POST/GET, AI regression and security supply chain workflows failed.
+
+These are historical results for the exact head SHAs above. Refresh checks before any merge. A passing feature-specific test suite does not mean the overall Lab/production gates pass.
+
+### Safety interpretation
+
+No merge, rebase, branch rewrite, Cloudflare change or deployment was performed during this follow-up review. PR #2 and #3 are blocked for conflict resolution. The dependency stack must be reviewed before merging any child PR.
+
 ## 3. Studio HQ architecture and implemented foundations
 
 The intended product is an owner-operated business management workspace for Jawed Web Studio, not just a website dashboard.
