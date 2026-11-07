@@ -412,6 +412,32 @@ Latest GitHub metadata refresh confirms all PRs #12–#18 are open and mergeable
 
 All statuses apply to the exact head SHAs recorded in section 9. Refresh before merge or deployment decisions. The repository-wide failures must be fixed in bounded changes; focused feature test success does not make the overall project release-ready.
 
+
+## 3P. React-route, AdSense and AI reliability reconciliation — 2026-11-07
+
+### PR #19 — React tool route source validation
+- Branch: `fix/react-tool-route-readiness-validation`; draft PR #19 targets `main`.
+- Site Integrity Gate passed after validators recognized the two sitemap-backed React tool routes and the React-rendered primary navigation.
+- AdSense content-readiness checks passed for those React tool data/component sources.
+
+### PR #21 — offline retry exception
+- Branch: `fix/adsense-offline-retry-validator-scope`; draft PR #21 is stacked on PR #19.
+- The AdSense performance safeguard now excludes only the standalone non-monetized `offline.html` retry page from the page-reload assertion; all publisher pages and other assets remain scanned.
+- AdSense pre-activation guard still fails because the publisher association meta tag is absent on 11 eligible pages. This tag was previously removed and has not been restored. Do not reinsert it without explicit user approval.
+
+### PR #20 — AI origin and knowledge reliability
+- Branch: `fix/ai-knowledge-origin-boundary`; draft PR #20 targets `main`, latest head `a70798fd657d7ce5da12a28ae7b29ab5d511592b`, mergeable=true.
+- Restricts AI browser origins to Jawed-owned domains, the exact Jawed Pages project preview family, two known Jawed Workers.dev hosts, and localhost; arbitrary third-party Pages/Workers/Run.app origins are rejected.
+- Adds 19 origin-boundary test cases and preserves informational article ranking for broad overview questions while still surfacing the Jamf tool for troubleshooting intent.
+- Adds AI knowledge entries for both React-rendered tool routes and updates the runtime bundle.
+- Site Integrity Gate: PASS. AI Regression Gate: PASS. Production API Method Boundary Gate: PASS. Career Match Browser Runtime Gate: PASS.
+- AdSense content/final readiness validations pass, but the pre-activation publisher-tag guard remains blocked as noted above.
+- Deployment Runtime Reliability Gate still fails because the contract forbids package.json while the repository contains it. The semantic AI origin check now passes. Reproducible dependency/lockfile strategy must be reviewed; no lockfile was generated in this session.
+- Production AI GET/POST, cache and static-asset runtime gates still fail against the configured production origin: the live endpoint responds 404 HTML, not JSON, and lacks the expected request ID. The current Lab Worker configuration has canonical origin `https://lab.jawed.co.in`, while the production smoke contracts target `https://jawed.co.in`. This is a deployment/environment mismatch, not something to fix by changing production routing without approval.
+- Security Supply Chain Gate still fails on the Firebase client API key literal and package manifest policy. Verify Google API-key restrictions and establish a reproducible lockfile before changing the gate. Do not suppress the finding without evidence.
+
+PR #20 contains the site/AdSense validator corrections from PR #19/#21 as well as AI reliability changes, so these PRs overlap. Keep all three draft/unmerged until the owner selects the intended review/merge strategy.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
@@ -569,26 +595,31 @@ Keep a short `docs/DECISIONS.md` for architectural decisions and `docs/CHANGELOG
 
 ## 9. Current restart point
 
-**Do not create another CRM schema, do not enable the live HQ database, and do not merge the draft PR stack automatically.**
+**Do not merge draft PRs automatically, do not restore the AdSense publisher tag, and do not deploy or alter jawed.co.in production routing without explicit approval.**
 
 ### Latest verified position — 2026-11-07
 
-- PR #12: continuity documentation, open and mergeable.
+- PR #12: continuity documentation, open/mergeable.
 - PR #13: contact persistence reconciliation, dedicated Contact API tests/lint/build passed; unrelated repository gates failed.
-- PR #14: Firebase signature verification, 13/13 auth tests and build passed at head c09224597136f01c1cf19747808eac1816196a88; draft/unmerged.
-- PR #15: D1/API schema reconciliation, 13/13 Firebase tests, 11/11 HQ authorization/schema tests, and build passed at head 880e54548b3f5ed41034e040b34c2ef4e8eadcc8; draft/unmerged and stacked on PR #14.
+- PR #14: Firebase signature verification, 13/13 auth tests and build passed; draft/unmerged.
+- PR #15: HQ API/D1 schema reconciliation, 13/13 Firebase tests, 11/11 HQ authorization/schema tests, and build passed; draft/unmerged and stacked on PR #14.
 - PR #16: private Studio HQ service-worker cache bypass, 3/3 behavioral tests passed; draft/unmerged.
 - PR #17: PWA validator semantic correction; PWA Reliability Gate passed; draft/unmerged and stacked on PR #16.
 - PR #18: private Studio HQ UI, private route/cache/noindex tests passed, PWA Reliability Gate passed, TypeScript/production build passed; draft/unmerged and stacked on PR #15.
-- PR #2 and PR #3 remain genuinely conflicted and must not be merged wholesale.
+- PR #19: React tool route source and React navigation validation; Site Integrity Gate passed; draft/unmerged.
+- PR #20: AI origin/knowledge reliability plus integrated PR #19/#21 validator changes; Site Integrity, AI Regression, API Method Boundary and Career Match Browser Runtime gates passed. Production deployment/runtime, AdSense preactivation and supply-chain blockers remain.
+- PR #21: offline retry AdSense validator scope correction; draft/unmerged and stacked on PR #19.
+- PR #2 and PR #3 remain genuinely conflicted; do not merge wholesale.
 - Live Lab Worker has no HQ_DB binding.
 - Live HQ D1 jawed-studio-hq has the expected 18-table business schema but zero hq_users owner rows.
 - HQ preview D1 exists and remains empty; the preview Worker does not exist.
-- Current main still has the old claim-only Firebase verifier and mismatched HQ API/schema code. The security/schema fixes exist only on draft branches.
-- No GitHub PR has been merged and no Cloudflare configuration, D1 data, Worker deployment, owner enrollment, or production route has been changed.
+- No PR has been merged and no Cloudflare configuration, D1 data, Worker deployment, owner enrollment, or production route has been changed.
+- The live production AI API smoke check against jawed.co.in currently returns 404 HTML. The Lab Worker has canonical origin lab.jawed.co.in. Resolve the environment/deployment ownership question before attempting production changes.
+- AdSense publisher association tag remains absent; its preactivation gate is intentionally blocked pending user approval.
+- Security supply-chain gate remains blocked by Firebase public client key review and the missing dependency lockfile/package manifest policy mismatch.
 
 ### Next safe action
 
-Refresh the current PR #13–#18 head SHAs and CI results, then review the PR stack and repository-wide gate failures. Do not create/deploy the preview Worker, bind HQ_DB, or seed the first owner until the user explicitly approves that next major phase.
+Refresh PR #12–#21 head SHAs and CI results, then decide the review/merge strategy for overlapping PR #19–#21. Continue fixing code-only validation defects. Do not create/deploy the HQ preview Worker, bind HQ_DB, seed the first owner, restore the AdSense publisher tag, or deploy to jawed.co.in until the user explicitly approves those major steps.
 
 **New-chat restart instruction:** Read this file from branch docs/studio-hq-continuity-baseline first. Then inspect GitHub and Cloudflare live state at the latest SHAs before changing anything. Treat this document as the handover baseline, not as proof that a deployment or merge occurred.
