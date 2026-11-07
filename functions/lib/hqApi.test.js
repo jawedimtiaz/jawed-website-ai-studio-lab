@@ -60,7 +60,7 @@ test('rejects a declared oversized body without reading its stream', async () =>
       controller.enqueue(new TextEncoder().encode('{}'));
       controller.close();
     }
-  });
+  }, { highWaterMark: 0 });
   const request = new Request('https://lab.jawed.co.in/api/hq/clients', {
     method: 'POST',
     headers: { 'content-length': '100' },
@@ -102,4 +102,56 @@ test('returns a controlled error when the request stream fails', async () => {
   assert.equal(result.ok, false);
   assert.equal(result.response.status, 400);
   assert.equal((await result.response.json()).error, 'REQUEST_BODY_UNREADABLE');
+});
+
+test('returns a controlled error when request body stream is locked', async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{}'));
+      controller.close();
+    }
+  });
+  const request = new Request('https://lab.jawed.co.in/api/hq/clients', {
+    method: 'POST',
+    body,
+    duplex: 'half'
+  });
+  const reader = request.body.getReader();
+  try {
+    const result = await readHqJson(request);
+    assert.equal(result.ok, false);
+    assert.equal(result.response.status, 400);
+    assert.equal((await result.response.json()).error, 'REQUEST_BODY_UNREADABLE');
+  } finally {
+    reader.releaseLock();
+  }
+});
+
+test('returns 413 even when stream cancel rejects during oversized body handling', async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(20));
+    },
+    cancel() {
+      throw new Error('cancel failure');
+    }
+  });
+  const request = new Request('https://lab.jawed.co.in/api/hq/clients', {
+    method: 'POST',
+    body,
+    duplex: 'half'
+  });
+  const result = await readHqJson(request, 10);
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 413);
+  assert.equal((await result.response.json()).error, 'PAYLOAD_TOO_LARGE');
+});
+
+test('rejects primitive JSON values like null, numbers, booleans, and strings', async () => {
+  for (const primitive of ['null', '123', 'true', '"hello"']) {
+    const res = await readHqJson(requestFromChunks([new TextEncoder().encode(primitive)]));
+    assert.equal(res.ok, false);
+    assert.equal(res.response.status, 400);
+    assert.equal((await res.response.json()).error, 'INVALID_JSON');
+  }
 });

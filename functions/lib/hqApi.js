@@ -68,23 +68,24 @@ export async function readHqJson(request, maxBytes = 16384) {
   const chunks = [];
   let totalBytes = 0;
   if (request.body) {
-    const reader = request.body.getReader();
+    let reader;
     try {
+      reader = request.body.getReader();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         totalBytes += value.byteLength;
         if (totalBytes > maxBytes) {
-          await reader.cancel();
+          try { await reader.cancel(); } catch {}
           return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
         }
         chunks.push(value);
       }
     } catch {
-      try { await reader.cancel(); } catch {}
+      try { await reader?.cancel(); } catch {}
       return { ok: false, response: hqJson({ ok: false, error: 'REQUEST_BODY_UNREADABLE' }, 400) };
     } finally {
-      reader.releaseLock();
+      try { reader?.releaseLock(); } catch {}
     }
   }
 
