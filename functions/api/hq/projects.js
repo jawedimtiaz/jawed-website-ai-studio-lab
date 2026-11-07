@@ -1,27 +1,43 @@
-// functions/api/hq/projects.js
-// Studio HQ Projects API Endpoint
+// Studio HQ Projects API — aligned with the live projects schema.
 
-import { verifyAndAuthorizeOwner, jsonResponse, errorResponse } from '../../lib/hqApi.js';
+import { verifyAndAuthorizeOwner, jsonResponse, errorResponse, optionsResponse } from '../../lib/hqApi.js';
+
+const PROJECT_STATUSES = new Set(['lead', 'discovery', 'quoted', 'approved', 'in-progress', 'review', 'blocked', 'completed', 'on-hold', 'cancelled']);
+const PROJECT_TYPES = new Set(['business-website', 'portfolio', 'web-app', 'automation', 'ai-app', 'calculator-generator', 'maintenance', 'other']);
+const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+const text = (value, max = 1000) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+const normalizeStatus = (value) => value === 'planning' ? 'discovery' : value === 'active' ? 'in-progress' : value;
+const normalizePriority = (value) => value === 'medium' ? 'normal' : value;
+const amountMinor = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1000000000) return NaN;
+  return Math.round(amount * 100);
+};
 
 export async function onRequestGet({ request, env }) {
   const auth = await verifyAndAuthorizeOwner(request, env);
   if (!auth.authorized) return auth.response;
-
-  const db = env.HQ_DB;
+  const clientId = new URL(request.url).searchParams.get('clientId');
   try {
-    const projects = await db.prepare(`
-      SELECT id, client_id, title, description, status, budget, created_at, updated_at
-      FROM hq_projects
-      ORDER BY updated_at DESC
-    `).all();
-
-    return jsonResponse({
-      success: true,
-      projects: projects.results || [],
-      count: projects.results?.length || 0
-    });
-  } catch (err) {
-    console.error('[HQ Projects GET Error]', err);
+    const result = clientId
+      ? await env.HQ_DB.prepare(`
+          SELECT id, client_id, name AS title, summary AS description, status, priority,
+                 currency, quoted_amount_minor, created_at, updated_at
+          FROM projects WHERE archived_at IS NULL AND client_id = ? ORDER BY updated_at DESC
+        `).bind(clientId).all()
+      : await env.HQ_DB.prepare(`
+          SELECT id, client_id, name AS title, summary AS description, status, priority,
+                 currency, quoted_amount_minor, created_at, updated_at
+          FROM projects WHERE archived_at IS NULL ORDER BY updated_at DESC
+        `).all();
+    const rows = (result.results || []).map((row) => ({
+      ...row,
+      budget: row.quoted_amount_minor === null ? null : row.quoted_amount_minor / 100
+    }));
+    return jsonResponse({ success: true, projects: rows, count: rows.length });
+  } catch (error) {
+    console.error('[HQ Projects GET Error]', String(error?.message || error));
     return errorResponse(500, 'SERVER_ERROR', 'Failed to retrieve projects');
   }
 }
@@ -29,39 +45,45 @@ export async function onRequestGet({ request, env }) {
 export async function onRequestPost({ request, env }) {
   const auth = await verifyAndAuthorizeOwner(request, env);
   if (!auth.authorized) return auth.response;
-
-  const db = env.HQ_DB;
   let body;
-  try {
-    body = await request.json();
-  } catch {
+  try { body = await request.json(); } catch {
     return errorResponse(400, 'INVALID_JSON', 'Malformed JSON payload');
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return errorResponse(400, 'INVALID_INPUT', 'A project object is required');
 
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  if (!title) {
-    return errorResponse(400, 'INVALID_INPUT', 'Project title is required');
-  }
-
-  const id = body.id || crypto.randomUUID();
-  const clientId = body.client_id || body.clientId || null;
-  const description = typeof body.description === 'string' ? body.description.trim() : '';
-  const status = typeof body.status === 'string' ? body.status.trim() : 'planning';
-  const budget = typeof body.budget === 'number' ? body.budget : Number(body.budget) || 0;
-  const now = Date.now();
+  const title = text(body.title ?? body.name, 160);
+  const clientId = text(body.client_id ?? body.clientId, 100);
+  if (!title || !clientId) return errorResponse(400, 'INVALID_INPUT', 'Project name and client are required');
+  const status = normalizeStatus(text(body.status, 30) || 'discovery');
+  const priority = normalizePriority(text(body.priority, 20) || 'normal');
+  const projectType = text(body.project_type ?? body.projectType, 40) || 'business-website';
+  const budgetMinor = amountMinor(body.budget);
+  if (!PROJECT_STATUSES.has(status)) return errorResponse(400, 'INVALID_STATUS', 'Unsupported project status');
+  if (!PRIORITIES.has(priority)) return errorResponse(400, 'INVALID_PRIORITY', 'Unsupported project priority');
+  if (!PROJECT_TYPES.has(projectType)) return errorResponse(400, 'INVALID_PROJECT_TYPE', 'Unsupported project type');
+  if (Number.isNaN(budgetMinor)) return errorResponse(400, 'INVALID_AMOUNT', 'Budget must be a non-negative amount');
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
 
   try {
-    await db.prepare(`
-      INSERT INTO hq_projects (id, client_id, title, description, status, budget, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, clientId, title, description, status, budget, now, now).run();
-
+    await env.HQ_DB.prepare(`
+      INSERT INTO projects
+        (id, client_id, name, project_type, status, priority, summary, start_date, target_date,
+         currency, quoted_amount_minor, created_by, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?)
+    `).bind(
+      id, clientId, title, projectType, status, priority,
+      text(body.description ?? body.summary, 5000) || null,
+      text(body.start_date ?? body.startDate, 10) || null,
+      text(body.target_date ?? body.targetDate, 10) || null,
+      budgetMinor, auth.owner.uid, auth.owner.uid, now, now
+    ).run();
     return jsonResponse({
       success: true,
-      project: { id, clientId, title, description, status, budget, createdAt: now, updatedAt: now }
+      project: { id, client_id: clientId, title, status, priority, project_type: projectType, budget: budgetMinor === null ? null : budgetMinor / 100, created_at: now, updated_at: now }
     }, 201);
-  } catch (err) {
-    console.error('[HQ Projects POST Error]', err);
+  } catch (error) {
+    console.error('[HQ Projects POST Error]', String(error?.message || error));
     return errorResponse(500, 'SERVER_ERROR', 'Failed to create project');
   }
 }
@@ -69,43 +91,41 @@ export async function onRequestPost({ request, env }) {
 export async function onRequestPut({ request, env }) {
   const auth = await verifyAndAuthorizeOwner(request, env);
   if (!auth.authorized) return auth.response;
-
-  const db = env.HQ_DB;
   let body;
-  try {
-    body = await request.json();
-  } catch {
+  try { body = await request.json(); } catch {
     return errorResponse(400, 'INVALID_JSON', 'Malformed JSON payload');
   }
-
-  if (!body.id) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.id !== 'string') {
     return errorResponse(400, 'INVALID_INPUT', 'Project ID is required for updates');
   }
 
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  const clientId = body.client_id || body.clientId || null;
-  const description = typeof body.description === 'string' ? body.description.trim() : '';
-  const status = typeof body.status === 'string' ? body.status.trim() : 'planning';
-  const budget = typeof body.budget === 'number' ? body.budget : Number(body.budget) || 0;
-  const now = Date.now();
-
+  const title = text(body.title ?? body.name, 160);
+  const clientId = text(body.client_id ?? body.clientId, 100);
+  if (!title || !clientId) return errorResponse(400, 'INVALID_INPUT', 'Project name and client are required');
+  const status = normalizeStatus(text(body.status, 30) || 'discovery');
+  const priority = normalizePriority(text(body.priority, 20) || 'normal');
+  const projectType = text(body.project_type ?? body.projectType, 40) || 'business-website';
+  const budgetMinor = amountMinor(body.budget);
+  if (!PROJECT_STATUSES.has(status) || !PRIORITIES.has(priority) || !PROJECT_TYPES.has(projectType) || Number.isNaN(budgetMinor)) {
+    return errorResponse(400, 'INVALID_INPUT', 'Project fields contain an unsupported value');
+  }
+  const now = new Date().toISOString();
   try {
-    const result = await db.prepare(`
-      UPDATE hq_projects
-      SET client_id = ?, title = ?, description = ?, status = ?, budget = ?, updated_at = ?
-      WHERE id = ?
-    `).bind(clientId, title, description, status, budget, now, body.id).run();
-
-    if ((result?.meta?.changes ?? 0) === 0) {
-      return errorResponse(404, 'NOT_FOUND', 'Project record not found');
-    }
-
-    return jsonResponse({
-      success: true,
-      project: { id: body.id, clientId, title, description, status, budget, updatedAt: now }
-    });
-  } catch (err) {
-    console.error('[HQ Projects PUT Error]', err);
+    const result = await env.HQ_DB.prepare(`
+      UPDATE projects
+      SET client_id = ?, name = ?, project_type = ?, status = ?, priority = ?, summary = ?,
+          target_date = ?, quoted_amount_minor = ?, updated_by = ?, updated_at = ?
+      WHERE id = ? AND archived_at IS NULL
+    `).bind(
+      clientId, title, projectType, status, priority,
+      text(body.description ?? body.summary, 5000) || null,
+      text(body.target_date ?? body.targetDate, 10) || null,
+      budgetMinor, auth.owner.uid, now, body.id
+    ).run();
+    if ((result?.meta?.changes ?? 0) === 0) return errorResponse(404, 'NOT_FOUND', 'Project record not found');
+    return jsonResponse({ success: true, project: { id: body.id, client_id: clientId, title, status, priority, project_type: projectType, budget: budgetMinor === null ? null : budgetMinor / 100, updated_at: now } });
+  } catch (error) {
+    console.error('[HQ Projects PUT Error]', String(error?.message || error));
     return errorResponse(500, 'SERVER_ERROR', 'Failed to update project');
   }
 }
@@ -113,35 +133,22 @@ export async function onRequestPut({ request, env }) {
 export async function onRequestDelete({ request, env }) {
   const auth = await verifyAndAuthorizeOwner(request, env);
   if (!auth.authorized) return auth.response;
-
-  const url = new URL(request.url);
-  const id = url.searchParams.get('id');
-  if (!id) {
-    return errorResponse(400, 'INVALID_INPUT', 'Project ID search parameter is required');
-  }
-
-  const db = env.HQ_DB;
+  const id = new URL(request.url).searchParams.get('id');
+  if (!id) return errorResponse(400, 'INVALID_INPUT', 'Project ID is required');
+  const now = new Date().toISOString();
   try {
-    const result = await db.prepare(`DELETE FROM hq_projects WHERE id = ?`).bind(id).run();
-    if ((result?.meta?.changes ?? 0) === 0) {
-      return errorResponse(404, 'NOT_FOUND', 'Project record not found');
-    }
-
-    return jsonResponse({ success: true, deletedId: id });
-  } catch (err) {
-    console.error('[HQ Projects DELETE Error]', err);
-    return errorResponse(500, 'SERVER_ERROR', 'Failed to delete project');
+    const result = await env.HQ_DB.prepare(`
+      UPDATE projects SET archived_at = ?, archived_by = ?, updated_by = ?, updated_at = ?
+      WHERE id = ? AND archived_at IS NULL
+    `).bind(now, auth.owner.uid, auth.owner.uid, now, id).run();
+    if ((result?.meta?.changes ?? 0) === 0) return errorResponse(404, 'NOT_FOUND', 'Project record not found');
+    return jsonResponse({ success: true, archivedId: id });
+  } catch (error) {
+    console.error('[HQ Projects DELETE Error]', String(error?.message || error));
+    return errorResponse(500, 'SERVER_ERROR', 'Failed to archive project');
   }
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'access-control-allow-headers': 'content-type, authorization',
-      'access-control-max-age': '86400'
-    }
-  });
+export async function onRequestOptions({ request }) {
+  return optionsResponse(request, 'GET, POST, PUT, DELETE, OPTIONS');
 }
