@@ -358,6 +358,22 @@ When restoring the page, adapt it to the current session contract, preserve the 
 - Security Supply Chain Gate remains a separate baseline failure; this PR does not address or suppress it.
 - No deployment or Cloudflare change occurred.
 
+
+## 3L. Studio HQ private frontend route PR opened — 2026-11-07
+
+- Branch: `feat/studio-hq-private-ui`
+- Draft PR #18: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/18
+- Base: `fix/studio-hq-api-schema-contract` (PR #15 branch); stacked after PR #14/#15.
+- Latest head SHA: `1407c91959044520ab2639cbfe837e34d258e4d6`; GitHub reports mergeable=true.
+- Adds the missing `/studio-hq` React route and owner sign-in page using the existing Firebase singleton/provider.
+- Adapts the UI to the current API session response `{success, authenticated, owner}`; it no longer expects PR #3's stale `{ok, identity}` response.
+- Hides the public header, footer, AI widget and PWA install prompt on the HQ route.
+- Marks HQ route `noindex, nofollow, noarchive`, removes the public canonical and JSON-LD metadata while on the private route.
+- Includes private service-worker cache bypass and the semantic PWA validator correction, plus static/behavioral tests.
+- No HQ_DB binding, owner enrollment, Worker deployment or Cloudflare changes. The UI intentionally reports unavailable/un-enrolled until those gates are completed.
+
+At the last check, PR #18 workflows were still running: PWA Reliability Gate, Studio HQ Private Route Cache Tests, and Security Supply Chain Gate. Refresh the results; no build/test pass is claimed yet.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
