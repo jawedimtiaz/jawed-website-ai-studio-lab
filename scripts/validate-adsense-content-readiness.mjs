@@ -21,18 +21,24 @@ for(const routePath of publishedRoutes){
   if(fs.existsSync(sourcePath)){
     publishedContent=fs.readFileSync(sourcePath,"utf8");
   }else{
-    const toolMatch=routePath.match(/^\\/tools\\/([^/]+)\\/?$/);
-    assert.notEqual(toolMatch,null,"Published route has no HTML or React tool source: "+routePath);
-    const slug=toolMatch[1];
+    const prefix="/tools/";
+    assert.equal(routePath.startsWith(prefix),true,"Published route has no HTML or React tool source: "+routePath);
+    let slug=routePath.slice(prefix.length);
+    if(slug.endsWith("/"))slug=slug.slice(0,-1);
+    assert.equal(slug.length>0&&!slug.includes("/"),true,"Invalid React tool route: "+routePath);
     const toolsSource=fs.readFileSync("src/data/toolsData.ts","utf8");
     const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
     const start=toolsSource.indexOf(`slug: '${slug}'`);
     assert.notEqual(start,-1,"React tool data entry missing: "+slug);
-    const end=toolsSource.indexOf("\\n  },",start);
+    const end=toolsSource.indexOf("\n  },",start);
     publishedContent=end<0?toolsSource.slice(start):toolsSource.slice(start,end);
-    const componentMatch=toolDetailSource.match(new RegExp(`case ['"]${slug}['"]:\\s*return <([A-Za-z0-9_]+)\\s*\\/>`));
-    assert.notEqual(componentMatch,null,"React tool component mapping missing: "+slug);
-    assert.equal(toolDetailSource.includes(`import { ${componentMatch[1]} }`),true,"React tool component import missing: "+slug);
+    const mappingLine=toolDetailSource.split("\n").find(line=>line.includes(`case '${slug}':`));
+    assert.notEqual(mappingLine,undefined,"React tool component mapping missing: "+slug);
+    const componentStart=mappingLine.indexOf("return <");
+    const componentEnd=mappingLine.indexOf(" />",componentStart);
+    assert.ok(componentStart>=0&&componentEnd>componentStart,"React tool component mapping is invalid: "+slug);
+    const componentName=mappingLine.slice(componentStart+8,componentEnd).trim();
+    assert.equal(toolDetailSource.includes(`import { ${componentName} }`),true,"React tool component import missing: "+slug);
     for(const field of ["title:","purpose:","steps:","exampleOutput:","faq:"]){
       assert.equal(publishedContent.includes(field),true,"React tool content field missing ("+field+"): "+slug);
     }
