@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import fs from "node:fs";
 import {MAX_REQUESTS,WINDOW_MS} from "../functions/lib/ai-rate-limit.js";
+import {isAllowedOrigin} from "../functions/api/ai.js";
 import {createRequire} from "node:module";
 const require=createRequire(import.meta.url);
 const {MAX_REPLY_CHARS}=require("../functions/lib/ai-provider-common.js");
@@ -93,12 +94,31 @@ const rateLimit=fs.readFileSync("functions/lib/ai-rate-limit.js","utf8");
 const knowledgeSource=fs.readFileSync("functions/lib/ai-knowledge.js","utf8");
 const knowledgeDataSource=fs.readFileSync("functions/lib/ai-knowledge-data.js","utf8");
 
+const originBoundaryCases=[
+  ["https://jawed.co.in",true],
+  ["https://www.jawed.co.in",true],
+  ["https://lab.jawed.co.in",true],
+  ["http://localhost:3000",true],
+  ["http://127.0.0.1:8788",true],
+  ["https://preview.run.app",true],
+  ["https://preview.pages.dev",true],
+  ["https://preview.workers.dev",true],
+  ["https://jawed.co.in.evil.example",false],
+  ["https://eviljawed.co.in",false],
+  ["https://jawed.co.in@evil.example",false],
+  ["https://preview.workers.dev.evil.example",false],
+  ["not a URL",false]
+];
+for(const [origin,expected] of originBoundaryCases){
+  assert.equal(isAllowedOrigin(origin),expected,"Unexpected same-site origin decision for "+origin);
+}
+
 const contracts=[
   ["Cloudflare Worker-compatible AI knowledge loading",knowledgeSource.includes('import knowledge from "./ai-knowledge-data.js";')&&!knowledgeSource.includes('from "node:fs"')&&knowledgeDataSource.includes("export default knowledge")],
   ["server request-size boundary",/MAX_BODY_BYTES=\d+/.test(endpoint)],
   ["server message-count boundary",/MAX_MESSAGES=\d+/.test(endpoint)],
   ["server message-length boundary",/MAX_MESSAGE_CHARS=\d+/.test(endpoint)],
-  ["same-site origin boundary",endpoint.includes("https://jawed.co.in")],
+  ["same-site origin boundary",originBoundaryCases.every(([origin,expected])=>isAllowedOrigin(origin)===expected)],
   ["rate-limit boundary",rateLimit.includes("MAX_REQUESTS="+MAX_REQUESTS)&&rateLimit.includes("WINDOW_MS="+WINDOW_MS)],
   ["server-side Workers AI binding",endpoint.includes("env.AI")&&provider.includes("ai.run")],
   ["fixed free-tier model boundary",endpoint.includes("model:DEFAULT_MODEL")&&!endpoint.includes("AI_PROVIDER_MODEL")&&provider.includes("FREE_MODEL=DEFAULT_MODEL")],

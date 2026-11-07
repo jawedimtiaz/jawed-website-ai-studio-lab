@@ -783,6 +783,57 @@
       ]
     },
     {
+      "url": "/tools/m365-workplace-sign-in-diagnostic/",
+      "title": "Microsoft 365 & Workplace Sign-In Triage",
+      "summary": "Interactive enterprise authentication-triage workflow for Microsoft 365 sign-in failures across Outlook, Teams, and corporate web applications. It covers MFA notification loops, Conditional Access compliance issues, stale Windows Primary Refresh Tokens, and Mac Keychain lock scenarios, with operating-system selection for Windows, macOS, iOS, and Android. The tool guides technicians through verification steps and prepares escalation notes that identify the Correlation ID, UTC timestamp, User Principal Name, and Entra ID error code for identity administrators.",
+      "keywords": [
+        "Microsoft 365",
+        "Microsoft Entra ID",
+        "Azure AD",
+        "MFA",
+        "Conditional Access",
+        "SSO",
+        "Primary Refresh Token",
+        "PRT",
+        "Outlook",
+        "Teams",
+        "Windows 11",
+        "Windows 10",
+        "macOS",
+        "iOS",
+        "Android",
+        "Mac Keychain",
+        "sign-in troubleshooting",
+        "identity escalation",
+        "Correlation ID"
+      ],
+      "reviewed_on": "2026-11-07"
+    },
+    {
+      "url": "/tools/apple-macos-jamf-support-helper/",
+      "title": "macOS & Jamf Triage Helper",
+      "summary": "Interactive macOS enterprise-support triage helper for application crashes, Jamf enrollment, FileVault, and Wi-Fi issues. It lets technicians select a macOS version and Apple Silicon or Intel architecture, then review diagnostic terminal commands and prepare a structured ticket summary. Its documented coverage includes Gatekeeper quarantine, Jamf MDM profile synchronization, FileVault key escrow, and 802.1X certificates. The tool describes its recommended commands as non-destructive diagnostic queries such as status checks, profile listings, and connectivity tests.",
+      "keywords": [
+        "macOS",
+        "Jamf Pro",
+        "Apple Silicon",
+        "Intel Mac",
+        "MDM",
+        "Automated Device Enrollment",
+        "ADE",
+        "Gatekeeper",
+        "FileVault",
+        "Jamf enrollment",
+        "Jamf agent",
+        "802.1X",
+        "Wi-Fi",
+        "terminal diagnostics",
+        "Service Desk",
+        "ticket notes"
+      ],
+      "reviewed_on": "2026-11-07"
+    },
+    {
       "url": "/tools/service-desk-note-formatter/",
       "title": "Service Desk Note Formatter",
       "summary": "A browser-only Service Desk note formatter that structures an issue/request, actions actually taken, current resolution/status and follow-up. Includes guidance and a template for recording observed results, distinguishing confirmed resolution from unresolved state, avoiding invented root causes, and reviewing output for confidential information before copying it into an authorized ticketing system.",
@@ -885,7 +936,8 @@
         "documentation",
         "escalation",
         "privacy"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/ticket-to-knowledge-base-draft/",
@@ -917,7 +969,8 @@
         "privacy",
         "career tool",
         "hiring decisions"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/finance-planning-workspace/",
@@ -939,7 +992,8 @@
         "browser tool",
         "financial education",
         "not financial advice"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/resources/",

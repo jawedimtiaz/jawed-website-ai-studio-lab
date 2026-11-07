@@ -53,6 +53,8 @@ function scoreEntry(entry,queryCounts){
 }
 
 const MIN_PRIMARY_SOURCES=3;
+const TOOL_INTENT_QUERY=/\b(?:tool|helper|assistant|calculator|planner|generator|diagnostic|triage|formatter|workspace)\b/i;
+const DEFINITION_QUERY=/^\s*(?:what|who)\s+(?:is|are)\b/i;
 const MAX_KNOWLEDGE_RESULTS=10;
 const IDENTITY_QUERY=/\b(?:who(?:\s+is|\s+was)?|about)\s+(?:is\s+)?(?:jawed|jawed\s+imtiaz)\b/i;
 const CURRENT_WORK_QUERY=/\b(?:where|what)\b[\s\S]*\b(?:work(?:ing)?|job|employ(?:ed|er|ment)|company|client)\b/i;
@@ -83,7 +85,8 @@ export function findRelevantKnowledge(query,limit=5,options={}){
   const intentQuery=typeof safeOptions.primaryQuery==="string"&&safeOptions.primaryQuery.trim()?safeOptions.primaryQuery.trim():safeQuery;
   if(!safeQuery)return [];
   if(CONVERSATIONAL_CLOSING.test(intentQuery)||CONVERSATIONAL_GREETING.test(intentQuery))return [];
-  const ranked=rankedEntries(safeQuery);
+  const rankedForIntent=query=>rankedEntries(query).filter(entry=>!entry.url.startsWith("/tools/")||entry.url==="/tools/"||TOOL_INTENT_QUERY.test(intentQuery)||!DEFINITION_QUERY.test(intentQuery));
+  const ranked=rankedForIntent(safeQuery);
   if(!ranked.length)return [];
 
   const primaryQuery=typeof safeOptions.primaryQuery==="string"?safeOptions.primaryQuery.trim():"";
@@ -92,7 +95,7 @@ export function findRelevantKnowledge(query,limit=5,options={}){
     return ranked.filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title)).slice(0,safeLimit).map(({score,...entry})=>entry);
   }
 
-  const primary=rankedEntries(primaryQuery).filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title));
+  const primary=rankedForIntent(primaryQuery).filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title));
   const primaryTokens=tokens(primaryQuery);
   const vagueFollowUp=primaryTokens.length>0&&primaryTokens.every(token=>VAGUE_FOLLOW_UP_TERMS.has(token));
   const canUseContextForVagueFollowUp=vagueFollowUp&&primaryTokens.length<=3;
