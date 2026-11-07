@@ -1,0 +1,35 @@
+name: Studio HQ Private Route Cache Tests
+
+on:
+  pull_request:
+    paths:
+      - 'src/App.tsx'
+      - 'src/pages/StudioHqPage.tsx'
+      - 'src/components/common/DocumentHead.tsx'
+      - 'service-worker.js'
+      - 'scripts/test-hq-service-worker-cache.mjs'
+      - 'scripts/test-studio-hq-private-page.mjs'
+      - '.github/workflows/studio-hq-private-route-cache.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-route-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify private HQ routes bypass PWA cache
+        run: node scripts/test-hq-service-worker-cache.mjs
+      - name: Verify private HQ page contract
+        run: node scripts/test-studio-hq-private-page.mjs
+      - name: TypeScript lint and production build
+        run: npm run build

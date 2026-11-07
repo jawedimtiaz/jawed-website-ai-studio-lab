@@ -51,6 +51,8 @@ self.addEventListener('message', (event) => {
 const isDynamicRequest = (request) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return true;
+  // Studio HQ is private: never place its HTML shell in the shared PWA cache.
+  if (url.pathname === '/studio-hq' || url.pathname.startsWith('/studio-hq/')) return true;
   if (request.method !== 'GET') return true;
   if (url.pathname.startsWith('/api/')) return true;
   return false;
