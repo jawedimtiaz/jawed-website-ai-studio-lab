@@ -15,16 +15,21 @@ const sourcePaths=tree.filter(file=>file!=="404.html"&&file!=="offline.html"&&!f
 const toolsDataSource=fs.readFileSync("src/data/toolsData.ts","utf8");
 const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
 function hasReactToolSource(path){
-  const match=path.match(/^\\/tools\\/([^/]+)\\/?$/);
-  if(!match)return false;
-  const slug=match[1];
+  const prefix="/tools/";
+  if(!path.startsWith(prefix))return false;
+  let slug=path.slice(prefix.length);
+  if(slug.endsWith("/"))slug=slug.slice(0,-1);
+  if(!slug||slug.includes("/"))return false;
   const start=toolsDataSource.indexOf(`slug: '${slug}'`);
   if(start<0)return false;
-  const end=toolsDataSource.indexOf("\\n  },",start);
+  const end=toolsDataSource.indexOf("\n  },",start);
   const entry=end<0?toolsDataSource.slice(start):toolsDataSource.slice(start,end);
-  const componentMatch=toolDetailSource.match(new RegExp(`case ['"]${slug}['"]:\\s*return <([A-Za-z0-9_]+)\\s*\\/>`));
-  if(!componentMatch)return false;
-  const componentName=componentMatch[1];
+  const mappingLine=toolDetailSource.split("\n").find(line=>line.includes(`case '${slug}':`));
+  if(!mappingLine)return false;
+  const componentStart=mappingLine.indexOf("return <");
+  const componentEnd=mappingLine.indexOf(" />",componentStart);
+  if(componentStart<0||componentEnd<0)return false;
+  const componentName=mappingLine.slice(componentStart+8,componentEnd).trim();
   const imported=toolDetailSource.includes(`import { ${componentName} }`);
   const requiredFields=["title:","purpose:","steps:","exampleOutput:","faq:"];
   return imported && requiredFields.every(field=>entry.includes(field));
