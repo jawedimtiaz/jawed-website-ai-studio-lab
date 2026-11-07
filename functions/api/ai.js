@@ -16,7 +16,7 @@ const failure=(error,code,status,id,extra={})=>{
   return json({error,code,request_id:id},status,{"x-request-id":id});
 };
 
-function isAllowedOrigin(origin){
+export function isAllowedOrigin(origin){
   if(!origin)return true;
   try{
     const url=new URL(origin);
