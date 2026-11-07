@@ -3,13 +3,6 @@ concurrency:
   group: production-api-method-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-api-method-contract.json"
-      - "scripts/validate-production-api-method.mjs"
-      - ".github/workflows/production-api-method-boundary.yml"
-      - "functions/api/ai.js"
-      - "_routes.json"
   push:
     branches:
       - main
