@@ -346,6 +346,18 @@ The earlier PR #3 `StudioHqPage.tsx` is not safe to copy unchanged:
 
 When restoring the page, adapt it to the current session contract, preserve the existing Firebase singleton, do not expand the owner allowlist without approval, and keep the public header/footer/AI widget/PWA prompt hidden on the private route. Do not expose the route until the authentication, D1 schema, explicit owner enrollment and cache-bypass gates are satisfied.
 
+
+## 3K. PWA validator semantic correction PR opened and verified — 2026-11-07
+
+- Branch: `fix/pwa-validator-semantic-contract`
+- Draft PR #17: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/17
+- Base: `fix/studio-hq-private-route-cache-bypass` (PR #16 branch); intentionally stacked.
+- Head SHA: `5c53707d409b4f812d1476e7d8052ae58b40eff7`; GitHub reports mergeable=true.
+- Replaces brittle exact-string checks in `scripts/validate-pwa.mjs` with whitespace/quote-tolerant regular expressions. Required manifest, icons, service-worker lifecycle, dynamic request exclusions, navigation/offline fallback, registration and manifest-link contracts remain enforced.
+- PWA Reliability Gate run `42392014339`: **SUCCESS**. Its PWA validation step completed successfully against PR #16's private HQ cache bypass and current PWA assets.
+- Security Supply Chain Gate remains a separate baseline failure; this PR does not address or suppress it.
+- No deployment or Cloudflare change occurred.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
