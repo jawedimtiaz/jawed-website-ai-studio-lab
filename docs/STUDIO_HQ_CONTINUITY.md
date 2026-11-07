@@ -495,31 +495,44 @@ Do not assume any of these are implemented merely because related database table
 
 ## 7. Immediate next actions — execute in order
 
-### HQ-0: Reconcile the stacked PR chain (read-only first)
-1. Refresh PR #2–#11 metadata, base/head SHAs, mergeability, changed-file lists, review comments and all current CI checks.
-2. Review PR #3–#11 diffs in dependency order. Confirm that PR #8 and #9 are intended to be parallel additions to PR #7's branch and identify conflicts/overlap.
-3. Determine the safest merge sequence. Do not merge automatically.
-4. Re-run relevant local tests/builds after obtaining the exact current branch state.
+### HQ-0: Reconcile existing PRs and CI (read-only; no merges)
+1. Refresh PR #2–#3 conflict status and the current CI results for PR #13–#18.
+2. Review the stacked order: PR #14 (Firebase signature verification) → PR #15 (D1/API schema contract) → PR #18 (private UI), with PR #16/#17 carrying the cache/validator safeguards. PR #13 is the separate contact persistence reconciliation branch. PR #12 is the continuity documentation PR.
+3. Keep all PRs draft/unmerged until the user approves the merge phase. Do not merge the stale conflicted PR #2/#3 wholesale.
+4. Fix repository-wide CI defects in bounded PRs: AdSense content validator missing source file; site-integrity missing two sitemap source pages/navigation parity; supply-chain credential review and dependency-manifest allowlist; deployment runtime origin/manifest checks. Do not weaken validators.
+5. Verify PR #13 and #14–#18 checks again at their latest head SHAs; prior passes only apply to the exact recorded commits.
 
-### HQ-1: Complete isolated preview environment
-1. Confirm the intended preview Worker name and entrypoint from PR #9 and Wrangler configuration.
-2. Create/configure the preview Worker only after reviewing PR #9 and verifying it does not route customer or production traffic.
-3. Apply the HQ schema migration to the preview D1 database only after checking migration idempotency and the exact database ID.
-4. Bind preview Worker to preview D1 using `HQ_DB`; verify all required secrets/variables without printing secret values.
-5. Deploy preview and verify owner auth, CRM/project APIs, CORS/origin restrictions, bounded JSON behavior and fail-closed behavior.
-6. Keep production Lab Worker untouched until preview acceptance and explicit approval.
+### HQ-1: Complete secure HQ API/schema and frontend integration
+1. Finish PR #14 signature verification, PR #15 schema compatibility, and PR #18 private UI review.
+2. Add isolated preview D1 integration tests against jawed-studio-hq-preview; current tests are mocked/unit tests only.
+3. Confirm the actual Firebase owner UID through an authenticated owner sign-in; do not guess or seed a UID.
+4. Keep HQ_DB unbound until signature verification, schema integration, service-worker cache exclusion, noindex behavior, and preview integration tests pass.
+5. Obtain explicit approval before creating/deploying the isolated preview Worker, binding HQ_DB, or performing first-owner enrollment.
+6. Use synthetic test records only. Do not enter customer PII until authorization, privacy, retention and backup behavior are reviewed.
 
-### HQ-2: Complete customer acquisition and retention workflows
-1. Audit current frontend pages and API coverage against Section 5.
-2. Produce a gap matrix before implementing anything.
-3. Implement one bounded workflow at a time, with tests and preview QA.
+### HQ-2: Isolated preview deployment
+1. Reconfirm jawed-studio-hq-preview UUID 623a828d-2909-47e7-a228-130b4eeefef5 and the exact preview Wrangler config.
+2. Resolve the pinned Wrangler CLI version before any migration/deploy command.
+3. Obtain explicit approval for preview Worker creation/deployment and D1 binding.
+4. Verify owner auth, CRM/project/task/milestone APIs, audit events, origin checks, fail-closed behavior, PWA cache bypass and noindex headers in preview.
+5. Keep the live Lab Worker and live HQ D1 unchanged until preview acceptance and separate explicit production approval.
+
+### HQ-3: Customer lifecycle workflows
+1. Audit frontend pages and API coverage against Section 5.
+2. Produce a gap matrix before implementing additional features.
+3. Implement one bounded workflow at a time with tests and preview QA.
 4. Prioritize lead capture → follow-up → discovery → quotation → onboarding → delivery → maintenance/renewal.
 
-### HQ-3: Owner bootstrap and first real customer
-1. Confirm Firebase auth configuration and allowed owner identity.
-2. Verify first-owner bootstrap safely in preview only.
-3. Verify an owner can create/read/update a test client and project with audit events.
-4. Use synthetic test records only; do not enter real customer PII until privacy, authorization, retention and backup behavior are reviewed.
+### Contact persistence
+1. Continue PR #13 review; its dedicated Contact API build/tests passed, but other repository gates failed.
+2. Do not consider D1-backed contact storage live until the Lab Worker CONTACT_DB binding is deployed and verified.
+3. Preview contact Worker deployment remains a separate approval gate.
+
+### Other existing workstreams
+- Continue Kaushal customer QA only in its own repository/project and preserve the exact intended URL https://lab.jawed.co.in/kaushal.
+- Recheck the hardware diagnostic route and contact email integration before claiming end-to-end production reliability.
+- Preserve the existing Workers AI chatbot and Gemini vision architecture unless a reviewed change explicitly requires otherwise.
+- jawed.co.in remains a separate protected production property; no changes are authorized by this continuity report.
 
 ## 8. How to maintain this record
 
@@ -539,9 +552,26 @@ Keep a short `docs/DECISIONS.md` for architectural decisions and `docs/CHANGELOG
 
 ## 9. Current restart point
 
-**Do not start by creating another CRM schema or rebuilding Studio HQ.**
+**Do not create another CRM schema, do not enable the live HQ database, and do not merge the draft PR stack automatically.**
 
-Start with **HQ-0: read-only reconciliation of PR #2–#11**, then **HQ-1: isolated preview Worker + preview D1 migration/binding**. The main deployment is not yet proven to have the HQ database binding, and the preview database is currently empty. Only after the preview stack is verified should we continue with customer lifecycle feature work.
+### Latest verified position — 2026-11-07
 
-**Last verified state:** 2026-11-07 read-only GitHub and Cloudflare audit.  
-**No GitHub PR was merged and no Cloudflare configuration/database/deployment was changed as part of the audit or creation of this report.**
+- PR #12: continuity documentation, open and mergeable.
+- PR #13: contact persistence reconciliation, dedicated Contact API tests/lint/build passed; unrelated repository gates failed.
+- PR #14: Firebase signature verification, 13/13 auth tests and build passed at head c09224597136f01c1cf19747808eac1816196a88; draft/unmerged.
+- PR #15: D1/API schema reconciliation, 13/13 Firebase tests, 11/11 HQ authorization/schema tests, and build passed at head 880e54548b3f5ed41034e040b34c2ef4e8eadcc8; draft/unmerged and stacked on PR #14.
+- PR #16: private Studio HQ service-worker cache bypass, 3/3 behavioral tests passed; draft/unmerged.
+- PR #17: PWA validator semantic correction; PWA Reliability Gate passed; draft/unmerged and stacked on PR #16.
+- PR #18: private Studio HQ UI, private route/cache/noindex tests passed, PWA Reliability Gate passed, TypeScript/production build passed; draft/unmerged and stacked on PR #15.
+- PR #2 and PR #3 remain genuinely conflicted and must not be merged wholesale.
+- Live Lab Worker has no HQ_DB binding.
+- Live HQ D1 jawed-studio-hq has the expected 18-table business schema but zero hq_users owner rows.
+- HQ preview D1 exists and remains empty; the preview Worker does not exist.
+- Current main still has the old claim-only Firebase verifier and mismatched HQ API/schema code. The security/schema fixes exist only on draft branches.
+- No GitHub PR has been merged and no Cloudflare configuration, D1 data, Worker deployment, owner enrollment, or production route has been changed.
+
+### Next safe action
+
+Refresh the current PR #13–#18 head SHAs and CI results, then review the PR stack and repository-wide gate failures. Do not create/deploy the preview Worker, bind HQ_DB, or seed the first owner until the user explicitly approves that next major phase.
+
+**New-chat restart instruction:** Read this file from branch docs/studio-hq-continuity-baseline first. Then inspect GitHub and Cloudflare live state at the latest SHAs before changing anything. Treat this document as the handover baseline, not as proof that a deployment or merge occurred.
