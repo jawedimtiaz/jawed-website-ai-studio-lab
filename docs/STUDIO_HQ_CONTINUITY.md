@@ -95,6 +95,16 @@ A direct GitHub Pull Request API read confirms:
 
 This confirms actual merge conflicts, not merely branches being behind. The API response did not enumerate conflicting paths. Do not attempt automatic merge, rebase, or force-push. Identify exact conflict paths using a local checkout/merge simulation on a disposable local worktree or a separate scratch branch; preserve the existing feature branch commits. Reconcile each conflict, run its feature tests and affected repository gates, then update the PR branch through a reviewed commit.
 
+
+## 2D. Conflict-overlap triage — 2026-11-07 (read-only)
+
+Compared selected current `main` files with PR #2 and PR #3 branch versions. This is a text comparison, not a Git three-way merge, so it identifies likely overlap but does not prove the final conflict-file list.
+
+- PR #2 changes `worker.js` substantially and adds a `CONTACT_DB` binding to `wrangler.jsonc` and `wrangler.toml`. Current `main` has a newer Worker router with Studio HQ endpoints; the PR #2 branch contains the older router. `worker.js` is the primary likely conflict/reconciliation point. The root Wrangler changes also need review to ensure the contact DB binding is added without overwriting any current HQ settings.
+- PR #3 changes `worker.js` to add the HQ session route, `src/App.tsx` to add the HQ UI route, `service-worker.js` to exclude the private HQ route from caching, and `package.json` to add auth dependencies/scripts. Current `main` already has a newer Worker router with HQ session/clients/projects/tasks/milestones imports, while PR #3 contains an earlier router. `worker.js` is the primary likely conflict/reconciliation point; inspect `src/App.tsx` and `service-worker.js` carefully because both branch and main versions differ.
+- PR #2 and PR #3 both update `worker.js`; do not resolve them independently by replacing the whole file. Reconcile the final router with all existing AI, contact, HQ session, CRM, project, task and milestone routes, method handling and security headers.
+- No file was changed in the application branches during this analysis. Exact conflict paths still require a real three-way merge simulation using the merge base and both branch tips.
+
 ## 3. Studio HQ architecture and implemented foundations
 
 The intended product is an owner-operated business management workspace for Jawed Web Studio, not just a website dashboard.
