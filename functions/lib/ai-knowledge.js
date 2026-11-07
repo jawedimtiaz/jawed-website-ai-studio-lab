@@ -53,7 +53,8 @@ function scoreEntry(entry,queryCounts){
 }
 
 const MIN_PRIMARY_SOURCES=3;
-const TOOL_INTENT_QUERY=/\b(?:tool|helper|calculator|planner|generator|diagnostic|triage|formatter|workspace)\b/i;
+const TOOL_INTENT_QUERY=/\b(?:tool|helper|assistant|calculator|planner|generator|diagnostic|triage|formatter|workspace)\b/i;
+const DEFINITION_QUERY=/^\s*(?:what|who)\s+(?:is|are)\b/i;
 const MAX_KNOWLEDGE_RESULTS=10;
 const IDENTITY_QUERY=/\b(?:who(?:\s+is|\s+was)?|about)\s+(?:is\s+)?(?:jawed|jawed\s+imtiaz)\b/i;
 const CURRENT_WORK_QUERY=/\b(?:where|what)\b[\s\S]*\b(?:work(?:ing)?|job|employ(?:ed|er|ment)|company|client)\b/i;
@@ -84,7 +85,7 @@ export function findRelevantKnowledge(query,limit=5,options={}){
   const intentQuery=typeof safeOptions.primaryQuery==="string"&&safeOptions.primaryQuery.trim()?safeOptions.primaryQuery.trim():safeQuery;
   if(!safeQuery)return [];
   if(CONVERSATIONAL_CLOSING.test(intentQuery)||CONVERSATIONAL_GREETING.test(intentQuery))return [];
-  const rankedForIntent=query=>rankedEntries(query).filter(entry=>!entry.url.startsWith("/tools/")||entry.url==="/tools/"||TOOL_INTENT_QUERY.test(intentQuery));
+  const rankedForIntent=query=>rankedEntries(query).filter(entry=>!entry.url.startsWith("/tools/")||entry.url==="/tools/"||TOOL_INTENT_QUERY.test(intentQuery)||!DEFINITION_QUERY.test(intentQuery));
   const ranked=rankedForIntent(safeQuery);
   if(!ranked.length)return [];
 
