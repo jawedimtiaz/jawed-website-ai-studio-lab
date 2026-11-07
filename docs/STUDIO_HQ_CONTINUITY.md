@@ -253,6 +253,15 @@ A dedicated security branch and draft PR were created from current `main`:
 
 At the last workflow query, no workflow runs were yet returned for PR #14. Re-check GitHub Actions before marking the tests passed. PR #14 only addresses cryptographic token verification; the live HQ schema/API mismatch remains unresolved and blocks any HQ_DB binding/deployment.
 
+
+## 3D. PR #14 first CI attempt and correction — 2026-11-07
+
+- The first PR #14 auth workflow run `42391170511` executed all 13 unit tests: 12 passed, 1 failed.
+- The failing test was the backward-compatible `verifyFirebaseToken(idToken, env)` adapter test. The adapter called the real certificate-fetch path instead of receiving the deterministic test certificate/key fixture; this was a test injection issue, not a signature-verification bypass.
+- Corrected the adapter to accept an optional third test-options argument for injected fetch/certificate verifier/time dependencies while production callers continue using the original two-argument contract. Updated the adapter test accordingly.
+- Latest PR #14 head after the correction: `c09224597136f01c1cf19747808eac1816196a88`. GitHub reports mergeable=true. A new workflow run was not yet visible at the last query; refresh Actions and require a full pass before treating the auth fix as verified.
+- Other PR #14 baseline gates (AdSense, AI regression, supply chain, production AI GET/POST, deployment runtime) also failed; investigate their job logs separately. The existing repository-wide validator failures described in section 3B are not resolved by the auth patch.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
