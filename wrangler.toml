@@ -14,3 +14,8 @@ binding = "AI"
 [vars]
 ENVIRONMENT = "lab"
 CANONICAL_ORIGIN = "https://lab.jawed.co.in"
+[[d1_databases]]
+binding = "CONTACT_DB"
+database_name = "jawed-contact-submissions"
+database_id = "645619c4-264f-4ef2-b29f-8c500434aa8f"
+migrations_dir = "migrations"

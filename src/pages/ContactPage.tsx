@@ -1991,7 +1991,7 @@ export const ContactPage: React.FC = () => {
       <section className="content-section">
         <h2>Privacy Notice</h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-          Your submitted name, email, and message are used solely to reply to your inquiry. Form submissions are processed via email and do not directly store your data on the website server or in a database. Your details are never sold, shared with marketing networks, or used for unsolicited communication. Never submit passwords, credit card numbers, or internal credentials.
+          Your submitted name, email, phone number (if provided), inquiry reason, and message are securely stored in a restricted website database so the inquiry can be retained and managed, and are used to respond to your request. A notification email may also be sent to the site owner. Contact attempt logs contain limited technical metadata and do not include your message or contact details. Your information is not sold or used for unsolicited marketing. Never submit passwords, payment card numbers, or internal credentials.
         </p>
       </section>
     </main>

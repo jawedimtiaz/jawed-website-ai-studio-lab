@@ -1,8 +1,8 @@
-// Cloudflare Pages Function: /api/contact
-// Handles secure contact form submissions, validation, spam mitigation, and email notifications
+// Cloudflare Worker contact API.
+// A contact submission is acknowledged only after durable D1 persistence.
 
-const MAX_BODY_BYTES = 10000;
-const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const MAX_BODY_BYTES = 10_000;
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]{6,20}$/;
 
 const json = (body, status = 200, extraHeaders = {}) =>
@@ -16,40 +16,125 @@ const json = (body, status = 200, extraHeaders = {}) =>
     }
   });
 
-function sanitize(text) {
-  if (typeof text !== 'string') return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+function isAllowedOrigin(origin, env = {}) {
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) return false;
+    const host = url.hostname.toLowerCase();
+    const canonicalOrigin = typeof env?.CANONICAL_ORIGIN === 'string'
+      ? new URL(env.CANONICAL_ORIGIN).origin
+      : null;
+    return origin === canonicalOrigin ||
+      host === 'jawed.co.in' ||
+      host.endsWith('.jawed.co.in') ||
+      host === 'localhost' ||
+      host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('origin');
+  return origin && isAllowedOrigin(origin, env)
+    ? { 'access-control-allow-origin': origin, 'vary': 'Origin' }
+    : {};
+}
+
+async function readBoundedText(request, maxBytes) {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error('PAYLOAD_TOO_LARGE');
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return '';
+  const chunks = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error('PAYLOAD_TOO_LARGE');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(merged);
+}
+
+function cleanText(value, maxLength) {
+  return typeof value === 'string'
+    ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, maxLength)
+    : '';
+}
+
+function validateSubmission(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { error: 'Invalid request payload.', status: 400 };
+  }
+
+  if (data.website || data.bot_check || data.company_hp) {
+    return { honeypot: true };
+  }
+
+  const name = cleanText(data.name, 100);
+  const email = cleanText(data.email, 150).toLowerCase();
+  const phone = cleanText(data.phone, 30);
+  const reason = cleanText(data.reason, 100);
+  const message = cleanText(data.message, 3000);
+
+  if (name.length < 2) return { error: 'Name must be between 2 and 100 characters.', field: 'name', status: 400 };
+  if (!EMAIL_REGEX.test(email)) return { error: 'Please provide a valid email address.', field: 'email', status: 400 };
+  if (phone && !PHONE_REGEX.test(phone)) return { error: 'Please provide a valid phone number (or leave blank).', field: 'phone', status: 400 };
+  if (reason.length < 2) return { error: 'Please select a reason for your inquiry.', field: 'reason', status: 400 };
+  if (message.length < 10) return { error: 'Message must be between 10 and 3,000 characters.', field: 'message', status: 400 };
+
+  return { submission: { name, email, phone, reason, message } };
 }
 
 async function sendNotificationEmail({ env, submission }) {
+  if (env?.DISABLE_CONTACT_EMAIL === 'true') {
+    return { sent: false, provider: 'disabled', skipped: true };
+  }
   const recipientEmail = env?.NOTIFICATION_EMAIL || 'jawedimtiaz@gmail.com';
   const senderEmail = env?.SENDER_EMAIL || 'no-reply@jawed.co.in';
 
-  const subject = `[Jawed.co.in Contact] ${submission.reason} from ${submission.name}`;
+  const safeReason = submission.reason.replace(/[\r\n]/g, ' ');
+  const safeName = submission.name.replace(/[\r\n]/g, ' ');
+  const subject = `[Jawed.co.in Contact] ${safeReason} from ${safeName}`;
   const textContent = [
-    `New contact enquiry received via Jawed.co.in`,
-    `--------------------------------------------------`,
+    'New contact enquiry received via Jawed.co.in',
+    '--------------------------------------------------',
     `Name:    ${submission.name}`,
     `Email:   ${submission.email}`,
     `Phone:   ${submission.phone || 'Not provided'}`,
     `Reason:  ${submission.reason}`,
     `Date:    ${submission.timestamp}`,
     `ID:      ${submission.id}`,
-    ``,
-    `Message:`,
-    `${submission.message}`,
-    `--------------------------------------------------`
+    '',
+    'Message:',
+    submission.message,
+    '--------------------------------------------------'
   ].join('\n');
 
-  // 1. If Resend API Key is configured in environment
-  if (env?.RESEND_API_KEY) {
+  if (env.RESEND_API_KEY) {
     try {
-      await fetch('https://api.resend.com/emails', {
+      const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -63,167 +148,190 @@ async function sendNotificationEmail({ env, submission }) {
           text: textContent
         })
       });
-      return { sent: true, provider: 'resend' };
-    } catch (err) {
-      console.error('Resend delivery failed:', err);
+      if (response.ok) return { sent: true, provider: 'resend' };
+      console.warn('Contact email provider returned a non-success status.', { provider: 'resend', status: response.status });
+    } catch {
+      console.warn('Contact email provider request failed.', { provider: 'resend' });
     }
   }
 
-  // 2. Cloudflare MailChannels (standard Cloudflare Workers/Pages free email relay)
   try {
-    const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
+    const response = await fetch('https://api.mailchannels.net/tx/v1/send', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: recipientEmail, name: 'Jawed Imtiaz' }]
-          }
-        ],
-        from: {
-          email: senderEmail,
-          name: 'Jawed.co.in Notifications'
-        },
-        reply_to: {
-          email: submission.email,
-          name: submission.name
-        },
+        personalizations: [{ to: [{ email: recipientEmail }] }],
+        from: { email: senderEmail, name: 'Jawed.co.in Notifications' },
+        reply_to: { email: submission.email, name: submission.name },
         subject,
-        content: [
-          {
-            type: 'text/plain',
-            value: textContent
-          }
-        ]
+        content: [{ type: 'text/plain', value: textContent }]
       })
     });
-    return { sent: res.ok, provider: 'mailchannels', status: res.status };
-  } catch (err) {
-    console.warn('MailChannels delivery attempt finished:', err?.message);
-    return { sent: false, provider: 'mailchannels', error: err?.message };
+    if (response.ok) return { sent: true, provider: 'mailchannels' };
+    console.warn('Contact email provider returned a non-success status.', { provider: 'mailchannels', status: response.status });
+    return { sent: false, provider: 'mailchannels', error: 'EMAIL_PROVIDER_REJECTED' };
+  } catch {
+    console.warn('Contact email provider request failed.', { provider: 'mailchannels' });
+    return { sent: false, provider: 'mailchannels', error: 'EMAIL_PROVIDER_UNAVAILABLE' };
   }
 }
 
 export async function onRequestPost({ request, env }) {
-  const id = crypto.randomUUID();
+  const cors = corsHeaders(request, env);
+  const origin = request.headers.get('origin');
+  if (!isAllowedOrigin(origin, env)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
 
-  // Validate Content-Type
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    return json({ error: 'Expected application/json', code: 'INVALID_CONTENT_TYPE' }, 415);
-  }
-
-  // Validate Body size
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
-    return json({ error: 'Request too large', code: 'PAYLOAD_TOO_LARGE' }, 413);
+  if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
+    return json({ error: 'Expected application/json.', code: 'INVALID_CONTENT_TYPE' }, 415, cors);
   }
 
   let data;
   try {
-    data = JSON.parse(raw);
-  } catch {
-    return json({ error: 'Malformed JSON payload', code: 'INVALID_JSON' }, 400);
+    data = JSON.parse(await readBoundedText(request, MAX_BODY_BYTES));
+  } catch (error) {
+    if (error?.message === 'PAYLOAD_TOO_LARGE') {
+      return json({ error: 'Request too large.', code: 'PAYLOAD_TOO_LARGE' }, 413, cors);
+    }
+    return json({ error: 'Malformed or invalid JSON payload.', code: 'INVALID_JSON' }, 400, cors);
   }
 
-  // 1. Spam Protection: Honeypot field
-  if (data.website || data.bot_check || data.company_hp) {
-    console.warn('Bot detected via honeypot field:', { id });
-    // Silent success response to discard bot submissions without alerting the bot
-    return json({ success: true, id, message: 'Thank you! Your message has been received.' }, 200);
-  }
-
-  // 2. Spam Protection: Minimum submission time check (if timestamp provided)
-  if (data.form_loaded_at && Number.isFinite(data.form_loaded_at)) {
+  if (data && Number.isFinite(data.form_loaded_at)) {
     const elapsed = Date.now() - data.form_loaded_at;
     if (elapsed < 1500) {
-      console.warn('Form submitted too fast (bot-like velocity):', { id, elapsed });
-      return json({ error: 'Submission received too quickly. Please try again.', code: 'SUBMISSION_TOO_FAST' }, 400);
+      return json({ error: 'Submission received too quickly. Please try again.', code: 'SUBMISSION_TOO_FAST' }, 400, cors);
     }
   }
 
-  // 3. Validation: Name
-  const name = typeof data.name === 'string' ? data.name.trim() : '';
-  if (!name || name.length < 2 || name.length > 100) {
-    return json({ error: 'Name must be between 2 and 100 characters.', field: 'name' }, 400);
+  const validated = validateSubmission(data);
+  if (validated.honeypot) {
+    return json({ success: true, message: 'Thank you! Your message has been received.' }, 200, cors);
+  }
+  if (validated.error) {
+    return json({ error: validated.error, code: 'VALIDATION_ERROR', field: validated.field }, validated.status, cors);
   }
 
-  // 4. Validation: Email
-  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
-  if (!email || !EMAIL_REGEX.test(email) || email.length > 150) {
-    return json({ error: 'Please provide a valid email address.', field: 'email' }, 400);
+  if (!env?.CONTACT_DB) {
+    console.error('Contact submission unavailable: CONTACT_DB D1 binding is not configured.');
+    return json({ error: 'The contact service is temporarily unavailable. Please try again later or use the email link.', code: 'CONTACT_STORAGE_UNAVAILABLE' }, 503, cors);
   }
 
-  // 5. Validation: Optional Phone
-  const phone = typeof data.phone === 'string' ? data.phone.trim() : '';
-  if (phone && (!PHONE_REGEX.test(phone) || phone.length > 30)) {
-    return json({ error: 'Please provide a valid phone number (or leave blank).', field: 'phone' }, 400);
+  const id = crypto.randomUUID();
+  const timestamp = new Date().toISOString();
+  const submission = { id, ...validated.submission, timestamp };
+
+  try {
+    await env.CONTACT_DB.prepare(
+      `INSERT INTO contact_submissions
+       (id, name, email, phone, reason, message, created_at, notification_status, notification_provider)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL)`
+    ).bind(
+      id,
+      submission.name,
+      submission.email,
+      submission.phone || null,
+      submission.reason,
+      submission.message,
+      timestamp
+    ).run();
+  } catch (error) {
+    console.error('Contact submission could not be persisted.', { id, error: String(error?.message || error) });
+    return json({ error: 'We could not securely save your message. Please try again later.', code: 'CONTACT_STORAGE_FAILED' }, 503, cors);
   }
 
-  // 6. Validation: Reason
-  const reason = typeof data.reason === 'string' ? data.reason.trim() : '';
-  if (!reason || reason.length < 2 || reason.length > 100) {
-    return json({ error: 'Please select a reason for your inquiry.', field: 'reason' }, 400);
-  }
-
-  // 7. Validation: Message
-  const message = typeof data.message === 'string' ? data.message.trim() : '';
-  if (!message || message.length < 10 || message.length > 3000) {
-    return json({ error: 'Message must be between 10 and 3,000 characters.', field: 'message' }, 400);
-  }
-
-  const submission = {
-    id,
-    name: sanitize(name),
-    email,
-    phone: sanitize(phone),
-    reason: sanitize(reason),
-    message: sanitize(message),
-    timestamp: new Date().toISOString(),
-    ip: request.headers.get('cf-connecting-ip') || 'unknown',
-    userAgent: request.headers.get('user-agent') || 'unknown'
-  };
-
-  // Dispatch Email Notification Server-Side
   const emailResult = await sendNotificationEmail({ env, submission });
-
-  console.info('Contact enquiry stored and notification processed:', {
-    id,
-    email: submission.email,
-    reason: submission.reason,
-    emailSent: emailResult.sent
-  });
+  if (!emailResult.skipped) {
+    try {
+      await env.CONTACT_DB.prepare(
+        'UPDATE contact_submissions SET notification_status = ?, notification_provider = ?, notification_attempted_at = ? WHERE id = ?'
+      ).bind(
+        emailResult.sent ? 'sent' : 'failed',
+        emailResult.provider,
+        new Date().toISOString(),
+        id
+      ).run();
+    } catch (error) {
+      console.error('Contact notification status could not be updated.', { id, error: String(error?.message || error) });
+    }
+  }
 
   return json({
     success: true,
     id,
-    message: `Thank you, ${name}! Your enquiry has been securely received. I will review it and get back to you shortly.`
-  }, 200);
+    notificationStatus: emailResult.skipped ? 'pending' : (emailResult.sent ? 'sent' : 'failed'),
+    message: 'Thank you! Your message has been securely received. I will review it and get back to you shortly.'
+  }, 200, cors);
 }
 
-export async function onRequestGet({ request } = {}) {
+export async function onRequestGet({ request, env } = {}) {
+  const cors = request ? corsHeaders(request, env) : {};
   const origin = request?.headers?.get('origin');
-  const allowed = !origin || origin.includes('jawed.co.in') || origin.includes('localhost') || origin.includes('run.app');
-  const extraHeaders = origin && allowed ? { 'access-control-allow-origin': origin } : {};
-  return json({
-    ok: true,
-    service: 'jawed-contact-api',
-    status: 'ready',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  }, 200, extraHeaders);
-}
-
-export async function onRequestOptions({ request } = {}) {
-  const origin = request?.headers?.get('origin');
-  const allowed = !origin || origin.includes('jawed.co.in') || origin.includes('localhost') || origin.includes('run.app');
-  const headers = {
-    'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, authorization, x-requested-with',
-    'access-control-max-age': '86400'
-  };
-  if (origin && allowed) {
-    headers['access-control-allow-origin'] = origin;
+  if (!isAllowedOrigin(origin, env)) return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
+  if (!env?.CONTACT_DB) {
+    return json({ ok: false, service: 'jawed-contact-api', status: 'storage-not-configured' }, 503, cors);
   }
-  return new Response(null, { status: 204, headers });
+  return json({ ok: true, service: 'jawed-contact-api', status: 'ready' }, 200, cors);
+}
+
+export async function onRequestOptions({ request, env } = {}) {
+  const origin = request?.headers?.get('origin');
+  if (!isAllowedOrigin(origin, env)) return new Response(null, { status: 403 });
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders(request, env),
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'content-type',
+      'access-control-max-age': '86400'
+    }
+  });
+}
+
+export async function onRequestLogPost({ request, env }) {
+  const cors = corsHeaders(request, env);
+  if (!isAllowedOrigin(request.headers.get('origin'), env)) {
+    return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
+  }
+  if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
+    return json({ error: 'Expected application/json.', code: 'INVALID_CONTENT_TYPE' }, 415, cors);
+  }
+  let data;
+  try {
+    data = JSON.parse(await readBoundedText(request, 4000));
+  } catch {
+    return json({ error: 'Invalid log payload.', code: 'INVALID_JSON' }, 400, cors);
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return json({ error: 'Invalid log entry.', code: 'VALIDATION_ERROR' }, 400, cors);
+  }
+  if (!env?.CONTACT_DB) {
+    return json({ error: 'Contact logging is temporarily unavailable.', code: 'CONTACT_STORAGE_UNAVAILABLE' }, 503, cors);
+  }
+
+  const allowedStatuses = new Set(['success', 'fail']);
+  const status = allowedStatuses.has(data.status) ? data.status : null;
+  const reason = cleanText(data.reason, 80);
+  const method = data.submissionMethod === 'email-client' ? 'email-client' : 'api';
+  const messageLength = Number.isInteger(data.messageLength) ? Math.max(0, Math.min(data.messageLength, 3000)) : null;
+  const pagePath = cleanText(data.url, 200);
+  if (!status || !reason) return json({ error: 'Invalid log entry.', code: 'VALIDATION_ERROR' }, 400, cors);
+
+  try {
+    await env.CONTACT_DB.prepare(
+      `INSERT INTO contact_attempt_logs (id, status, reason, submission_method, message_length, page_path, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(crypto.randomUUID(), status, reason, method, messageLength, pagePath || null, new Date().toISOString()).run();
+    return json({ success: true, logged: true }, 201, cors);
+  } catch (error) {
+    console.error('Contact attempt log could not be persisted.', { error: String(error?.message || error) });
+    return json({ error: 'Contact logging failed.', code: 'CONTACT_LOG_FAILED' }, 503, cors);
+  }
+}
+
+export async function onRequestLogGet({ request, env }) {
+  const cors = corsHeaders(request, env);
+  if (!isAllowedOrigin(request.headers.get('origin'), env)) {
+    return json({ error: 'Origin not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
+  }
+  if (!env?.CONTACT_DB) return json({ error: 'Contact logging is temporarily unavailable.' }, 503, cors);
+  return json({ ok: true, service: 'contact-log', status: 'ready' }, 200, cors);
 }
