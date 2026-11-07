@@ -1,15 +1,8 @@
 // functions/lib/hqApi.js
-// Studio HQ Authorization & D1 Database Helpers
+// Studio HQ owner authorization and D1 helpers aligned with migrations/hq schema.
 
 import { verifyFirebaseToken } from './hqAuth.js';
 
-/**
- * Standard JSON response helper.
- * @param {object} body 
- * @param {number} status 
- * @param {object} extraHeaders 
- * @returns {Response}
- */
 export function jsonResponse(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
     status,
@@ -22,14 +15,6 @@ export function jsonResponse(body, status = 200, extraHeaders = {}) {
   });
 }
 
-/**
- * Standard JSON error response helper.
- * @param {number} status 
- * @param {string} code 
- * @param {string} message 
- * @param {object} extra 
- * @returns {Response}
- */
 export function errorResponse(status, code, message, extra = {}) {
   return jsonResponse({
     success: false,
@@ -44,73 +29,80 @@ export function errorResponse(status, code, message, extra = {}) {
 }
 
 /**
- * Writes an audit record to hq_audit_logs table in D1.
- * @param {object} db 
- * @param {object} params 
+ * Append an authentication/security event to the live audit_logs schema.
+ * Raw IP addresses and request bodies are deliberately not stored.
  */
-export async function auditLog(db, { userId = 'system', action, status, details = '', ipAddress = 'unknown' }) {
-  if (!db || typeof db.prepare !== 'function') return;
-  const id = crypto.randomUUID();
-  const now = Date.now();
-  const detailsStr = typeof details === 'object' ? JSON.stringify(details) : String(details);
+export async function auditLog(db, {
+  userId = null,
+  actorEmail = 'unknown',
+  action,
+  status = 'INFO',
+  details = {}
+} = {}) {
+  if (!db || typeof db.prepare !== 'function' || !action) return;
+
+  const detailObject = details && typeof details === 'object'
+    ? details
+    : { detail: String(details) };
+  const email = typeof detailObject.email === 'string' ? detailObject.email : actorEmail;
+  const metadata = JSON.stringify({ status, ...detailObject });
 
   try {
     await db.prepare(`
-      INSERT INTO hq_audit_logs (id, user_id, action, status, details, ip_address, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, userId, action, status, detailsStr, ipAddress, now).run();
-  } catch (err) {
-    console.error('[HQ Audit Log Error]', err);
+      INSERT INTO audit_logs
+        (id, actor_uid, actor_email, action, entity_type, entity_id, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, 'auth', ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(),
+      userId,
+      email || 'unknown',
+      action,
+      userId,
+      metadata,
+      new Date().toISOString()
+    ).run();
+  } catch (error) {
+    // Audit failure must not disclose internals or turn a denied request into access.
+    console.error('[HQ Audit Log Error]', String(error?.message || error));
   }
 }
 
-/**
- * Extracts Bearer token from Request Authorization header.
- * @param {Request} request 
- * @returns {string | null}
- */
 export function extractBearerToken(request) {
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) return null;
-  return authHeader.slice(7).trim();
+  const header = request?.headers?.get('authorization') || '';
+  const match = header.match(/^Bearer\s+([^\s]+)$/i);
+  return match ? match[1] : null;
 }
 
 /**
- * Primary HQ Owner Verification & Authorization Pipeline.
- * Enforces Firebase identity verification, D1 owner database validation,
- * controlled first-owner enrollment, and strict status = 'active' policy.
- * 
- * @param {Request} request 
- * @param {object} env 
- * @returns {Promise<{ authorized: boolean, owner?: object, user?: object, response?: Response }>}
+ * Requires a cryptographically verified Firebase ID token and a pre-enrolled,
+ * active owner row in hq_users(uid,email,display_name,status,created_at,last_seen_at).
+ *
+ * First-owner enrollment is intentionally not performed by an HTTP request.
+ * Seed the first owner only through a separately reviewed, explicit D1 operation
+ * after confirming the Firebase UID and owner email.
  */
-export async function verifyAndAuthorizeOwner(request, env) {
-  const ipAddress = request.headers?.get('cf-connecting-ip') || request.headers?.get('x-forwarded-for') || 'unknown';
-
-  // 1. Extract Authorization Bearer token
+export async function verifyAndAuthorizeOwner(request, env, options = {}) {
   const idToken = extractBearerToken(request);
   if (!idToken) {
     return {
       authorized: false,
-      response: errorResponse(401, 'UNAUTHORIZED', 'Missing or invalid Authorization header with Bearer token')
+      response: errorResponse(401, 'UNAUTHORIZED', 'A valid Bearer token is required')
     };
   }
 
-  // 2. Verify Firebase Token Claims & Email Allowlist
-  const authResult = await verifyFirebaseToken(idToken, env);
-  if (!authResult.valid) {
-    const status = authResult.code === 'UNAUTHORIZED_EMAIL' ? 403 : 401;
+  const verifyToken = options.verifyToken || verifyFirebaseToken;
+  const authResult = await verifyToken(idToken, env);
+  if (!authResult?.valid || !authResult.user?.uid || !authResult.user?.email) {
+    const code = authResult?.code || 'INVALID_FIREBASE_TOKEN';
+    const status = code === 'UNAUTHORIZED_EMAIL' ? 403 : 401;
     return {
       authorized: false,
-      response: errorResponse(status, authResult.code, authResult.error)
+      response: errorResponse(status, code, 'Firebase authentication could not be verified')
     };
   }
 
   const firebaseUser = authResult.user;
-
-  // 3. Require D1 Database Binding
-  if (!env || !env.HQ_DB || typeof env.HQ_DB.prepare !== 'function') {
-    console.error('[HQ Auth Error] HQ_DB binding missing or unavailable');
+  if (!env?.HQ_DB || typeof env.HQ_DB.prepare !== 'function') {
     return {
       authorized: false,
       response: errorResponse(503, 'DATABASE_UNAVAILABLE', 'HQ database service is unavailable')
@@ -118,159 +110,93 @@ export async function verifyAndAuthorizeOwner(request, env) {
   }
 
   const db = env.HQ_DB;
-  const now = Date.now();
-
-  // 4. Retrieve stored owner record from D1
   let userRecord;
   try {
     userRecord = await db.prepare(`
-      SELECT id, email, role, status, created_at, updated_at, last_login_at
+      SELECT uid, email, display_name, status, created_at, last_seen_at
       FROM hq_users
-      WHERE id = ?
+      WHERE uid = ?
+      LIMIT 1
     `).bind(firebaseUser.uid).first();
-  } catch (dbErr) {
-    console.error('[HQ DB Query Error]', dbErr);
+  } catch (error) {
+    console.error('[HQ DB Query Error]', String(error?.message || error));
     return {
       authorized: false,
-      response: errorResponse(503, 'DATABASE_UNAVAILABLE', 'HQ database query failed')
+      response: errorResponse(503, 'DATABASE_UNAVAILABLE', 'HQ owner record could not be checked')
     };
   }
 
-  // 5. Handle First-Owner Bootstrap & Controlled Enrollment
   if (!userRecord) {
-    let ownerCount = 0;
-    try {
-      const countResult = await db.prepare(`SELECT COUNT(*) as total FROM hq_users`).first();
-      ownerCount = Number(countResult?.total || 0);
-    } catch (countErr) {
-      console.error('[HQ DB Count Error]', countErr);
-      return {
-        authorized: false,
-        response: errorResponse(503, 'DATABASE_UNAVAILABLE', 'HQ database user count failed')
-      };
-    }
-
-    if (ownerCount === 0) {
-      // First-Owner Controlled Bootstrap Enrollment
-      try {
-        await db.prepare(`
-          INSERT INTO hq_users (id, email, role, status, created_at, updated_at, last_login_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO NOTHING
-        `).bind(firebaseUser.uid, firebaseUser.email, 'owner', 'active', now, now, now).run();
-
-        await auditLog(db, {
-          userId: firebaseUser.uid,
-          action: 'OWNER_ENROLLED',
-          status: 'SUCCESS',
-          details: { email: firebaseUser.email, enrollmentType: 'first_owner_bootstrap' },
-          ipAddress
-        });
-
-        // Re-query newly enrolled owner
-        userRecord = await db.prepare(`
-          SELECT id, email, role, status, created_at, updated_at, last_login_at
-          FROM hq_users
-          WHERE id = ?
-        `).bind(firebaseUser.uid).first();
-      } catch (enrollErr) {
-        console.error('[HQ Enrollment Error]', enrollErr);
-        return {
-          authorized: false,
-          response: errorResponse(503, 'DATABASE_UNAVAILABLE', 'HQ first-owner enrollment failed')
-        };
-      }
-    } else {
-      // Owners already exist in HQ, but this user UID is not registered
-      await auditLog(db, {
-        userId: firebaseUser.uid,
-        action: 'OWNER_ENROLLMENT_REJECTED',
-        status: 'DENIED',
-        details: { email: firebaseUser.email, reason: 'unregistered_owner_uid' },
-        ipAddress
-      });
-
-      return {
-        authorized: false,
-        response: errorResponse(403, 'OWNER_NOT_ENROLLED', 'User account is not enrolled as an active HQ owner')
-      };
-    }
-  }
-
-  // 6. Verify Email Consistency
-  if (!userRecord || typeof userRecord.email !== 'string' || userRecord.email.toLowerCase() !== firebaseUser.email.toLowerCase()) {
     await auditLog(db, {
       userId: firebaseUser.uid,
+      actorEmail: firebaseUser.email,
+      action: 'OWNER_ENROLLMENT_REJECTED',
+      status: 'DENIED',
+      details: { email: firebaseUser.email, reason: 'owner_uid_not_pre_enrolled' }
+    });
+    return {
+      authorized: false,
+      response: errorResponse(403, 'OWNER_NOT_ENROLLED', 'This Firebase account has not been explicitly enrolled as an HQ owner')
+    };
+  }
+
+  if (typeof userRecord.email !== 'string' ||
+      userRecord.email.trim().toLowerCase() !== firebaseUser.email.trim().toLowerCase()) {
+    await auditLog(db, {
+      userId: firebaseUser.uid,
+      actorEmail: firebaseUser.email,
       action: 'EMAIL_MISMATCH_REJECTED',
       status: 'DENIED',
-      details: { tokenEmail: firebaseUser.email, dbEmail: userRecord?.email },
-      ipAddress
+      details: { email: firebaseUser.email, reason: 'firebase_email_does_not_match_owner_record' }
     });
-
     return {
       authorized: false,
-      response: errorResponse(403, 'EMAIL_MISMATCH', 'Email mismatch detected between authentication token and database record')
-    };
-  }
-
-  // 7. Enforce Active Owner Status Policy
-  if (userRecord.status === 'disabled') {
-    await auditLog(db, {
-      userId: firebaseUser.uid,
-      action: 'OWNER_DISABLED_REJECTED',
-      status: 'DENIED',
-      details: { email: firebaseUser.email, status: userRecord.status },
-      ipAddress
-    });
-
-    return {
-      authorized: false,
-      response: errorResponse(403, 'OWNER_DISABLED', 'Owner account is disabled. Access denied.')
+      response: errorResponse(403, 'EMAIL_MISMATCH', 'Firebase email does not match the enrolled owner record')
     };
   }
 
   if (userRecord.status !== 'active') {
     await auditLog(db, {
       userId: firebaseUser.uid,
-      action: 'INVALID_STATUS_REJECTED',
+      actorEmail: firebaseUser.email,
+      action: 'OWNER_STATUS_REJECTED',
       status: 'DENIED',
-      details: { email: firebaseUser.email, status: userRecord.status },
-      ipAddress
+      details: { email: firebaseUser.email, ownerStatus: userRecord.status }
     });
-
     return {
       authorized: false,
-      response: errorResponse(403, 'UNAUTHORIZED_STATUS', `Owner status '${userRecord.status}' is not authorized`)
+      response: errorResponse(403, 'OWNER_DISABLED', 'HQ owner access is not active')
     };
   }
 
-  // 8. Update Login Timestamp (NEVER modifies status)
+  const lastSeenAt = new Date().toISOString();
   try {
     await db.prepare(`
       UPDATE hq_users
-      SET last_login_at = ?, updated_at = ?
-      WHERE id = ? AND status = 'active'
-    `).bind(now, now, firebaseUser.uid).run();
-  } catch (loginErr) {
-    console.warn('[HQ Login Timestamp Update Non-Fatal Error]', loginErr);
+      SET last_seen_at = ?
+      WHERE uid = ? AND status = 'active'
+    `).bind(lastSeenAt, firebaseUser.uid).run();
+  } catch (error) {
+    // last_seen_at is telemetry only; failure must not grant or revoke access.
+    console.warn('[HQ Last Seen Update Error]', String(error?.message || error));
   }
 
   await auditLog(db, {
     userId: firebaseUser.uid,
+    actorEmail: firebaseUser.email,
     action: 'OWNER_AUTHENTICATED',
     status: 'SUCCESS',
-    details: { email: firebaseUser.email },
-    ipAddress
+    details: { email: firebaseUser.email }
   });
 
   return {
     authorized: true,
     owner: {
-      id: userRecord.id,
+      uid: userRecord.uid,
       email: userRecord.email,
-      role: userRecord.role || 'owner',
+      displayName: userRecord.display_name || '',
       status: userRecord.status,
-      lastLoginAt: now
+      lastSeenAt
     },
     user: firebaseUser
   };
