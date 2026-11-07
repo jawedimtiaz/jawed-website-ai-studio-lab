@@ -3,30 +3,6 @@ concurrency:
   group: production-cache-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "_headers"
-      - "functions/api/ai.js"
-      - "assets/css/style.css"
-      - "assets/js/main.js"
-      - "assets/images/social-preview.png"
-      - "favicon.svg"
-      - "assets/css/style.css"
-      - "assets/js/main.js"
-      - "assets/images/social-preview.png"
-      - "favicon.svg"
-      - "config/production-cache-contract.json"
-      - "scripts/validate-production-cache.mjs"
-      - ".github/workflows/production-cache-reliability.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "_headers"
-      - "functions/api/ai.js"
-      - "config/production-cache-contract.json"
-      - "scripts/validate-production-cache.mjs"
-      - ".github/workflows/production-cache-reliability.yml"
   workflow_dispatch:
   schedule:
     - cron: "19 */6 * * *"
