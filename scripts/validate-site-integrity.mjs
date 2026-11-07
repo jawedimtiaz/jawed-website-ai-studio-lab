@@ -24,12 +24,13 @@ function hasReactToolSource(path){
   if(start<0)return false;
   const end=toolsDataSource.indexOf("\n  },",start);
   const entry=end<0?toolsDataSource.slice(start):toolsDataSource.slice(start,end);
-  const mappingLine=toolDetailSource.split("\n").find(line=>line.includes(`case '${slug}':`));
-  if(!mappingLine)return false;
-  const componentStart=mappingLine.indexOf("return <");
-  const componentEnd=mappingLine.indexOf(" />",componentStart);
+  const mappingStart=toolDetailSource.indexOf(`case '${slug}':`);
+  if(mappingStart<0)return false;
+  const mappingBlock=toolDetailSource.slice(mappingStart,mappingStart+300);
+  const componentStart=mappingBlock.indexOf("return <");
+  const componentEnd=mappingBlock.indexOf(" />",componentStart);
   if(componentStart<0||componentEnd<0)return false;
-  const componentName=mappingLine.slice(componentStart+8,componentEnd).trim();
+  const componentName=mappingBlock.slice(componentStart+8,componentEnd).trim();
   const imported=toolDetailSource.includes(`import { ${componentName} }`);
   const requiredFields=["title:","purpose:","steps:","exampleOutput:","faq:"];
   return imported && requiredFields.every(field=>entry.includes(field));
