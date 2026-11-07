@@ -105,6 +105,28 @@ Compared selected current `main` files with PR #2 and PR #3 branch versions. Thi
 - PR #2 and PR #3 both update `worker.js`; do not resolve them independently by replacing the whole file. Reconcile the final router with all existing AI, contact, HQ session, CRM, project, task and milestone routes, method handling and security headers.
 - No file was changed in the application branches during this analysis. Exact conflict paths still require a real three-way merge simulation using the merge base and both branch tips.
 
+
+## 2E. Three-way file review conclusions — 2026-11-07
+
+The actual merge-base versions and current feature/main file contents were inspected for the principal overlap files.
+
+### PR #2 — Contact persistence
+
+- The PR #2 branch introduces D1-backed durable contact submissions and privacy-minimized contact attempt logs in `functions/api/contact.js`, adds the migration `migrations/0001_contact_persistence.sql`, adds focused API tests, and changes the client logger to avoid transmitting names, email addresses, message content, user-agent strings and raw errors.
+- Current `main` still has the older contact API: it sends notification email but does not persist the submission to D1. The current main Worker still implements `/api/contact/log` as an in-memory/acknowledgement stub rather than using the new D1 log handlers.
+- Current main root Wrangler configs do not declare `CONTACT_DB`; the live Lab Worker settings also showed no D1 binding. Therefore PR #2 contains important functionality not yet integrated. It must not be discarded or closed as obsolete.
+- The PR #2 branch's entire `worker.js` is based on an older router. The safe reconciliation must preserve current main's HQ session/clients/projects/tasks/milestones routes and security-header wrapping while porting only the contact log handler imports/routing from PR #2. Preserve the current AI/contact route behavior and static asset fallback.
+- Add the `CONTACT_DB` binding to the existing root Wrangler configs using the already inventoried `jawed-contact-submissions` D1 UUID `645619c4-264f-4ef2-b29f-8c500434aa8f`. Do not change the Lab Worker name, AI binding, canonical origin or HQ routes. Any actual Cloudflare binding change still requires a separate deployment step and verification.
+
+### PR #3 — Firebase owner authentication
+
+- PR #3 introduces `functions/lib/hqAuth.js` and a session handler based on that module. Current main's session handler instead uses `functions/lib/hqApi.js` and `verifyAndAuthorizeOwner`; main's Worker already routes HQ session, clients, projects, tasks and milestones, and main's App already contains the Studio HQ route/shell.
+- Current main `package.json` does not include PR #3's `jose` dependency or `test:hq-auth` script. This is consistent with the later main implementation using a different auth module, not proof of parity. Review the main `hqApi.js` implementation and tests as the authoritative current auth design before considering PR #3 superseded.
+- PR #3's service-worker branch explicitly bypasses caching for `/studio-hq` and descendants. Current main's service worker does not contain that exclusion. This is a security-relevant gap and should be ported as a small, isolated change with a regression test.
+- Conclusion: PR #3 is partially superseded by later main implementation, but its service-worker privacy safeguard is not present on main. Do not merge the stale PR wholesale; separately validate current main auth and port the missing no-cache rule.
+
+These conclusions are based on file content inspection at the recorded merge bases, PR branch tips and current main. No application files or Cloudflare resources were modified during this review.
+
 ## 3. Studio HQ architecture and implemented foundations
 
 The intended product is an owner-operated business management workspace for Jawed Web Studio, not just a website dashboard.
