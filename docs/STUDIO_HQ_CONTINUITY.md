@@ -273,6 +273,19 @@ A direct read-only check of current `main` confirms:
 
 Therefore the current main branch is an incomplete integration: server-side HQ API routes exist, but the HQ frontend shell is not present on main, and the live Worker is not bound to the HQ database. PR #3 contains an earlier frontend implementation, but it must be reviewed against the current design and current API/schema contract before porting. Do not assume the HQ dashboard is available at `/studio-hq` on the current main deployment.
 
+
+## 3F. PR #14 focused authentication verification passed — 2026-11-07
+
+The corrected PR #14 head `c09224597136f01c1cf19747808eac1816196a88` has a successful dedicated workflow run:
+
+- Workflow run: `42391267997` — Studio HQ Firebase Signature Verification Tests.
+- Result: **SUCCESS**.
+- Unit tests: **13 passed, 0 failed**.
+- TypeScript lint / production build step: completed successfully.
+- GitHub PR #14 reports mergeable=true, remains draft and unmerged.
+
+This is verified focused CI evidence for the signature-verification helper. It does not mean the overall repository gates pass: AdSense, AI regression, supply-chain, production AI GET/POST, and deployment-runtime gates remain failed on this commit. It also does not resolve the HQ D1/API schema mismatch, frontend route absence, or service-worker private-page caching gap. Keep the HQ database binding disabled until those separate blockers are resolved and reviewed.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
