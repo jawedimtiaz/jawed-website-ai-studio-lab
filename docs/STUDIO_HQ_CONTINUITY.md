@@ -77,6 +77,14 @@ These are historical results for the exact head SHAs above. Refresh checks befor
 
 No merge, rebase, branch rewrite, Cloudflare change or deployment was performed during this follow-up review. PR #2 and #3 are blocked for conflict resolution. The dependency stack must be reviewed before merging any child PR.
 
+
+## 2B. Continuity PR status and divergence details — 2026-11-07
+
+- Continuity documentation PR #12 remains **open**, targets `main`, and is currently reported mergeable. Latest head commit: `72491cf64924a377fa67fc8a7bf5dab6b3af5f53`. It has not been merged. The document was re-fetched from its feature branch after the update to verify the content exists.
+- GitHub compare API reports PR #2 branch as diverged from `main` (27 commits ahead, 2 behind) and PR #3 branch as diverged (25 ahead, 1 behind). GitHub PR metadata reports both as `mergeable=false`. The compare endpoint did not return conflict file details; do not guess which files conflict. Use the GitHub PR UI or a safe local merge simulation to identify exact conflicts.
+- Combined commit-status endpoint returned no status rows for the PR #2 and #3 heads; workflow-run API is the available evidence for their named checks above.
+- The documentation PR #12 is separate from the application PR dependency stack. It can be merged independently after the owner reviews/approves it; it has intentionally not been merged automatically.
+
 ## 3. Studio HQ architecture and implemented foundations
 
 The intended product is an owner-operated business management workspace for Jawed Web Studio, not just a website dashboard.
