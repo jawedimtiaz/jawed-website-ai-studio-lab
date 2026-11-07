@@ -139,6 +139,27 @@ The following was inspected without modifying Cloudflare resources.
 
 **Deployment blocker:** the live Lab Worker has no HQ D1 binding, and the preview Worker is absent. The existence of an HQ database does not mean the application is connected to it or operational.
 
+
+## 4A. Preview environment revalidation and schema review — 2026-11-07
+
+A fresh Cloudflare read-only inspection reconfirmed:
+
+- D1 `jawed-studio-hq-preview` exists with UUID `623a828d-2909-47e7-a228-130b4eeefef5`.
+- Read-only `sqlite_master` query returned only Cloudflare's internal `_cf_KV` table; no HQ application schema is installed.
+- Worker `jawed-studio-hq-preview` lookup returned Cloudflare 404: the preview Worker does not exist.
+- Existing Lab Worker `jawed-website-ai-studio-lab` still exposes only `AI`, `ASSETS`, `CANONICAL_ORIGIN`, and `ENVIRONMENT`; no `HQ_DB` binding is present.
+- D1 IDs and names in PR #9's `wrangler.hq-preview.toml` match the live preview D1 inventory. This confirms the config targets the correct preview database, not that the Worker is deployed or connected.
+
+### PR #9 runbook review findings
+
+- The runbook explicitly requires separate approval for preview migration, Worker creation/deployment, owner enrollment, PR merge and any existing Lab changes. Respect these gates.
+- The runbook calls for a pinned Wrangler CLI version, but the repository package manifest does not currently declare Wrangler. Resolve/pin the approved CLI version before executing a migration/deploy command.
+- Migration review notes: 17 application tables, 20 indexes and two append-only audit-log triggers. It uses `IF NOT EXISTS`, so check migration history/schema before applying; do not assume idempotency alone makes it safe.
+- Potential integrity gap: `project_tasks.milestone_id` references a milestone but does not enforce that the milestone belongs to the same `project_id` as the task. Validate in the API or design a schema constraint in a separate reviewed migration.
+- Confirm the intended `activity_notes` rule: at least one of `client_id` or `project_id` must be present, while both are permitted.
+
+**No Cloudflare resources were created, migrated, bound, deployed, or modified during this revalidation.** The next safe action remains read-only PR review and conflict analysis. The preview Worker and schema migration require separate explicit approval as specified by the existing runbook.
+
 ## 5. Business workflows — product requirements
 
 Studio HQ should support the complete customer lifecycle:
