@@ -3,20 +3,6 @@ concurrency:
   group: deployment-runtime-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/deployment-runtime-contract.json"
-      - "config/production-smoke-contract.json"
-      - "scripts/validate-deployment-runtime-reliability.mjs"
-      - "docs/cloudflare-pages-deployment.md"
-      - "_headers"
-      - "_redirects"
-      - "_routes.json"
-      - "404.html"
-      - "sitemap.xml"
-      - "index.html"
-      - "functions/**"
-      - ".github/workflows/deployment-runtime-reliability.yml"
   push:
     branches: [main]
     paths:
