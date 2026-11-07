@@ -11,7 +11,7 @@
     "workflow_permissions": "contents-read",
     "workflow_secret_access": "blocked",
     "runtime_dependency_manifest": "root-private-package-json-allowed",
-    "dependency_lockfile": "blocked-unless-reviewed-and-approved"
+    "dependency_lockfile": "blocked"
   },
   "scope": "repository-source-and-github-actions",
   "principle": "Do not introduce dependency, platform, or deployment changes without a concrete finding."
