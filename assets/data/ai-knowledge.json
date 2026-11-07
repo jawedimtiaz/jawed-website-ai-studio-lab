@@ -1043,7 +1043,8 @@
         "Mac troubleshooting",
         "diagnostic checklist",
         "ticket notes"
-      ]
+      ],
+      "content_type": "interactive_tool"
     },
     {
       "url": "/tools/m365-workplace-sign-in-diagnostic/",
@@ -1064,7 +1065,8 @@
         "identity support",
         "correlation ID",
         "service desk"
-      ]
+      ],
+      "content_type": "interactive_tool"
     }
   ],
   "reviewed_against_sitemap_on": "2026-11-07",
@@ -1083,4 +1085,4 @@
     "scope": "Expanded semantic summaries and keywords for high-value public work, note, resource, and tool pages using their current page content.",
     "principle": "Do not infer facts beyond the public page source; summaries remain scope-level evidence for grounding."
   }
-}
+}\n
