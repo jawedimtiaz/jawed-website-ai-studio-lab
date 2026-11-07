@@ -758,3 +758,51 @@ No Cloudflare resource, production domain, DNS record, Worker route or Pages dep
 ### PR #12 documentation-branch CI recheck — 2026-11-07
 
 Latest PR #12 head `6c894d37db8acee6d4e4e7dbd2114b3c8e40e87c` has one workflow run, Security Supply Chain Gate, which failed. The actual log repeats the existing repository-wide findings: `firebase-applet-config.json` matched the generic credential-like literal scanner, and `package.json` violates the old no-dependency-manifest contract. No new failure specific to `docs/STUDIO_HQ_CONTINUITY.md` was reported. PR #12 remains open and unmerged; its raw Pull Request API currently reports mergeable=true / mergeable_state=unstable on the latest read. No merge was attempted.
+
+
+## 14. HQ-0 CI production-monitor isolation implementation — 2026-11-07
+
+### Dedicated implementation branch and PR
+
+- Branch: `fix/lab-ci-production-monitor-isolation`.
+- Base: `main` at `f630014aeb1414cc295986d96840d3f1dc2649d1`.
+- Latest implementation commit: `f8375dbc775005505554c77c0eca4238b690e349`.
+- Draft PR #24: [CI: isolate protected production monitoring from Studio Lab PRs](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/24).
+- Issue: [#23](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/issues/23).
+- PR is open, draft, unmerged. Latest GitHub metadata at first read returned `mergeable=false`; recheck after GitHub recalculates mergeability. Do not merge without approval.
+
+### Changed workflows (16)
+
+Removed automatic `pull_request` and `push` triggers from:
+1. `.github/workflows/deployment-runtime-reliability.yml` (manual-only; no schedule existed).
+2. `.github/workflows/production-ai-get-reliability.yml`.
+3. `.github/workflows/production-ai-post-reliability.yml`.
+4. `.github/workflows/production-cache-reliability.yml`.
+5. `.github/workflows/production-smoke-reliability.yml`.
+6. `.github/workflows/production-static-assets.yml`.
+7. `.github/workflows/production-security-headers.yml`.
+8. `.github/workflows/production-404-reliability.yml`.
+9. `.github/workflows/production-robots-reliability.yml`.
+10. `.github/workflows/production-sitemap-reliability.yml`.
+11. `.github/workflows/production-legacy-redirects.yml`.
+12. `.github/workflows/production-media-assets.yml`.
+13. `.github/workflows/production-api-method-boundary.yml`.
+14. `.github/workflows/production-availability-monitoring.yml`.
+15. `.github/workflows/production-html-seo-reliability.yml`.
+16. `.github/workflows/canonical-origin-reliability.yml`.
+
+Existing `schedule` and `workflow_dispatch` triggers are retained where they existed. The validator code, production URLs, assertions, expected statuses and checks were not weakened or deleted.
+
+Added `docs/lab-ci-scope-separation.md`, which records why this is only a trigger-isolation step and lists the remaining Lab-specific preview/runtime validation requirements.
+
+### Verification and known limitations
+
+- GitHub confirms PR #24 contains exactly 17 files: the 16 workflow files above plus the new scope document.
+- No local YAML parser, build, or repository test suite was run in this session; do not claim those passed.
+- PR #24 is draft and its Actions checks must be reviewed. A workflow that no longer has a PR trigger will not run on this PR by design; the repository's remaining general CI should still run.
+- This change isolates production monitor workflows from routine PR/push runs but does not yet create replacement Lab runtime tests. It is not complete Lab deployment validation.
+- No Cloudflare resources, personal Pages project, DNS, Worker routes, D1 databases, customer code or production data were modified.
+
+### Next exact step
+
+Inspect PR #24 Actions and review all remaining workflows for any hidden hard-coded `jawed.co.in` probes that still run on PRs. Then design a separate Lab-specific preview smoke contract against a safe preview Worker. Keep production monitoring in the personal `jawed-website` repository as the eventual destination; do not remove the scheduled/manual monitors from Lab until that migration is ready and approved.
