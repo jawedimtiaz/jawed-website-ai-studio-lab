@@ -182,6 +182,60 @@ PR #9 proposes an isolated preview Worker and preview D1 database. The preview d
 
 PR #10 adjusts AI regression contracts for React routes and origin policy. PR #11 separates production monitoring checks from Lab pull requests. Both remain open drafts and have the CI results listed above.
 
+
+## 3B. Firebase project identity and PR #13 CI results — 2026-11-07
+
+### Firebase project identity confirmed
+
+- Read-only parsing of `firebase-applet-config.json` on current `main` confirms `projectId = refined-actor-skhlb` and `authDomain = refined-actor-skhlb.firebaseapp.com`. Only these non-secret identity fields were surfaced; API key/config values were not reproduced.
+- PR #3's `jose`-based verifier uses the same Firebase project ID. It is therefore a relevant cryptographic-verification reference, but should be adapted to the current `verifyFirebaseToken(idToken, env)` contract and current owner allowlist rather than copied wholesale.
+- Current main `hqAuth.js` uses a different default project identifier and does not verify signatures. Correct the project ID to the confirmed Firebase project and use real RS256 certificate-backed verification. Preserve the current main owner allowlist unless the owner explicitly authorizes a policy change.
+
+### PR #13 workflow outcomes — commit `423a12a9be350ebeccdc7d2fb0b733773a09fb07`
+
+- **Phase 1 Contact API Build and Tests: PASS.** GitHub Actions reports the contact API tests, TypeScript lint and production build job succeeded.
+- **AdSense Readiness Gate: FAIL.** Existing content-readiness validator cannot open `tools/apple-macos-jamf-support-helper/index.html` (ENOENT). Other AdSense privacy/inventory/activation checks in that job passed before this failure.
+- **Deployment Runtime Reliability Gate: FAIL.** Existing validator reports: AI API must allow the production origin; unexpected package/dependency manifest `package.json`.
+- **Security Supply Chain Gate: FAIL.** Existing validator reports a credential-like literal in `firebase-applet-config.json` and an unexpected dependency manifest `package.json`. Review whether the Firebase web API key is a public client identifier and ensure Firebase API restrictions/security rules are correctly configured; do not publish or rotate keys blindly.
+- **AI Regression Gate: FAIL.** Site integrity validator reports missing source files for `/tools/apple-macos-jamf-support-helper/` and `/tools/m365-workplace-sign-in-diagnostic/`, plus primary navigation parity failure in `index.html`. AI regression matrix was skipped after the site-integrity prerequisite failed.
+
+These gate failures are repository-wide baseline defects, not evidence that the dedicated contact test/build job failed. PR #13 remains draft and unmerged. Fix the specific gate contracts in separate bounded changes; do not weaken or delete validators merely to make checks green.
+
+
+## 3A. Critical Studio HQ security and schema blockers — 2026-11-07
+
+A source review of current `main` and read-only Cloudflare D1 schema inspection found blockers that must be resolved before enabling the HQ D1 binding or treating HQ APIs as production-ready.
+
+### Critical authentication finding
+
+- Current `functions/lib/hqAuth.js` decodes JWT header/payload and checks claims but does not fetch Firebase signing certificates/JWKS or perform RSA signature verification. Decoding claims and checking the claimed algorithm is not authentication; a forged token can claim an allowed email and expected claims.
+- The actual Firebase project ID is now confirmed from `firebase-applet-config.json`: `refined-actor-skhlb`. PR #3's JOSE verifier uses this correct project ID and provides a useful signature-verification reference. Adapt it to the current helper contract and preserve the current main allowlist unless explicitly changed by the owner.
+- **Do not add/bind `HQ_DB`, deploy HQ APIs, or enroll an owner until cryptographic Firebase ID-token verification is implemented and covered by negative tests (tampered signature, wrong key, wrong audience/issuer, expiry, unverified email, non-allowlisted email).**
+
+### Critical D1 schema/API mismatch
+
+Read-only Cloudflare inspection of live D1 `jawed-studio-hq` (UUID `d9ec83ea-7114-4179-af8e-a22ba5494508`) confirmed:
+
+- `hq_users` columns are `uid`, `email`, `display_name`, `status`, `created_at`, `last_seen_at`.
+- Current `functions/lib/hqApi.js` queries `hq_users.id`, `role`, `updated_at`, and `last_login_at`, and inserts/updates those columns. Those columns do not exist in the live schema.
+- Current `functions/api/hq/clients.js` queries `hq_clients`, but the live database has `clients`, not `hq_clients`. The live database has no other `hq_*` application tables besides `hq_users`.
+- The live database has the 18-table Studio HQ business schema (`clients`, `projects`, `project_tasks`, `project_milestones`, `audit_logs`, etc.). Current API handlers were written against a different legacy schema and must be reconciled to the live schema before enabling the binding.
+
+### Current exposure and gate
+
+- The live Lab Worker has no `HQ_DB` binding. HQ APIs currently fail closed with database unavailable; no binding was changed.
+- Keep `HQ_DB` absent from the live Worker until token verification and API/schema compatibility are fixed, tested against isolated preview D1, and reviewed. Do not bootstrap/enroll any owner in live D1.
+
+### Required remediation order
+
+1. Implement certificate-backed Firebase signature verification using confirmed project ID `refined-actor-skhlb` and the current owner allowlist.
+2. Refactor auth helper to actual `hq_users(uid,email,display_name,status,created_at,last_seen_at)` schema and make first-owner enrollment concurrency-safe and explicitly controlled.
+3. Reconcile every HQ endpoint with actual tables `clients`, `projects`, `project_tasks`, `project_milestones`, and related tables. Remove assumptions about `hq_clients`, `hq_projects`, etc.
+4. Add isolated preview D1 integration tests, unauthorized-access and owner-enrollment tests, and service-worker no-cache tests for the private HQ page.
+5. Only after code review and all security/data gates pass, request separate approval to configure the preview Worker binding. Keep live Lab Worker and live HQ D1 unchanged until explicit approval.
+
+No source or Cloudflare resource was modified as part of this security/schema audit.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
