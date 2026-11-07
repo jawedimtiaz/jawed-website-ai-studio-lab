@@ -3,13 +3,6 @@ concurrency:
   group: canonical-origin-reliability-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-smoke-contract.json"
-      - "scripts/validate-production-smoke.mjs"
-      - "scripts/validate-canonical-origin-reliability.mjs"
-      - ".github/workflows/production-smoke-reliability.yml"
-      - ".github/workflows/canonical-origin-reliability.yml"
   push:
     branches: [main]
     paths:
