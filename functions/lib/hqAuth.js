@@ -1,134 +1,156 @@
 // functions/lib/hqAuth.js
-// Firebase Authentication & Token Verification for Studio HQ
+// Cryptographic Firebase ID-token verification for Studio HQ.
 
-const DEFAULT_PROJECT_ID = 'ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb';
+import { importX509, jwtVerify } from 'jose';
+
+const DEFAULT_PROJECT_ID = 'refined-actor-skhlb';
+const CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const DEFAULT_ALLOWED_EMAILS = ['jawedimtiaz@gmail.com'];
+let cache = { expiresAt: 0, certificates: null };
+
+export function getAllowedOwnerEmails(env = {}) {
+  const configured = env.HQ_ALLOWED_OWNER_EMAILS;
+  if (Array.isArray(configured)) {
+    return configured.map((email) => String(email).trim().toLowerCase()).filter(Boolean);
+  }
+  if (typeof configured === 'string') {
+    return configured.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+  }
+  return DEFAULT_ALLOWED_EMAILS.map((email) => email.toLowerCase());
+}
+
+function denied(status, code) {
+  return { ok: false, status, code };
+}
+
+function certificateExpiry(response, now) {
+  const cacheControl = response.headers.get('cache-control') || '';
+  const match = cacheControl.match(/(?:^|,)\s*max-age=(\d+)/i);
+  const seconds = match ? Number(match[1]) : 300;
+  return now + Math.max(0, Math.min(seconds, 3600)) * 1000;
+}
+
+async function loadCertificates(fetchImpl, now) {
+  if (cache.certificates && cache.expiresAt > now) return cache.certificates;
+
+  const response = await fetchImpl(CERT_URL, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error('CERTIFICATE_FETCH_FAILED');
+
+  const data = await response.json();
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('CERTIFICATE_RESPONSE_INVALID');
+  }
+
+  const entries = Object.entries(data);
+  if (!entries.length || entries.some(([kid, pem]) =>
+    !kid || typeof pem !== 'string' || !pem.includes('BEGIN CERTIFICATE')
+  )) {
+    throw new Error('CERTIFICATE_RESPONSE_INVALID');
+  }
+
+  cache = {
+    certificates: Object.fromEntries(entries),
+    expiresAt: certificateExpiry(response, now)
+  };
+  return cache.certificates;
+}
 
 /**
- * Parses and decodes a JWT token without external heavy dependencies.
- * Validates header, payload structure, and claims.
- * @param {string} token 
- * @returns {{ header: object, payload: object, rawSignature: string } | null}
+ * Verifies a Firebase ID token using Google's published X.509 signing certificates.
+ * Optional dependencies/time are injectable for deterministic unit tests.
  */
-export function decodeJwt(token) {
-  if (typeof token !== 'string') return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
+export async function verifyHqFirebaseToken(token, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const now = options.now ?? Date.now();
+  const verify = options.verify || jwtVerify;
+  const importCertificate = options.importCertificate || importX509;
+  const projectId = options.projectId || DEFAULT_PROJECT_ID;
+  const allowedEmails = options.allowedEmails || DEFAULT_ALLOWED_EMAILS;
+
+  if (typeof token !== 'string' || token.length < 20 || token.length > 10000) {
+    return denied(401, 'AUTH_TOKEN_MISSING_OR_MALFORMED');
+  }
 
   try {
-    const parseBase64Url = (str) => {
-      let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-      while (base64.length % 4 !== 0) {
-        base64 += '=';
-      }
-      const jsonStr = atob(base64);
-      return JSON.parse(jsonStr);
-    };
+    const encodedHeader = token.split('.')[0];
+    if (!encodedHeader) return denied(401, 'AUTH_TOKEN_INVALID');
 
-    const header = parseBase64Url(parts[0]);
-    const payload = parseBase64Url(parts[1]);
-    return { header, payload, rawSignature: parts[2] };
+    let header;
+    try {
+      const normalized = encodedHeader.replace(/-/g, '+').replace(/_/g, '/');
+      header = JSON.parse(atob(normalized));
+    } catch {
+      return denied(401, 'AUTH_TOKEN_INVALID');
+    }
+
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+      return denied(401, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
+    }
+
+    let certificates = await loadCertificates(fetchImpl, now);
+    let certificate = certificates[header.kid];
+    if (!certificate) {
+      cache.expiresAt = 0;
+      certificates = await loadCertificates(fetchImpl, now);
+      certificate = certificates[header.kid];
+    }
+    if (!certificate) return denied(401, 'AUTH_SIGNING_KEY_NOT_FOUND');
+
+    const key = await importCertificate(certificate, 'RS256');
+    const result = await verify(token, key, {
+      algorithms: ['RS256'],
+      audience: projectId,
+      issuer: `https://securetoken.google.com/${projectId}`,
+      clockTolerance: 5
+    });
+
+    const claims = result.payload;
+    const seconds = Math.floor(now / 1000);
+    if (
+      typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) || claims.exp <= seconds ||
+      typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) || claims.iat > seconds + 5 ||
+      typeof claims.auth_time !== 'number' || !Number.isFinite(claims.auth_time) || claims.auth_time > seconds + 5 ||
+      typeof claims.sub !== 'string' || !claims.sub ||
+      claims.email_verified !== true || typeof claims.email !== 'string'
+    ) {
+      return denied(401, 'AUTH_CLAIMS_INVALID');
+    }
+
+    const email = claims.email.trim().toLowerCase();
+    const normalizedAllowlist = new Set(allowedEmails.map((value) => String(value).trim().toLowerCase()));
+    if (!normalizedAllowlist.has(email)) return denied(403, 'UNAUTHORIZED_EMAIL');
+
+    return { ok: true, identity: { uid: claims.sub, email } };
   } catch {
-    return null;
+    return denied(401, 'AUTH_TOKEN_VERIFICATION_FAILED');
   }
 }
 
 /**
- * Retrieves the allowed owner emails from environment or fallback defaults.
- * @param {object} env 
- * @returns {string[]}
- */
-export function getAllowedOwnerEmails(env = {}) {
-  if (env.HQ_ALLOWED_OWNER_EMAILS) {
-    if (Array.isArray(env.HQ_ALLOWED_OWNER_EMAILS)) {
-      return env.HQ_ALLOWED_OWNER_EMAILS.map((e) => String(e).trim().toLowerCase());
-    }
-    if (typeof env.HQ_ALLOWED_OWNER_EMAILS === 'string') {
-      return env.HQ_ALLOWED_OWNER_EMAILS.split(',')
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-    }
-  }
-  return DEFAULT_ALLOWED_EMAILS.map((e) => e.toLowerCase());
-}
-
-/**
- * Verifies Firebase ID Token claims and owner email allowlist.
- * @param {string} idToken 
- * @param {object} env 
- * @returns {Promise<{ valid: boolean, user?: object, error?: string, code?: string }>}
+ * Backward-compatible adapter used by the existing HQ authorization helper.
  */
 export async function verifyFirebaseToken(idToken, env = {}) {
-  if (!idToken || typeof idToken !== 'string') {
-    return { valid: false, error: 'Missing or invalid authentication token', code: 'UNAUTHORIZED' };
-  }
-
-  const jwt = decodeJwt(idToken);
-  if (!jwt || !jwt.header || !jwt.payload) {
-    return { valid: false, error: 'Malformed JWT token structure', code: 'INVALID_TOKEN' };
-  }
-
-  const { header, payload } = jwt;
-
-  // 1. Verify RS256 algorithm
-  if (header.alg !== 'RS256') {
-    return { valid: false, error: 'Invalid JWT algorithm, expected RS256', code: 'INVALID_ALGORITHM' };
-  }
-
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
-  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
-  const nowInSeconds = Math.floor(Date.now() / 1000);
+  const result = await verifyHqFirebaseToken(idToken, {
+    projectId,
+    allowedEmails: getAllowedOwnerEmails(env)
+  });
 
-  // 2. Verify Claims: Expiry
-  if (typeof payload.exp !== 'number' || payload.exp <= nowInSeconds) {
-    return { valid: false, error: 'Firebase authentication token has expired', code: 'TOKEN_EXPIRED' };
-  }
-
-  // 3. Verify Claims: Auth Time
-  if (typeof payload.auth_time !== 'number' || payload.auth_time > nowInSeconds) {
-    return { valid: false, error: 'Token auth_time is in the future', code: 'INVALID_AUTH_TIME' };
-  }
-
-  // 4. Verify Claims: Issuer
-  if (payload.iss !== expectedIssuer) {
-    return { valid: false, error: 'Token issuer mismatch', code: 'INVALID_ISSUER' };
-  }
-
-  // 5. Verify Claims: Audience
-  if (payload.aud !== projectId) {
-    return { valid: false, error: 'Token audience mismatch', code: 'INVALID_AUDIENCE' };
-  }
-
-  // 6. Verify User Identity (UID & Email)
-  const uid = payload.sub || payload.user_id || payload.uid;
-  if (!uid || typeof uid !== 'string') {
-    return { valid: false, error: 'Token missing user subject ID', code: 'MISSING_UID' };
-  }
-
-  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
-  if (!email) {
-    return { valid: false, error: 'Token missing user email address', code: 'MISSING_EMAIL' };
-  }
-
-  // 7. Verify Email Verification Flag
-  if (payload.email_verified !== true) {
-    return { valid: false, error: 'User email address is not verified in Firebase', code: 'EMAIL_UNVERIFIED' };
-  }
-
-  // 8. Verify Allowed Owner Email Allowlist
-  const allowedEmails = getAllowedOwnerEmails(env);
-  if (!allowedEmails.includes(email)) {
-    return { valid: false, error: 'Email address is not in authorized owner allowlist', code: 'UNAUTHORIZED_EMAIL' };
+  if (!result.ok) {
+    return { valid: false, error: result.code, code: result.code };
   }
 
   return {
     valid: true,
     user: {
-      uid,
-      email,
+      uid: result.identity.uid,
+      email: result.identity.email,
       emailVerified: true,
-      authTime: payload.auth_time,
       projectId
     }
   };
+}
+
+export function resetHqCertificateCacheForTests() {
+  cache = { expiresAt: 0, certificates: null };
 }
