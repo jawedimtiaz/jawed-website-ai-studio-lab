@@ -113,7 +113,7 @@ test('authorizes active pre-enrolled owner using the live hq_users schema', asyn
   assert.equal(result.authorized, true);
   assert.equal(result.owner.uid, verified.user.uid);
   assert.equal(result.owner.displayName, 'Jawed');
-  assert.equal(db.calls.some((call) => /UPDATE hq_userss+SET last_seen_at/i.test(call.sql)), true);
+  assert.equal(db.calls.some((call) => /UPDATE hq_users\\s+SET last_seen_at/i.test(call.sql)), true);
   assert.equal(db.calls.some((call) => /INSERT INTO audit_logs/i.test(call.sql)), true);
   assert.equal(db.calls.some((call) => /hq_users.id|last_login_at|hq_audit_logs/i.test(call.sql)), false);
 });
