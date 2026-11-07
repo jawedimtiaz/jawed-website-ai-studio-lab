@@ -55,6 +55,10 @@ test('adapter preserves the existing HQ helper contract', async () => {
   const result = await verifyFirebaseToken(token, {
     FIREBASE_PROJECT_ID: project,
     HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com'
+  }, {
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: ctx.importCertificate,
+    now
   });
   assert.equal(result.valid, true);
   assert.equal(result.user.uid, 'unit-test-firebase-uid');
