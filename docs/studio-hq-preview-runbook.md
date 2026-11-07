@@ -54,15 +54,25 @@ Before a separately approved migration:
 7. Review the complete migration diff and confirm a backup/recovery plan.
 8. Obtain explicit approval to apply this exact migration to this exact preview database.
 
+## Migration command sequence (read-only first)
+
+Cloudflare documents `d1 migrations list` as the way to inspect unapplied migrations. After the preview target has been independently verified, the read-only preflight command is:
+
+```sh
+npx wrangler@<APPROVED_VERSION> d1 migrations list jawed-studio-hq-preview --remote --config wrangler.hq-preview.toml
+```
+
+This lists unapplied migration files; it does not apply them. Confirm the output identifies the expected preview database and only the intended migration.
+
 ## Approved migration command template
 
-Only after all preflight checks and separate explicit approval, use the repository's approved, pinned Wrangler CLI version and run:
+Only after all preflight checks, a reviewed migration list, and separate explicit approval, use the repository's approved, pinned Wrangler CLI version and run:
 
 ```sh
 npx wrangler@<APPROVED_VERSION> d1 migrations apply jawed-studio-hq-preview --remote --config wrangler.hq-preview.toml
 ```
 
-Do not replace the config argument with the default config. Do not run this command as part of routine build, test, or deployment steps.
+Wrangler prompts for confirmation interactively and captures a D1 backup after applying. In non-interactive CI environments the prompt is skipped, so do not run this command in CI. Do not replace the config argument with the default config. Do not run this command as part of routine build, test, or deployment steps.
 
 After an approved migration, verify the migration history, expected table/index/trigger inventory, and foreign-key checks using read-only queries. Record the command output and resulting commit SHA in the project evidence. A successful CLI exit alone is not sufficient verification.
 
