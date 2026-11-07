@@ -3,13 +3,6 @@ concurrency:
   group: production-availability-monitoring-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-monitoring-contract.json"
-      - "config/production-smoke-contract.json"
-      - "scripts/validate-production-monitoring.mjs"
-      - ".github/workflows/production-smoke-reliability.yml"
-      - ".github/workflows/production-availability-monitoring.yml"
   push:
     branches: [main]
     paths:
