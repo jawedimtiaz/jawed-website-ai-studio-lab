@@ -79,6 +79,18 @@ export default {
     // 2. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
+      if (env?.DISABLE_AI_API === 'true') {
+        return addSecurityHeaders(new Response(JSON.stringify({
+          error: 'AI is disabled on this isolated preview environment.',
+          code: 'AI_DISABLED_IN_PREVIEW'
+        }), {
+          status: 503,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store'
+          }
+        }));
+      }
       if (request.method === 'OPTIONS') {
         return addSecurityHeaders(await aiOptions(context));
       }
@@ -88,9 +100,9 @@ export default {
       if (request.method === 'POST') {
         return addSecurityHeaders(await aiPost(context));
       }
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' }), {
         status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
       }));
     }
 
