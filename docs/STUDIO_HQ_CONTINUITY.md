@@ -827,3 +827,38 @@ The fact that production monitor workflows did not run as PR checks is consisten
 - The 16 production monitor workflows did not run as PR checks, as intended. Their scheduled/manual checks have not been re-run here and no passing production result is claimed.
 - No Lab-specific live runtime check exists yet. The Cloudflare preview Worker `jawed-studio-hq-preview` was absent at the last account audit; the separate preview D1 exists but is empty. Do not point tests at the production Lab Worker as a substitute for a preview deployment.
 - PR #24 remains draft and unmerged. Do not merge until review confirms workflow trigger syntax, required checks, and the separate Lab validation plan. No Cloudflare or personal-site change was made.
+
+
+## 15. HQ-1 authentication security re-audit — 2026-11-08
+
+### Critical defect reconfirmed in current main
+
+- `functions/lib/hqAuth.js` decodes JWT header/payload and checks claims but never verifies the RS256 signature. `functions/lib/hqApi.js` trusts that result for HQ access and first-owner enrollment.
+- `tests/hq-authorization.test.js` uses a fabricated literal signature `mockSignatureString123` and currently expects those tokens to authorize users. Existing tests therefore encode the unsafe behavior and must be replaced, not merely extended.
+- Treat HQ authentication as a deployment blocker. Do not bind HQ_DB, apply HQ schema migrations, enroll the owner, or deploy HQ endpoints until verified-token tests pass.
+
+### Firebase project ID correction
+
+- The actual frontend source `src/lib/firebase.ts` imports `firebase-applet-config.json`.
+- That config's Firebase project ID is `refined-actor-skhlb`.
+- Current main `functions/lib/hqAuth.js` defaults to `ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb`, which does not match the frontend. The backend must use the same explicit, validated Firebase project ID as the frontend, without a silent unrelated fallback.
+- Correction: PR #3 branch's `jose` implementation uses `refined-actor-skhlb`, which does match the current frontend. The earlier assertion that PR #3's project ID differed was incorrect and was corrected in a follow-up comment on Issue #22.
+- PR #3 still hard-codes its owner email set rather than using the approved environment allowlist and lacks complete tests for key rotation, tampering, unknown `kid`, certificate-fetch failure, and current-main integration. Do not transplant it wholesale.
+
+### Existing issue and evidence
+
+Issue #22 remains open: [Security blocker — Firebase signature verification and D1 schema reconciliation](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/issues/22). Added follow-up comments with source evidence and the project-ID correction.
+
+Required implementation: use maintained `jose` verification with Firebase Secure Token certificates, validate `kid`, RS256 signature, issuer, audience, expiry, issued-at, auth_time, subject, verified email and owner allowlist; respect certificate cache headers, refresh on unknown `kid`, bound the certificate request, and fail closed on fetch/parse/verification failure. Tests must use generated RSA keys and real signatures, with negative tampering/key/claim/cache/network cases.
+
+### PR #24 remains separate
+
+PR #24 remains open draft, mergeable=true / mergeable_state=unstable at the last read, and unmerged. Its two checks fail for existing independent issues: AdSense inventory references a missing Jamf support helper page; Security Supply Chain rejects a generic Firebase config key pattern and the active `package.json` manifest. Do not create content or suppress scanner findings just to turn CI green.
+
+### Safety
+
+No production or preview Worker, D1 binding/database migration, owner record, Firebase credential, DNS, Pages configuration or customer data was modified. No tests were run locally in this review. The source-level security defect is confirmed; deployed exploitability has not been established.
+
+### Next exact task
+
+Create a dedicated security-fix branch from current main. Reconcile the Firebase project ID and owner allowlist, add/lock `jose` with the repository's actual package manager and lockfile, implement signature/JWKS verification, and replace the mock-signature authorization tests with cryptographically valid and invalid fixtures. Keep this work independent from PR #24 and the D1 schema migration.
