@@ -395,6 +395,23 @@ Latest PR #18 job `128462104057` completed successfully:
 
 This is focused CI evidence for the private UI branch. PR #18 remains draft and stacked on PR #15; it has not been merged or deployed. No owner is enrolled and no HQ database binding exists on the live Worker.
 
+
+## 3O. Consolidated PR/CI snapshot — 2026-11-07
+
+Latest GitHub metadata refresh confirms all PRs #12–#18 are open and mergeable; PR #13–#18 remain draft. No PR has been merged.
+
+| PR | Branch / purpose | Focused workflow | Repository-wide gates |
+|---|---|---|---|
+| #12 | Continuity documentation | No application workflow required | Mergeable, non-draft |
+| #13 | Contact persistence reconciliation | Contact API build/tests: PASS | AdSense, runtime, supply chain, AI regression: FAIL |
+| #14 | Firebase signature verification | 13 auth tests + build: PASS | AI GET/POST, runtime, supply chain, AdSense, AI regression: FAIL |
+| #15 | HQ API/D1 schema contract | 13 Firebase tests + 11 HQ API tests + build: PASS | AI GET/POST, runtime, supply chain, AdSense, AI regression: FAIL |
+| #16 | HQ service-worker cache bypass | 3 private-route tests: PASS | PWA and supply chain: FAIL on stale validator/baseline findings |
+| #17 | PWA validator semantic correction | PWA Reliability Gate: PASS | Supply chain: FAIL |
+| #18 | Private HQ frontend | Private route/cache/noindex tests + build: PASS; PWA: PASS | Supply chain: FAIL |
+
+All statuses apply to the exact head SHAs recorded in section 9. Refresh before merge or deployment decisions. The repository-wide failures must be fixed in bounded changes; focused feature test success does not make the overall project release-ready.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
