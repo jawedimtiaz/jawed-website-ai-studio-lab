@@ -286,6 +286,33 @@ The corrected PR #14 head `c09224597136f01c1cf19747808eac1816196a88` has a succe
 
 This is verified focused CI evidence for the signature-verification helper. It does not mean the overall repository gates pass: AdSense, AI regression, supply-chain, production AI GET/POST, and deployment-runtime gates remain failed on this commit. It also does not resolve the HQ D1/API schema mismatch, frontend route absence, or service-worker private-page caching gap. Keep the HQ database binding disabled until those separate blockers are resolved and reviewed.
 
+
+## 3G. Studio HQ API/D1 schema reconciliation PR opened — 2026-11-07
+
+A second stacked draft PR was created from the verified-auth branch:
+
+- Branch: `fix/studio-hq-api-schema-contract`
+- Draft PR #15: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/15
+- PR base: `fix/studio-hq-firebase-signature-verification` (PR #14 branch); this is intentionally stacked.
+- Latest head SHA: `6620a20dddca3d0ae30bb94c5ed3c0c2ff68f661`; GitHub reports mergeable=true.
+- Refactors `hqApi.js` to the actual `hq_users(uid,email,display_name,status,created_at,last_seen_at)` and `audit_logs` schema.
+- Removes request-driven first-owner auto-enrollment. The Firebase UID must be explicitly pre-enrolled. Read-only live D1 query confirms `hq_users` currently has **zero rows**; no owner was added.
+- Refactors clients/projects/tasks/milestones endpoints to use `clients`, `projects`, `project_tasks`, and `project_milestones` with the correct live columns, status constraints, minor-unit monetary storage and soft-archive behavior.
+- Adds relationship validation so a task milestone must belong to the selected project; project and milestone creation require a non-archived parent record.
+- Adds same-origin OPTIONS handling and owner-authorization tests. No D1 binding or deployment is included.
+- Adds `docs/studio-hq-api-schema-contract.md` with the confirmed API/schema mapping.
+
+At the last check, the dedicated Studio HQ D1 API Schema Contract Tests workflow run `42391641588` was in progress at dependency installation; no test result is claimed yet. Refresh it and review all failures before considering this PR ready.
+
+### Explicit remaining gates
+
+1. PR #14 signature-verification focused CI is passing (13/13 tests and build), but PR #14 remains draft/unmerged and repository-wide gates still fail.
+2. PR #15 schema/auth helper tests and build must pass. Add/perform isolated D1 integration tests before deployment.
+3. Current main still lacks the `/studio-hq` frontend route/page; the older PR #3 UI must be reviewed and ported to the current design/API contract separately.
+4. The service worker on main still lacks a no-cache exclusion for `/studio-hq` and descendants.
+5. The live HQ D1 has zero owner rows; first-owner enrollment requires an explicit, separately approved operation after confirming the Firebase UID.
+6. Do not bind `HQ_DB` to the live Worker until all security, schema, frontend and preview integration checks pass and the owner approves deployment.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
