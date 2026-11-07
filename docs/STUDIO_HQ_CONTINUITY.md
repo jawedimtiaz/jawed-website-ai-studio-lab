@@ -383,6 +383,18 @@ For PR #18 head `1407c91959044520ab2639cbfe837e34d258e4d6`:
 - TypeScript lint and production build step was still running at the last job-step query. Do not mark PR #18 fully verified until that step completes successfully.
 - Security Supply Chain Gate remains failed on the existing Firebase client-config literal and package manifest allowlist findings.
 
+
+## 3N. PR #18 private frontend checks and build passed — 2026-11-07
+
+Latest PR #18 job `128462104057` completed successfully:
+- Private service-worker cache test: PASS.
+- Private page route/session/noindex contract test: PASS.
+- TypeScript lint and production build: PASS.
+- PWA Reliability Gate: PASS.
+- Security Supply Chain Gate: still FAIL on the pre-existing repository-wide findings documented in sections 3B/3K.
+
+This is focused CI evidence for the private UI branch. PR #18 remains draft and stacked on PR #15; it has not been merged or deployed. No owner is enrolled and no HQ database binding exists on the live Worker.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
