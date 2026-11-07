@@ -3,12 +3,6 @@ concurrency:
   group: production-security-headers-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-security-header-contract.json"
-      - "scripts/validate-production-security-headers.mjs"
-      - ".github/workflows/production-security-headers.yml"
-      - "_headers"
   push:
     branches: [main]
     paths:
