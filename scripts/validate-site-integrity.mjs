@@ -12,7 +12,24 @@ const siteUrls=sitemapUrls.filter(url=>url.startsWith("https://jawed.co.in/"));
 const nonCanonicalSitemapUrls=sitemapUrls.filter(url=>!url.startsWith("https://jawed.co.in/"));
 const sitemapPaths=siteUrls.map(url=>url.slice("https://jawed.co.in".length)||"/");
 const sourcePaths=tree.filter(file=>file!=="404.html"&&file!=="offline.html"&&!file.startsWith("google"));
-const missingSources=sitemapPaths.filter(path=>!fs.existsSync(sourcePath(path)));
+const toolsDataSource=fs.readFileSync("src/data/toolsData.ts","utf8");
+const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
+function hasReactToolSource(path){
+  const match=path.match(/^\\/tools\\/([^/]+)\\/?$/);
+  if(!match)return false;
+  const slug=match[1];
+  const start=toolsDataSource.indexOf(`slug: '${slug}'`);
+  if(start<0)return false;
+  const end=toolsDataSource.indexOf("\\n  },",start);
+  const entry=end<0?toolsDataSource.slice(start):toolsDataSource.slice(start,end);
+  const componentMatch=toolDetailSource.match(new RegExp(`case ['"]${slug}['"]:\\s*return <([A-Za-z0-9_]+)\\s*\\/>`));
+  if(!componentMatch)return false;
+  const componentName=componentMatch[1];
+  const imported=toolDetailSource.includes(`import { ${componentName} }`);
+  const requiredFields=["title:","purpose:","steps:","exampleOutput:","faq:"];
+  return imported && requiredFields.every(field=>entry.includes(field));
+}
+const missingSources=sitemapPaths.filter(path=>!fs.existsSync(sourcePath(path))&&!hasReactToolSource(path));
 const unsitemapPages=sourcePaths.filter(file=>{
   const path=file==="index.html"?"/":"/"+file.replace(/\/index\.html$/,"")+"/";
   return !sitemapPaths.includes(path);
@@ -67,8 +84,24 @@ for(const file of publishedHtml){
 if(metadataContractErrors.length)errors.push("Published-page metadata contract failed: "+metadataContractErrors.join(", "));
 
 const navigationContractErrors=[];
+const reactHeader=fs.readFileSync("src/components/layout/Header.tsx","utf8");
 for(const file of publishedHtml){
   if(file==="tools/career-match-resume-review/index.html")continue;
+  if(file==="index.html"){
+    const requiredReactNavigationContract=
+      reactHeader.includes('id="site-nav"')&&
+      reactHeader.includes('aria-label="Main navigation"')&&
+      reactHeader.includes('className="nav-group"')&&
+      reactHeader.includes('to="/topics/"')&&
+      reactHeader.includes('to="/notes/"')&&
+      reactHeader.includes('to="/blog/"')&&
+      reactHeader.includes('to="/resources/"')&&
+      reactHeader.includes('to="/tools/"')&&
+      reactHeader.includes('to="/ai/"')&&
+      reactHeader.includes('to="/contact/"');
+    if(!requiredReactNavigationContract)navigationContractErrors.push(file);
+    continue;
+  }
   const html=fs.readFileSync(file,"utf8");
   const nav=html.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/)?.[1]||"";
   const requiredNavigationContract=
