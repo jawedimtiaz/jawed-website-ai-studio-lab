@@ -236,6 +236,23 @@ Read-only Cloudflare inspection of live D1 `jawed-studio-hq` (UUID `d9ec83ea-711
 
 No source or Cloudflare resource was modified as part of this security/schema audit.
 
+
+## 3C. Firebase signature-verification remediation PR opened — 2026-11-07
+
+A dedicated security branch and draft PR were created from current `main`:
+
+- Branch: `fix/studio-hq-firebase-signature-verification`
+- Draft PR #14: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/14
+- Head SHA: `e461da33ae4cd9f005ae64440aa6f66205eeac09`
+- GitHub currently reports mergeable=true; PR remains draft and unmerged.
+- Replaces claim-only JWT decoding with JOSE RS256 signature verification against Google's Firebase Secure Token X.509 certificates.
+- Uses confirmed Firebase project ID `refined-actor-skhlb`, with a trusted environment override only, and preserves the existing main default owner allowlist (`jawedimtiaz@gmail.com`).
+- Keeps the existing `verifyFirebaseToken(idToken, env)` helper contract used by `hqApi.js`.
+- Adds pinned `jose@6.1.0`, 13 focused tests and a dedicated workflow.
+- No Cloudflare deployment, D1 binding, owner enrollment, or database mutation was performed.
+
+At the last workflow query, no workflow runs were yet returned for PR #14. Re-check GitHub Actions before marking the tests passed. PR #14 only addresses cryptographic token verification; the live HQ schema/API mismatch remains unresolved and blocks any HQ_DB binding/deployment.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
