@@ -24,7 +24,7 @@ function loadFetchHandler() {
       match: async () => null
     }
   };
-  const source = fs.readFileSync(new URL('../../service-worker.js', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../service-worker.js', import.meta.url), 'utf8');
   vm.runInNewContext(source, sandbox, { filename: 'service-worker.js' });
   return listeners.fetch;
 }
