@@ -3,19 +3,6 @@ concurrency:
   group: production-legacy-redirects-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-legacy-redirect-contract.json"
-      - "scripts/validate-production-legacy-redirects.mjs"
-      - ".github/workflows/production-legacy-redirects.yml"
-      - "_redirects"
-  push:
-    branches: [main]
-    paths:
-      - "config/production-legacy-redirect-contract.json"
-      - "scripts/validate-production-legacy-redirects.mjs"
-      - ".github/workflows/production-legacy-redirects.yml"
-      - "_redirects"
   workflow_dispatch:
   schedule:
     - cron: "07 */6 * * *"
