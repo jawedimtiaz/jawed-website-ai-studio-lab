@@ -128,11 +128,11 @@ export async function verifyAndAuthorizeOwner(request, env, options = {}) {
 
   if (!userRecord) {
     await auditLog(db, {
-      userId: firebaseUser.uid,
+      userId: null,
       actorEmail: firebaseUser.email,
       action: 'OWNER_ENROLLMENT_REJECTED',
       status: 'DENIED',
-      details: { email: firebaseUser.email, reason: 'owner_uid_not_pre_enrolled' }
+      details: { email: firebaseUser.email, firebaseUid: firebaseUser.uid, reason: 'owner_uid_not_pre_enrolled' }
     });
     return {
       authorized: false,
