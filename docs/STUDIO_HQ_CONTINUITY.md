@@ -695,3 +695,48 @@ No production site files, DNS, Cloudflare Pages settings, Worker routes, AdSense
 ### Next bounded action
 
 Before changing PR #20 contracts, perform a read-only inventory of the current repository build/deployment configuration and the live production asset URLs. Then prepare a proposed deployment contract that accurately models the real Cloudflare Pages build output and current React/Vite assets. Keep production changes and AdSense publisher association as separate approval gates.
+
+
+## 12. Cloudflare deployment ownership and CI scope — 2026-11-07
+
+A fresh read-only Cloudflare inventory resolved the production-vs-Lab ownership question:
+
+### Personal website — separate Cloudflare Pages project
+
+- Pages project: `jawed-website`.
+- Connected GitHub source: `jawedimtiaz/jawed-website`, production branch `main`.
+- Build command: `npm run build`; output directory: `dist`.
+- Active custom domains: `jawed.co.in` and `www.jawed.co.in`.
+- Cloudflare reported the latest production deployment as successful, created 2026-11-07 15:57:07 UTC.
+
+### Studio Lab — separate Cloudflare Worker
+
+- Worker service: `jawed-website-ai-studio-lab`.
+- Active custom Worker domain: `lab.jawed.co.in`.
+- Worker environment: `ENVIRONMENT=lab`.
+- Canonical origin: `https://lab.jawed.co.in`.
+- Existing bindings at inspection: `AI`, `ASSETS`, `CANONICAL_ORIGIN`, `ENVIRONMENT`; no `HQ_DB` or `CONTACT_DB` binding was present in the live Worker settings at the last relevant inspection.
+- Latest listed Worker deployment: 2026-11-04 11:00:38 UTC.
+
+### CI ownership defect and tracked remediation
+
+The Studio Lab repository's deployment/runtime and production smoke contracts currently point to `https://jawed.co.in`, while the Cloudflare Pages project serving that host is connected to the separate `jawed-website` repository. This makes Lab PR checks dependent on a protected external production deployment and on legacy asset paths. It does not establish the runtime state of `lab.jawed.co.in`.
+
+Created Issue #23: [Separate Studio Lab runtime checks from jawed.co.in production monitoring](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/issues/23).
+
+**Recommended architecture:**
+1. Keep `jawed.co.in` production smoke/asset monitoring in the `jawed-website` repository and its production pipeline.
+2. Scope Studio Lab PR checks to the actual Lab Worker origin `https://lab.jawed.co.in` and the Worker asset/API contract.
+3. If cross-project production monitoring is still desired, isolate it as a separate scheduled read-only monitor that does not block unrelated Lab PRs.
+4. Do not modify the personal Pages project, custom domains, DNS or production source as part of Lab remediation.
+
+The direct public HTTP probe could not be completed from this execution environment, so no current live HTTP response for `lab.jawed.co.in` is claimed here. The Cloudflare resource ownership/configuration and GitHub Actions log diagnostics above are the available evidence.
+
+No Cloudflare resource, production domain, DNS record, Worker route or Pages deployment was changed during this review.
+
+### Current restart priority
+
+1. Resolve CI ownership/scope through Issue #23 without weakening runtime validation.
+2. Fix dependency policy with a pinned manifest + lockfile approach; do not delete the Vite/React package manifest.
+3. Keep the AdSense publisher-tag gate blocked pending explicit approval.
+4. Continue HQ security/schema work through PR #14–#18 and Issue #22; do not bind or deploy HQ_DB before all required tests and separate approval.
