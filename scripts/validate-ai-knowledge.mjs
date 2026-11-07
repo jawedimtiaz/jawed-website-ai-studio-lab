@@ -80,12 +80,24 @@ assert.equal(kbGuide?.keywords.includes("incident sanitization")&&kbGuide?.keywo
 
 const reviewDate=knowledge.reviewed_against_sitemap_on;
 const reviewDateMs=typeof reviewDate==="string"&&!Number.isNaN(Date.parse(reviewDate+"T23:59:59Z"))?Date.parse(reviewDate+"T23:59:59Z"):NaN;
-const groundingSourceFiles=[...new Set(sitemapPaths.filter(path=>!excluded.has(path)).flatMap(sourceFilesForPath))].filter(file=>file!=="index.html");
 const sourceFreshnessErrors=[];
-const changedSourceFiles=Number.isNaN(reviewDateMs)?[]:groundingSourceFiles.filter(file=>{
-  try{return Boolean(execFileSync("git",["log","--since="+reviewDate+"T23:59:59Z","--format=%H","--",file],{encoding:"utf8"}).trim());}
-  catch{sourceFreshnessErrors.push(file);return false;}
-});
+const changedSourceFiles=[];
+for(const path of sitemapPaths.filter(path=>!excluded.has(path))){
+  const entry=knowledge.entries.find(item=>item.url===path);
+  const entryReviewDate=entry?.reviewed_on||reviewDate;
+  const entryReviewDateMs=typeof entryReviewDate==="string"&&!Number.isNaN(Date.parse(entryReviewDate+"T23:59:59Z"))?Date.parse(entryReviewDate+"T23:59:59Z"):NaN;
+  if(Number.isNaN(entryReviewDateMs)){
+    sourceFreshnessErrors.push(path+" (missing or invalid review date)");
+    continue;
+  }
+  for(const file of sourceFilesForPath(path)){
+    try{
+      if(execFileSync("git",["log","--since="+entryReviewDate+"T23:59:59Z","--format=%H","--",file],{encoding:"utf8"}).trim())changedSourceFiles.push(file+" (source "+path+")");
+    }catch{
+      sourceFreshnessErrors.push(file+" (source "+path+")");
+    }
+  }
+}
 const requiredWorkflowPaths=new Set(["index.html","_headers","_redirects","_routes.json","scripts/validate-site-integrity.mjs"]);
 for(const path of sitemapPaths.filter(path=>path!=="/"&&!excluded.has(path))){
   const family=path.split("/").filter(Boolean)[0];
