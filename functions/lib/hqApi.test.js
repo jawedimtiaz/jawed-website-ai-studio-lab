@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractBearerToken, verifyAndAuthorizeOwner } from './hqApi.js';
+import { extractBearerToken, verifyAndAuthorizeOwner, optionsResponse } from './hqApi.js';
 
 const verified = {
   valid: true,
@@ -123,4 +123,25 @@ test('fails closed when the hq_users lookup fails', async () => {
   const result = await verifyAndAuthorizeOwner(request(), { HQ_DB: db }, { verifyToken });
   assert.equal(result.authorized, false);
   assert.equal(result.response.status, 503);
+});
+
+
+test('rejects cross-origin HQ preflight requests', async () => {
+  const req = new Request('https://lab.jawed.co.in/api/hq/clients', {
+    method: 'OPTIONS',
+    headers: { origin: 'https://attacker.example' }
+  });
+  const response = optionsResponse(req, 'GET, POST, OPTIONS');
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'ORIGIN_NOT_ALLOWED');
+});
+
+test('allows same-origin HQ preflight requests without wildcard CORS', async () => {
+  const req = new Request('https://lab.jawed.co.in/api/hq/clients', {
+    method: 'OPTIONS',
+    headers: { origin: 'https://lab.jawed.co.in' }
+  });
+  const response = optionsResponse(req, 'GET, POST, OPTIONS');
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
