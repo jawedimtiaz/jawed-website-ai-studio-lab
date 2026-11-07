@@ -80,10 +80,20 @@ No merge, rebase, branch rewrite, Cloudflare change or deployment was performed 
 
 ## 2B. Continuity PR status and divergence details — 2026-11-07
 
-- Continuity documentation PR #12 remains **open**, targets `main`, and is currently reported mergeable. Latest head commit: `72491cf64924a377fa67fc8a7bf5dab6b3af5f53`. It has not been merged. The document was re-fetched from its feature branch after the update to verify the content exists.
+- Continuity documentation PR #12 remains **open**, targets `main`, and is currently reported mergeable. The report has been updated several times on this branch; check PR #12 for the current head SHA. It has not been merged. The document was re-fetched from its feature branch after the update to verify the content exists.
 - GitHub compare API reports PR #2 branch as diverged from `main` (27 commits ahead, 2 behind) and PR #3 branch as diverged (25 ahead, 1 behind). GitHub PR metadata reports both as `mergeable=false`. The compare endpoint did not return conflict file details; do not guess which files conflict. Use the GitHub PR UI or a safe local merge simulation to identify exact conflicts.
 - Combined commit-status endpoint returned no status rows for the PR #2 and #3 heads; workflow-run API is the available evidence for their named checks above.
 - The documentation PR #12 is separate from the application PR dependency stack. It can be merged independently after the owner reviews/approves it; it has intentionally not been merged automatically.
+
+
+## 2C. Confirmed merge-conflict state — 2026-11-07
+
+A direct GitHub Pull Request API read confirms:
+- PR #2 `mergeable=false`, `mergeable_state=dirty`.
+- PR #3 `mergeable=false`, `mergeable_state=dirty`.
+- Both PRs currently have zero issue comments and zero inline review comments. No maintainer explanation of the conflicts is recorded in their discussions.
+
+This confirms actual merge conflicts, not merely branches being behind. The API response did not enumerate conflicting paths. Do not attempt automatic merge, rebase, or force-push. Identify exact conflict paths using a local checkout/merge simulation on a disposable local worktree or a separate scratch branch; preserve the existing feature branch commits. Reconcile each conflict, run its feature tests and affected repository gates, then update the PR branch through a reviewed commit.
 
 ## 3. Studio HQ architecture and implemented foundations
 
