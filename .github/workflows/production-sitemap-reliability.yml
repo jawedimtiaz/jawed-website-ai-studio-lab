@@ -3,19 +3,6 @@ concurrency:
   group: production-sitemap-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "sitemap.xml"
-      - "config/production-sitemap-contract.json"
-      - "scripts/validate-production-sitemap.mjs"
-      - ".github/workflows/production-sitemap-reliability.yml"
-  push:
-    branches: [main]
-    paths:
-      - "sitemap.xml"
-      - "config/production-sitemap-contract.json"
-      - "scripts/validate-production-sitemap.mjs"
-      - ".github/workflows/production-sitemap-reliability.yml"
   workflow_dispatch:
   schedule:
     - cron: "31 */6 * * *"
