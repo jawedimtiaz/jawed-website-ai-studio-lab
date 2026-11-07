@@ -49,6 +49,23 @@ export async function onRequestPost({ request, env }) {
   if (!STATUSES.has(status)) return errorResponse(400, 'INVALID_STATUS', 'Unsupported task status');
   if (!PRIORITIES.has(priority)) return errorResponse(400, 'INVALID_PRIORITY', 'Unsupported task priority');
 
+  try {
+    const project = await env.HQ_DB.prepare(
+      'SELECT id FROM projects WHERE id = ? AND archived_at IS NULL LIMIT 1'
+    ).bind(projectId).first();
+    if (!project) return errorResponse(404, 'PROJECT_NOT_FOUND', 'The selected project does not exist or is archived');
+
+    if (milestoneId) {
+      const milestone = await env.HQ_DB.prepare(
+        'SELECT id FROM project_milestones WHERE id = ? AND project_id = ? AND archived_at IS NULL LIMIT 1'
+      ).bind(milestoneId, projectId).first();
+      if (!milestone) return errorResponse(400, 'INVALID_MILESTONE', 'The milestone must belong to the selected project');
+    }
+  } catch (error) {
+    console.error('[HQ Tasks Relationship Check Error]', String(error?.message || error));
+    return errorResponse(503, 'DATABASE_UNAVAILABLE', 'Task relationships could not be validated');
+  }
+
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   try {
