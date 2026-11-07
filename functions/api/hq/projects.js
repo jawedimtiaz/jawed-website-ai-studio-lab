@@ -62,6 +62,16 @@ export async function onRequestPost({ request, env }) {
   if (!PRIORITIES.has(priority)) return errorResponse(400, 'INVALID_PRIORITY', 'Unsupported project priority');
   if (!PROJECT_TYPES.has(projectType)) return errorResponse(400, 'INVALID_PROJECT_TYPE', 'Unsupported project type');
   if (Number.isNaN(budgetMinor)) return errorResponse(400, 'INVALID_AMOUNT', 'Budget must be a non-negative amount');
+  try {
+    const client = await env.HQ_DB.prepare(
+      'SELECT id FROM clients WHERE id = ? AND archived_at IS NULL LIMIT 1'
+    ).bind(clientId).first();
+    if (!client) return errorResponse(404, 'CLIENT_NOT_FOUND', 'The selected client does not exist or is archived');
+  } catch (error) {
+    console.error('[HQ Project Client Check Error]', String(error?.message || error));
+    return errorResponse(503, 'DATABASE_UNAVAILABLE', 'Project client could not be validated');
+  }
+
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
