@@ -262,6 +262,17 @@ At the last workflow query, no workflow runs were yet returned for PR #14. Re-ch
 - Latest PR #14 head after the correction: `c09224597136f01c1cf19747808eac1816196a88`. GitHub reports mergeable=true. A new workflow run was not yet visible at the last query; refresh Actions and require a full pass before treating the auth fix as verified.
 - Other PR #14 baseline gates (AdSense, AI regression, supply chain, production AI GET/POST, deployment runtime) also failed; investigate their job logs separately. The existing repository-wide validator failures described in section 3B are not resolved by the auth patch.
 
+
+## 3E. Studio HQ frontend route missing from current main — 2026-11-07
+
+A direct read-only check of current `main` confirms:
+- `src/App.tsx` contains no `/studio-hq` route and no `StudioHqPage` import.
+- `src/pages/StudioHqPage.tsx` does not exist on current `main` (404).
+- Current `worker.js` does contain HQ API route imports and routing.
+- Live Lab Worker still has only AI, ASSETS, CANONICAL_ORIGIN and ENVIRONMENT bindings; no HQ_DB.
+
+Therefore the current main branch is an incomplete integration: server-side HQ API routes exist, but the HQ frontend shell is not present on main, and the live Worker is not bound to the HQ database. PR #3 contains an earlier frontend implementation, but it must be reviewed against the current design and current API/schema contract before porting. Do not assume the HQ dashboard is available at `/studio-hq` on the current main deployment.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
