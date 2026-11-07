@@ -3,12 +3,6 @@ concurrency:
   group: production-html-seo-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-html-seo-contract.json"
-      - "scripts/validate-production-html-seo.mjs"
-      - ".github/workflows/production-html-seo-reliability.yml"
-      - "**/index.html"
   push:
     branches: [main]
     paths:
