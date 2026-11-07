@@ -1,0 +1,36 @@
+name: Studio HQ D1 API Schema Contract Tests
+
+on:
+  pull_request:
+    branches: [main, fix/studio-hq-firebase-signature-verification]
+    paths:
+      - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqApi.test.js'
+      - 'functions/api/hq/**'
+      - 'migrations/hq/**'
+      - 'package.json'
+      - '.github/workflows/studio-hq-schema-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hq-schema-contract:
+    name: HQ authorization and schema contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Firebase token verification tests
+        run: node --test functions/lib/hqAuth.test.js
+      - name: HQ authorization and D1 schema tests
+        run: node --test functions/lib/hqApi.test.js
+      - name: TypeScript lint and production build
+        run: npm run build
