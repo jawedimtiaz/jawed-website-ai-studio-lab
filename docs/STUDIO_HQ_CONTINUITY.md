@@ -806,3 +806,13 @@ Added `docs/lab-ci-scope-separation.md`, which records why this is only a trigge
 ### Next exact step
 
 Inspect PR #24 Actions and review all remaining workflows for any hidden hard-coded `jawed.co.in` probes that still run on PRs. Then design a separate Lab-specific preview smoke contract against a safe preview Worker. Keep production monitoring in the personal `jawed-website` repository as the eventual destination; do not remove the scheduled/manual monitors from Lab until that migration is ready and approved.
+
+
+### PR #24 first Actions results — 2026-11-07
+
+At head `f8375dbc775005505554c77c0eca4238b690e349`, the PR-triggered workflows were:
+
+- AdSense Readiness Gate: failed. The actual log says the validator could not open `tools/apple-macos-jamf-support-helper/index.html` (ENOENT). This is a missing-file/inventory contract mismatch on the current branch, not a failure caused by the 16 workflow trigger edits. Do not fabricate or auto-create that content page as a quick fix; review the AdSense inventory contract and intended page status separately.
+- Security Supply Chain Gate: failed with the known existing findings: generic credential-like literal match in `firebase-applet-config.json`, and the outdated policy rejecting the active Vite/React `package.json` manifest. No secrets were copied into the report.
+
+The fact that production monitor workflows did not run as PR checks is consistent with the intended trigger isolation. This is not evidence that their remote production checks passed. No Lab runtime check was added by PR #24 yet.
