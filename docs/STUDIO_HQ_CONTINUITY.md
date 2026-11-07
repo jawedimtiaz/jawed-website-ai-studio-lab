@@ -816,3 +816,14 @@ At head `f8375dbc775005505554c77c0eca4238b690e349`, the PR-triggered workflows w
 - Security Supply Chain Gate: failed with the known existing findings: generic credential-like literal match in `firebase-applet-config.json`, and the outdated policy rejecting the active Vite/React `package.json` manifest. No secrets were copied into the report.
 
 The fact that production monitor workflows did not run as PR checks is consistent with the intended trigger isolation. This is not evidence that their remote production checks passed. No Lab runtime check was added by PR #24 yet.
+
+
+### PR #24 follow-up verification and current disposition — 2026-11-07
+
+- PR #24 head remains `f8375dbc775005505554c77c0eca4238b690e349` at the latest inspected Actions run.
+- GitHub Actions ran AdSense Readiness and Security Supply Chain; both failed for pre-existing repository issues, not the production-monitor trigger changes.
+- AdSense log: `ENOENT` for `tools/apple-macos-jamf-support-helper/index.html`. Review inventory intent separately; do not auto-create a page to satisfy the validator.
+- Security log: generic scanner match in `firebase-applet-config.json` and obsolete rejection of the app's active `package.json` manifest. These remain tracked remediation items.
+- The 16 production monitor workflows did not run as PR checks, as intended. Their scheduled/manual checks have not been re-run here and no passing production result is claimed.
+- No Lab-specific live runtime check exists yet. The Cloudflare preview Worker `jawed-studio-hq-preview` was absent at the last account audit; the separate preview D1 exists but is empty. Do not point tests at the production Lab Worker as a substitute for a preview deployment.
+- PR #24 remains draft and unmerged. Do not merge until review confirms workflow trigger syntax, required checks, and the separate Lab validation plan. No Cloudflare or personal-site change was made.
