@@ -88,6 +88,15 @@ for(const file of publishedHtml){
 }
 if(metadataContractErrors.length)errors.push("Published-page metadata contract failed: "+metadataContractErrors.join(", "));
 
+const documentHeadSource=fs.readFileSync("src/components/common/DocumentHead.tsx","utf8");
+const reactToolMetadataContract=
+  documentHeadSource.includes("toolsList.find((t) => t.slug === slug)")&&
+  documentHeadSource.includes("${tool.title} | Interactive Tool | Jawed Imtiaz")&&
+  documentHeadSource.includes("${tool.benefit} ${tool.description}");
+if(!reactToolMetadataContract)errors.push("React tool routes must provide route-specific title and description metadata through DocumentHead");
+else console.log("React tool route metadata contract: PASS");
+
+
 const navigationContractErrors=[];
 const reactHeader=fs.readFileSync("src/components/layout/Header.tsx","utf8");
 for(const file of publishedHtml){
