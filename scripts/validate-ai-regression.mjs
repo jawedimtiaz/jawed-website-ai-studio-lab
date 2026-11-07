@@ -84,6 +84,10 @@ for(const [name,path,completion] of checks){
   }
 }
 
+const originTest=execFileSync(process.execPath,["scripts/test-ai-origin-boundary.mjs"],{stdio:"pipe",encoding:"utf8",timeout:VALIDATOR_TIMEOUT_MS});
+assert.match(originTest,/AI origin boundary tests: PASS/);
+console.log("AI origin boundary behavior: PASS");
+
 const endpoint=fs.readFileSync("functions/api/ai.js","utf8");
 const provider=fs.readFileSync("functions/lib/cloudflare-ai-provider.js","utf8");
 const providerCommon=fs.readFileSync("functions/lib/ai-provider-common.js","utf8");
@@ -98,7 +102,7 @@ const contracts=[
   ["server request-size boundary",/MAX_BODY_BYTES=\d+/.test(endpoint)],
   ["server message-count boundary",/MAX_MESSAGES=\d+/.test(endpoint)],
   ["server message-length boundary",/MAX_MESSAGE_CHARS=\d+/.test(endpoint)],
-  ["same-site origin boundary",endpoint.includes("https://jawed.co.in")],
+  ["same-site origin boundary",endpoint.includes("function isAllowedOrigin(origin)")&&endpoint.includes('host.endsWith(".jawed.co.in")')&&endpoint.includes("jawed-website-ai-studio-lab.pages.dev")&&!endpoint.includes('host.endsWith(".workers.dev")')&&!endpoint.includes('host.endsWith(".pages.dev")')&&!endpoint.includes('host.endsWith(".run.app")')],
   ["rate-limit boundary",rateLimit.includes("MAX_REQUESTS="+MAX_REQUESTS)&&rateLimit.includes("WINDOW_MS="+WINDOW_MS)],
   ["server-side Workers AI binding",endpoint.includes("env.AI")&&provider.includes("ai.run")],
   ["fixed free-tier model boundary",endpoint.includes("model:DEFAULT_MODEL")&&!endpoint.includes("AI_PROVIDER_MODEL")&&provider.includes("FREE_MODEL=DEFAULT_MODEL")],
