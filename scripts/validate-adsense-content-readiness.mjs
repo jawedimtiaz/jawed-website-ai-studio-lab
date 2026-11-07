@@ -32,12 +32,13 @@ for(const routePath of publishedRoutes){
     assert.notEqual(start,-1,"React tool data entry missing: "+slug);
     const end=toolsSource.indexOf("\n  },",start);
     publishedContent=end<0?toolsSource.slice(start):toolsSource.slice(start,end);
-    const mappingLine=toolDetailSource.split("\n").find(line=>line.includes(`case '${slug}':`));
-    assert.notEqual(mappingLine,undefined,"React tool component mapping missing: "+slug);
-    const componentStart=mappingLine.indexOf("return <");
-    const componentEnd=mappingLine.indexOf(" />",componentStart);
+    const mappingStart=toolDetailSource.indexOf(`case '${slug}':`);
+    assert.notEqual(mappingStart,-1,"React tool component mapping missing: "+slug);
+    const mappingBlock=toolDetailSource.slice(mappingStart,mappingStart+300);
+    const componentStart=mappingBlock.indexOf("return <");
+    const componentEnd=mappingBlock.indexOf(" />",componentStart);
     assert.ok(componentStart>=0&&componentEnd>componentStart,"React tool component mapping is invalid: "+slug);
-    const componentName=mappingLine.slice(componentStart+8,componentEnd).trim();
+    const componentName=mappingBlock.slice(componentStart+8,componentEnd).trim();
     assert.equal(toolDetailSource.includes(`import { ${componentName} }`),true,"React tool component import missing: "+slug);
     for(const field of ["title:","purpose:","steps:","exampleOutput:","faq:"]){
       assert.equal(publishedContent.includes(field),true,"React tool content field missing ("+field+"): "+slug);
