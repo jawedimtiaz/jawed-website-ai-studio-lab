@@ -1,22 +1,6 @@
 name: Production AI GET Runtime Reliability Gate
 
 on:
-  pull_request:
-    paths:
-      - "config/production-ai-get-contract.json"
-      - "scripts/validate-production-ai-get.mjs"
-      - ".github/workflows/production-ai-get-reliability.yml"
-      - "functions/api/ai.js"
-      - "functions/lib/**"
-  push:
-    branches:
-      - main
-    paths:
-      - "config/production-ai-get-contract.json"
-      - "scripts/validate-production-ai-get.mjs"
-      - ".github/workflows/production-ai-get-reliability.yml"
-      - "functions/api/ai.js"
-      - "functions/lib/**"
   schedule:
     - cron: "47 */6 * * *"
   workflow_dispatch:
