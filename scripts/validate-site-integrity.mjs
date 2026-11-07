@@ -15,9 +15,9 @@ const sourcePaths=tree.filter(file=>file!=="404.html"&&file!=="offline.html"&&!f
 const toolsRegistry=fs.readFileSync("src/data/toolsData.ts","utf8");
 const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
 const isRegisteredReactToolRoute=path=>{
-  const match=path.match(/^\\/tools\\/([a-z0-9-]+)\\/$/);
-  if(!match)return false;
-  const slug=match[1];
+  if(!path.startsWith("/tools/")||!path.endsWith("/"))return false;
+  const slug=path.slice(7,-1);
+  if(!/^[a-z0-9-]+$/.test(slug))return false;
   const registered=toolsRegistry.includes("slug: '"+slug+"'")||toolsRegistry.includes('slug: "'+slug+'"');
   const rendered=toolDetailSource.includes("case '"+slug+"':")||toolDetailSource.includes('case "'+slug+'":');
   return registered&&rendered;
