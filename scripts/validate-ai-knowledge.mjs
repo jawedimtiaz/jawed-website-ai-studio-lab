@@ -15,7 +15,29 @@ const sitemapPaths=allSitemapLocs.filter(url=>url.startsWith("https://jawed.co.i
 const workflow=fs.readFileSync(".github/workflows/ai-regression.yml","utf8");
 const indexPaths=knowledge.entries.map(entry=>entry.url);
 const sourcePath=(url)=>url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
-const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!fs.existsSync(sourcePath(path)));
+const toolsDataSource=fs.readFileSync("src/data/toolsData.ts","utf8");
+const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
+function hasReactToolSource(path){
+  const prefix="/tools/";
+  if(!path.startsWith(prefix))return false;
+  let slug=path.slice(prefix.length);
+  if(slug.endsWith("/"))slug=slug.slice(0,-1);
+  if(!slug||slug.includes("/"))return false;
+  const start=toolsDataSource.indexOf(`slug: '${slug}'`);
+  if(start<0)return false;
+  const end=toolsDataSource.indexOf("\n  },",start);
+  const entry=end<0?toolsDataSource.slice(start):toolsDataSource.slice(start,end);
+  const mappingStart=toolDetailSource.indexOf(`case '${slug}':`);
+  if(mappingStart<0)return false;
+  const mappingBlock=toolDetailSource.slice(mappingStart,mappingStart+300);
+  const componentStart=mappingBlock.indexOf("return <");
+  const componentEnd=mappingBlock.indexOf(" />",componentStart);
+  if(componentStart<0||componentEnd<0)return false;
+  const componentName=mappingBlock.slice(componentStart+8,componentEnd).trim();
+  const imported=toolDetailSource.includes(`import { ${componentName} }`);
+  return imported && ["title:","purpose:","steps:","exampleOutput:","faq:"].every(field=>entry.includes(field));
+}
+const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!fs.existsSync(sourcePath(path))&&!hasReactToolSource(path));
 const duplicates=indexPaths.filter((path,index)=>indexPaths.indexOf(path)!==index);
 const missing=sitemapPaths.filter(path=>!excluded.has(path)&&!indexPaths.includes(path));
 const unexpected=indexPaths.filter(path=>!sitemapPaths.includes(path));
@@ -61,7 +83,11 @@ assert.equal(kbGuide?.keywords.includes("incident sanitization")&&kbGuide?.keywo
 
 const reviewDate=knowledge.reviewed_against_sitemap_on;
 const reviewDateMs=typeof reviewDate==="string"&&!Number.isNaN(Date.parse(reviewDate+"T23:59:59Z"))?Date.parse(reviewDate+"T23:59:59Z"):NaN;
-const groundingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).map(sourcePath);
+const groundingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).flatMap(path=>{
+  if(fs.existsSync(sourcePath(path)))return [sourcePath(path)];
+  if(hasReactToolSource(path))return ["src/data/toolsData.ts","src/pages/ToolDetailPage.tsx"];
+  return [sourcePath(path)];
+});
 const sourceFreshnessErrors=[];
 const changedSourceFiles=Number.isNaN(reviewDateMs)?[]:groundingSourceFiles.filter(file=>{
   try{return Boolean(execFileSync("git",["log","--since="+reviewDate+"T23:59:59Z","--format=%H","--",file],{encoding:"utf8"}).trim());}
