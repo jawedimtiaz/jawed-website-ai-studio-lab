@@ -313,6 +313,39 @@ At the last check, the dedicated Studio HQ D1 API Schema Contract Tests workflow
 5. The live HQ D1 has zero owner rows; first-owner enrollment requires an explicit, separately approved operation after confirming the Firebase UID.
 6. Do not bind `HQ_DB` to the live Worker until all security, schema, frontend and preview integration checks pass and the owner approves deployment.
 
+
+## 3H. PR #15 focused schema tests passed — 2026-11-07
+
+Latest PR #15 head `880e54548b3f5ed41034e040b34c2ef4e8eadcc8` has a successful dedicated workflow run:
+
+- Workflow run: `42391809817` — Studio HQ D1 API Schema Contract Tests.
+- Firebase token verification tests: 13 passed, 0 failed.
+- HQ owner authorization/D1 schema tests: 11 passed, 0 failed.
+- TypeScript lint and production build: completed successfully.
+- GitHub reports PR #15 mergeable=true; it remains draft and stacked on PR #14.
+
+The first run of the schema tests had one false-negative caused by a malformed whitespace regex in the test assertion; that test-only matcher was corrected and the latest run passed. The tests use mocked D1 behavior; they are not yet a live isolated-D1 integration test.
+
+## 3I. Private HQ service-worker cache bypass PR opened — 2026-11-07
+
+- Branch: `fix/studio-hq-private-route-cache-bypass`
+- Draft PR #16: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/16
+- Latest head SHA: `630ef60e3cfc37e5cd40cb1d42476999d53dc183`; GitHub reports mergeable=true.
+- Adds a dynamic-request exclusion for `/studio-hq` and all descendants before the GET/navigation caching logic.
+- Adds a Node VM regression test: **3 passed, 0 failed** (private HQ shell, HQ API exclusion, public navigation behavior).
+- No deployment or Cloudflare change occurred.
+- Existing PWA Reliability Gate still fails because `scripts/validate-pwa.mjs` expects several exact old string formats in `service-worker.js` and reports the `index.html` manifest link missing. The new behavioral test passes; do not weaken the validator. Update it in a separate bounded change to assert behavior/semantics rather than brittle whitespace/quote formatting, and independently resolve the missing manifest link.
+- Security Supply Chain Gate remains failed on the existing `firebase-applet-config.json` credential-like-literal warning and unexpected `package.json` manifest finding.
+
+## 3J. Studio HQ UI port review — 2026-11-07
+
+The earlier PR #3 `StudioHqPage.tsx` is not safe to copy unchanged:
+- It expects session JSON `{ok, identity}`, while current main `functions/api/hq/session.js` returns `{success, authenticated, owner}`.
+- It states two authorized owner accounts, while current main's default server-side owner allowlist contains only `jawedimtiaz@gmail.com`.
+- Current main already has `src/lib/firebase.ts` and `AuthProvider`, but has no `StudioHqPage.tsx` and no `/studio-hq` route.
+
+When restoring the page, adapt it to the current session contract, preserve the existing Firebase singleton, do not expand the owner allowlist without approval, and keep the public header/footer/AI widget/PWA prompt hidden on the private route. Do not expose the route until the authentication, D1 schema, explicit owner enrollment and cache-bypass gates are satisfied.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
