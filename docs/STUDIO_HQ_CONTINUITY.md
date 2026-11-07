@@ -623,3 +623,42 @@ Keep a short `docs/DECISIONS.md` for architectural decisions and `docs/CHANGELOG
 Refresh PR #12–#21 head SHAs and CI results, then decide the review/merge strategy for overlapping PR #19–#21. Continue fixing code-only validation defects. Do not create/deploy the HQ preview Worker, bind HQ_DB, seed the first owner, restore the AdSense publisher tag, or deploy to jawed.co.in until the user explicitly approves those major steps.
 
 **New-chat restart instruction:** Read this file from branch docs/studio-hq-continuity-baseline first. Then inspect GitHub and Cloudflare live state at the latest SHAs before changing anything. Treat this document as the handover baseline, not as proof that a deployment or merge occurred.
+
+
+## 10. Live refresh and PR overlap review — 2026-11-07  
+
+### Refreshed PR state and exact head SHAs
+
+| PR | State | Draft | Mergeable | Head SHA | Focused/selected CI evidence |
+|---|---|---:|---:|---|---|
+| #12 | Open | No | Yes | `b714f3eb6679ee79721e21a0ae76c5a24d1e2cba` | Security Supply Chain failed |
+| #13 | Open | Yes | Yes | `423a12a9be350ebeccdc7d2fb0b733773a09fb07` | Contact API Build/Tests passed; AdSense, Deployment Runtime, Security Supply Chain, AI Regression failed |
+| #14 | Open | Yes | Yes | `c09224597136f01c1cf19747808eac1816196a88` | Firebase Signature Verification Tests passed; several repository-wide gates failed |
+| #15 | Open | Yes | Yes | `880e54548b3f5ed41034e040b34c2ef4e8eadcc8` | D1 API Schema Contract Tests passed; several repository-wide gates failed |
+| #16 | Open | Yes | Yes | `630ef60e3cfc37e5cd40cb1d42476999d53dc183` | Private Route Cache Tests passed; PWA and supply-chain failed |
+| #17 | Open | Yes | Yes | `5c53707d409b4f812d1476e7d8052ae58b40eff7` | PWA Reliability passed; supply-chain failed |
+| #18 | Open | Yes | Yes | `1407c91959044520ab2639cbfe837e34d258e4d6` | Private Route Cache and PWA passed; supply-chain failed |
+| #19 | Open | Yes | Yes | `32c7cbbac126e667c1fdb4d0ff8ee700bb084d3c` | Site Integrity and Career Match Browser Runtime passed; AdSense, AI Regression, supply-chain failed |
+| #20 | Open | Yes | Yes | `a70798fd657d7ce5da12a28ae7b29ab5d511592b` | AI Regression, API Method Boundary, Site Integrity, Career Match Browser Runtime passed; production runtime, AdSense and supply-chain failed |
+| #21 | Open | Yes | Yes | `206965597130599a0fe1084ad64d262470a453f8` | AdSense and supply-chain failed |
+
+These are exact head-SHA results from the 2026-11-07 refresh. Re-run checks after any branch update. A PR marked mergeable does not imply CI is green or that it is approved to merge.
+
+### PR #19–#21 overlap analysis
+
+A read-only byte-for-byte comparison of the changed validator/document files across the three branch tips found:
+
+- `scripts/validate-adsense-content-readiness.mjs`: PR #19, #20 and #21 branch contents are identical.
+- `scripts/validate-site-integrity.mjs`: PR #19, #20 and #21 branch contents are identical.
+- `.github/workflows/adsense-readiness.yml`, `docs/adsense-technical-activation.md`, and `scripts/validate-adsense-performance-safeguards.mjs`: PR #20 and #21 branch contents are identical; PR #19 does not include the PR #21 additions.
+- PR #20 is based directly on `main` and contains all of the above changes plus the AI origin/knowledge changes. It is therefore the consolidated candidate for the overlapping #19/#21 validator work, but it is not ready to merge because its production runtime, AdSense and supply-chain gates still fail.
+
+**Recommended handling:** Keep PR #19, #20 and #21 open while reviewing the consolidated PR #20 diff and fixing its remaining gates. Do not merge PR #19 or #21 first, because that creates redundant/stacked merge work and risks reintroducing older validator states. Once PR #20's full required checks pass and the user approves merge sequencing, merge the consolidated change and close the now-redundant PRs with explanatory links. No PR was merged or closed during this review.
+
+### New tracked security issue
+
+Created Issue #22: [SECURITY BLOCKER — Verify Firebase ID token signatures and reconcile Studio HQ D1 schema](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/issues/22). It tracks the source-level findings that current HQ authentication must perform actual Firebase signature/JWKS verification and that API handlers must match the canonical D1 schema. It also records negative-test, CORS and data-retention requirements. Keep this issue open until implementation and independent tests are complete.
+
+### Latest safe restart action
+
+Continue with the consolidated PR #20 gate remediation, beginning with the exact failing workflow logs (Deployment Runtime Reliability, Production AI GET/POST, Production Static Asset, Production Cache, AdSense Readiness and Security Supply Chain). Do not weaken validators. Separately keep PR #14–#18 draft/unmerged until the secure auth, schema, private route, PWA and supply-chain requirements are reviewed together. Do not merge or deploy without explicit approval.
