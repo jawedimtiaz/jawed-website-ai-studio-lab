@@ -740,3 +740,16 @@ No Cloudflare resource, production domain, DNS record, Worker route or Pages dep
 2. Fix dependency policy with a pinned manifest + lockfile approach; do not delete the Vite/React package manifest.
 3. Keep the AdSense publisher-tag gate blocked pending explicit approval.
 4. Continue HQ security/schema work through PR #14–#18 and Issue #22; do not bind or deploy HQ_DB before all required tests and separate approval.
+
+
+## 13. Session handover checkpoint — 2026-11-07
+
+- Continuity report updated through section 12 on branch `docs/studio-hq-continuity-baseline`.
+- Latest continuity branch commit: `6e1f885297bda74829878f7fad9aa5d87bd3ae62`.
+- PR #12 remains open, non-draft, targets `main`, and the raw GitHub Pull Request API reports `mergeable=true`, `mergeable_state=unstable` at the latest read. It is not merged.
+- Issues #22 (HQ authentication signature verification + D1 schema contract) and #23 (separate Lab CI scope from protected jawed.co.in production monitoring) are open.
+- PR #13–#21 remain open drafts at the last metadata refresh; the focused feature workflows and repository-wide failures are detailed in section 10. Refresh head SHAs/checks before any merge decision.
+- PR #2 and #3 remain conflicted and should not be merged wholesale.
+- No application PR was merged. No production website, Cloudflare Pages project, DNS, Worker route, D1 database, owner record, AdSense tag, or customer data was modified in this session.
+
+**Next exact task:** review Issue #23 and design the smallest isolated change that removes cross-repository `jawed.co.in` production probes from routine Studio Lab PR checks while retaining strict Lab runtime verification. Before implementing, obtain reliable runtime evidence for `https://lab.jawed.co.in` or use a safe isolated preview Worker test. Keep personal-site monitoring with the `jawed-website` repository. Then address the pinned dependency manifest/lockfile contract and AdSense approval gate separately.
