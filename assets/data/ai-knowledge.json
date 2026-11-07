@@ -806,7 +806,8 @@
         "sign-in troubleshooting",
         "identity escalation",
         "Correlation ID"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/apple-macos-jamf-support-helper/",
@@ -829,7 +830,8 @@
         "terminal diagnostics",
         "Service Desk",
         "ticket notes"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/service-desk-note-formatter/",
