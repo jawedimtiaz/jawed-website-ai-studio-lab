@@ -47,3 +47,8 @@ Before enabling AdSense:
 - Do not enable ad scripts globally before consent and inventory activation are complete.
 
 This audit records the technical dependency boundary; it is not a Google approval determination.
+
+
+## Offline fallback exception — 2026-11-07
+
+The AdSense performance safeguard scans monetized/published content and application assets for reload-dependent ad behavior. The standalone offline fallback (offline.html) is a non-monetized PWA utility page. Its explicit “Check Connection & Retry” button uses a page reload to retry navigation after connectivity returns; this is intentional offline UX and is not an advertising dependency. The validator excludes only offline.html from the page-reload assertion while continuing to reject ad runtime tokens and reload dependencies across all other scanned files.
