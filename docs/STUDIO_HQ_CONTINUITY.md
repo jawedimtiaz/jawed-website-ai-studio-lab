@@ -374,6 +374,15 @@ When restoring the page, adapt it to the current session contract, preserve the 
 
 At the last check, PR #18 workflows were still running: PWA Reliability Gate, Studio HQ Private Route Cache Tests, and Security Supply Chain Gate. Refresh the results; no build/test pass is claimed yet.
 
+
+## 3M. PR #18 private-route checks passed; build running — 2026-11-07
+
+For PR #18 head `1407c91959044520ab2639cbfe837e34d258e4d6`:
+- PWA Reliability Gate run `42392258486`: **SUCCESS**.
+- Studio HQ Private Route Cache Tests run `42392258531`: behavioral service-worker cache test passed; private-page route/session/noindex contract test passed.
+- TypeScript lint and production build step was still running at the last job-step query. Do not mark PR #18 fully verified until that step completes successfully.
+- Security Supply Chain Gate remains failed on the existing Firebase client-config literal and package manifest allowlist findings.
+
 ## 4. Cloudflare read-only audit — 2026-11-07
 
 The following was inspected without modifying Cloudflare resources.
