@@ -14,6 +14,7 @@ const allSitemapLocs=[...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match=>ma
 const sitemapPaths=allSitemapLocs.filter(url=>url.startsWith("https://jawed.co.in/")).map(url=>url.slice("https://jawed.co.in".length)||"/");
 const workflow=fs.readFileSync(".github/workflows/ai-regression.yml","utf8");
 const indexPaths=knowledge.entries.map(entry=>entry.url);
+import path from "node:path";
 const sourcePath=(url)=>url==="/"?"src/pages/HomePage.tsx":url.split("/").filter(Boolean).join("/")+"/index.html";
 const toolsDataPath="src/data/toolsData.ts";
 const toolDetailPath="src/pages/ToolDetailPage.tsx";
@@ -22,22 +23,25 @@ const toolsData=fs.existsSync(toolsDataPath)?fs.readFileSync(toolsDataPath,"utf8
 const toolDetail=fs.existsSync(toolDetailPath)?fs.readFileSync(toolDetailPath,"utf8"):"";
 const appRoutes=fs.existsSync(appRoutePath)?fs.readFileSync(appRoutePath,"utf8"):"";
 function sourceFilesForPath(path){
+  if(path==="/tools/")return fs.existsSync("src/pages/ToolsPage.tsx")?["src/pages/ToolsPage.tsx"]:[];
   if(path.startsWith("/tools/")){
     const slug=path.split("/")[2];
     if(!slug||path!=="/tools/"+slug+"/")return [];
     const slugRegistered=toolsData.includes("slug: '"+slug+"'")||toolsData.includes('slug: "'+slug+'"');
-    const componentRouted=toolDetail.includes("case '"+slug+"'")||toolDetail.includes('case "'+slug+'"');
-    const routeRegistered=appRoutes.includes('path="/tools/:slug"')||appRoutes.includes("path='/tools/:slug'");
-    const componentSources={
-      "apple-macos-jamf-support-helper":"src/components/tools/AppleMacOsJamfSupportHelper.tsx",
-      "m365-workplace-sign-in-diagnostic":"src/components/tools/M365WorkplaceSignInDiagnostic.tsx"
-    };
-    const componentSource=componentSources[slug];
-    return slugRegistered&&componentRouted&&routeRegistered&&componentSource&&fs.existsSync(componentSource)?[toolsDataPath,toolDetailPath,appRoutePath,componentSource]:[];
+    const caseLine=toolDetail.split(/\r?\n/).find(line=>line.includes("case '"+slug+"'")||line.includes('case "'+slug+'"'));
+    const componentName=caseLine?.match(/return\s*<([A-Za-z0-9_]+)\s*\/>/)?.[1];
+    const importLine=componentName?toolDetail.split(/\r?\n/).find(line=>line.startsWith("import {")&&line.includes(componentName)&&line.includes(" from ")):null;
+    const importPath=importLine?.match(/from ['"]([^'"]+)['"]/)?.[1];
+    const componentSource=importPath?pathNormalize(importPath):null;
+    const routeRegistered=appRoutes.includes('path="/tools/:slug"')&&appRoutes.includes('path="/tools/:slug/"');
+    return slugRegistered&&componentName&&componentSource&&routeRegistered&&fs.existsSync(componentSource)?[componentSource]:[];
   }
   if(path==="/")return fs.existsSync("src/pages/HomePage.tsx")?["src/pages/HomePage.tsx"]:[];
   const candidate=sourcePath(path);
   return fs.existsSync(candidate)?[candidate]:[];
+}
+function pathNormalize(importPath){
+  return path.posix.normalize("src/pages/"+importPath+".tsx");
 }
 const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>sourceFilesForPath(path).length===0);
 const duplicates=indexPaths.filter((path,index)=>indexPaths.indexOf(path)!==index);
