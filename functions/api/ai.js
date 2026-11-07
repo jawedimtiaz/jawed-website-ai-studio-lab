@@ -16,14 +16,19 @@ const failure=(error,code,status,id,extra={})=>{
   return json({error,code,request_id:id},status,{"x-request-id":id});
 };
 
-function isAllowedOrigin(origin){
+export function isAllowedOrigin(origin){
   if(!origin)return true;
   try{
     const url=new URL(origin);
+    if(url.origin!==origin)return false;
     const host=url.hostname.toLowerCase();
+    const localHost=host==="localhost"||host==="127.0.0.1";
+    if(localHost)return url.protocol==="http:"||url.protocol==="https:";
+    if(url.protocol!=="https:")return false;
     if(host==="jawed.co.in"||host.endsWith(".jawed.co.in"))return true;
-    if(host==="localhost"||host==="127.0.0.1")return true;
-    if(host.endsWith(".run.app")||host.endsWith(".pages.dev")||host.endsWith(".workers.dev"))return true;
+    if(host==="jawed-website-ai-studio-lab.pages.dev"||host.endsWith(".jawed-website-ai-studio-lab.pages.dev"))return true;
+    if(host==="jawed-website-ai-studio-lab.jawed-eee.workers.dev")return true;
+    if(host==="jawed-studio-hq-preview.jawed-eee.workers.dev")return true;
   }catch{
     return false;
   }

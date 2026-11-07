@@ -1025,9 +1025,51 @@
         "privacy",
         "security"
       ]
+    },
+    {
+      "url": "/tools/apple-macos-jamf-support-helper/",
+      "title": "macOS & Jamf Triage Helper",
+      "summary": "Interactive macOS and Jamf Pro support helper covering application crashes, MDM enrollment, FileVault key escrow, Wi-Fi and certificate triage. It provides scoped diagnostic checklists and ticket-ready notes for enterprise Mac support; technicians should validate every command against approved internal runbooks and follow organizational change controls before running remediation.",
+      "keywords": [
+        "macOS",
+        "Jamf Pro",
+        "Apple Silicon",
+        "Intel Mac",
+        "MDM enrollment",
+        "FileVault",
+        "Wi-Fi certificates",
+        "device management",
+        "service desk",
+        "Mac troubleshooting",
+        "diagnostic checklist",
+        "ticket notes"
+      ],
+      "content_type": "interactive_tool"
+    },
+    {
+      "url": "/tools/m365-workplace-sign-in-diagnostic/",
+      "title": "Microsoft 365 & Workplace Sign-In Triage",
+      "summary": "Interactive Microsoft 365 and workplace sign-in triage for Outlook, Teams, Microsoft Entra ID, MFA loops, Conditional Access and stale Primary Refresh Tokens. It guides symptom scoping and prepares escalation notes with correlation ID and timestamp context; privileged identity changes and Conditional Access policy updates must remain with authorized administrators.",
+      "keywords": [
+        "Microsoft 365",
+        "Entra ID",
+        "Azure AD",
+        "MFA",
+        "Conditional Access",
+        "Primary Refresh Token",
+        "PRT",
+        "Outlook",
+        "Teams",
+        "SSO",
+        "sign-in troubleshooting",
+        "identity support",
+        "correlation ID",
+        "service desk"
+      ],
+      "content_type": "interactive_tool"
     }
   ],
-  "reviewed_against_sitemap_on": "2026-10-17",
+  "reviewed_against_sitemap_on": "2026-11-07",
   "coverage_policy": {
     "included": "Public site pages intended to provide factual Jawed.co.in content for AI grounding.",
     "excluded_paths": [

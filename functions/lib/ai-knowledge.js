@@ -62,6 +62,7 @@ const VAGUE_FOLLOW_UP_TERMS=new Set(["tell","show","describe","explain","more","
 const SOURCE_CONTEXT_QUERY=/Previous source context:\s*((?:\/[^,\s]+)(?:,\s*\/[^,\s]+)*)/i;
 
 function rankedEntries(query,weight=1){
+  const informationalQuery=/^\s*(?:tell me about|what\s+is|what\s+are|define|meaning of|explain|describe|overview of)\b/i.test(query);
   const queryTokens=tokens(query);
   if(!queryTokens.length)return [];
   const queryCounts=new Map();
@@ -69,6 +70,7 @@ function rankedEntries(query,weight=1){
   const queryPhrase=queryTokens.join(" ");
   return knowledge.entries.map(entry=>{
     let score=scoreEntry(entry,queryCounts);
+    if(informationalQuery&&entry.content_type==='interactive_tool')score=Math.max(0,score-3);
     const searchableText=[entry.title,entry.summary,...entry.keywords].join(" ").toLowerCase();
     if(queryPhrase.length>=5&&searchableText.includes(queryPhrase))score+=3;
     return {...entry,score};

@@ -17,8 +17,34 @@ for(const routePath of publishedRoutes){
   const routeWithoutLeadingSlash=routePath.startsWith("/")?routePath.slice(1):routePath;
   const normalizedRoute=routeWithoutLeadingSlash.endsWith("/")?routeWithoutLeadingSlash.slice(0,-1):routeWithoutLeadingSlash;
   const sourcePath=routePath==="/"?"index.html":normalizedRoute+"/index.html";
-  const publishedHtml=fs.readFileSync(sourcePath,"utf8");
-  assert.equal(citationPlaceholderPattern.test(publishedHtml),false,"Published page exposes internal citation placeholders: "+sourcePath);
+  let publishedContent;
+  if(fs.existsSync(sourcePath)){
+    publishedContent=fs.readFileSync(sourcePath,"utf8");
+  }else{
+    const prefix="/tools/";
+    assert.equal(routePath.startsWith(prefix),true,"Published route has no HTML or React tool source: "+routePath);
+    let slug=routePath.slice(prefix.length);
+    if(slug.endsWith("/"))slug=slug.slice(0,-1);
+    assert.equal(slug.length>0&&!slug.includes("/"),true,"Invalid React tool route: "+routePath);
+    const toolsSource=fs.readFileSync("src/data/toolsData.ts","utf8");
+    const toolDetailSource=fs.readFileSync("src/pages/ToolDetailPage.tsx","utf8");
+    const start=toolsSource.indexOf(`slug: '${slug}'`);
+    assert.notEqual(start,-1,"React tool data entry missing: "+slug);
+    const end=toolsSource.indexOf("\n  },",start);
+    publishedContent=end<0?toolsSource.slice(start):toolsSource.slice(start,end);
+    const mappingStart=toolDetailSource.indexOf(`case '${slug}':`);
+    assert.notEqual(mappingStart,-1,"React tool component mapping missing: "+slug);
+    const mappingBlock=toolDetailSource.slice(mappingStart,mappingStart+300);
+    const componentStart=mappingBlock.indexOf("return <");
+    const componentEnd=mappingBlock.indexOf(" />",componentStart);
+    assert.ok(componentStart>=0&&componentEnd>componentStart,"React tool component mapping is invalid: "+slug);
+    const componentName=mappingBlock.slice(componentStart+8,componentEnd).trim();
+    assert.equal(toolDetailSource.includes(`import { ${componentName} }`),true,"React tool component import missing: "+slug);
+    for(const field of ["title:","purpose:","steps:","exampleOutput:","faq:"]){
+      assert.equal(publishedContent.includes(field),true,"React tool content field missing ("+field+"): "+slug);
+    }
+  }
+  assert.equal(citationPlaceholderPattern.test(publishedContent),false,"Published page exposes internal citation placeholders: "+sourcePath);
 }
 
 for(const route of ["/","/about/","/work/","/notes/","/topics/","/resources/","/blog/"])assert.equal(inventory.eligible_initial.includes(route),true,"Eligible content route missing from inventory: "+route);

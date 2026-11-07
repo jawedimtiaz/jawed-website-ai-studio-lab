@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isAllowedOrigin } from "../functions/api/ai.js";
 
 const root=process.cwd();
 const read=p=>fs.readFileSync(path.join(root,p),"utf8");
@@ -52,7 +53,7 @@ if(sitemap.includes(contract.alternate_origin)) fail.push("sitemap must not cont
 
 const ai=read("functions/api/ai.js");
 
-if(!ai.includes(`origin==="${contract.production_origin}"`)) fail.push("AI API must allow the production origin");
+if(!isAllowedOrigin(contract.production_origin)) fail.push("AI API must allow the production origin");
 
 if(contract.no_package_manifest_required){
   for(const p of ["package.json","package-lock.json","pnpm-lock.yaml","yarn.lock"]) if(exists(p)) fail.push(`unexpected package/dependency manifest: ${p}`);
