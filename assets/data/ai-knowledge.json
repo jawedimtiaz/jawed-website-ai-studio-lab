@@ -936,7 +936,8 @@
         "documentation",
         "escalation",
         "privacy"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/ticket-to-knowledge-base-draft/",
@@ -968,7 +969,8 @@
         "privacy",
         "career tool",
         "hiring decisions"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/tools/finance-planning-workspace/",
@@ -990,7 +992,8 @@
         "browser tool",
         "financial education",
         "not financial advice"
-      ]
+      ],
+      "reviewed_on": "2026-11-07"
     },
     {
       "url": "/resources/",
