@@ -129,11 +129,15 @@ export async function verifyHqFirebaseToken(token, options = {}) {
 /**
  * Backward-compatible adapter used by the existing HQ authorization helper.
  */
-export async function verifyFirebaseToken(idToken, env = {}) {
+export async function verifyFirebaseToken(idToken, env = {}, options = {}) {
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
   const result = await verifyHqFirebaseToken(idToken, {
     projectId,
-    allowedEmails: getAllowedOwnerEmails(env)
+    allowedEmails: getAllowedOwnerEmails(env),
+    fetchImpl: options.fetchImpl,
+    importCertificate: options.importCertificate,
+    verify: options.verify,
+    now: options.now
   });
 
   if (!result.ok) {
