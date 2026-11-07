@@ -84,7 +84,8 @@ export function findRelevantKnowledge(query,limit=5,options={}){
   const intentQuery=typeof safeOptions.primaryQuery==="string"&&safeOptions.primaryQuery.trim()?safeOptions.primaryQuery.trim():safeQuery;
   if(!safeQuery)return [];
   if(CONVERSATIONAL_CLOSING.test(intentQuery)||CONVERSATIONAL_GREETING.test(intentQuery))return [];
-  const ranked=rankedEntries(safeQuery).filter(entry=>!entry.url.startsWith("/tools/")||entry.url==="/tools/"||TOOL_INTENT_QUERY.test(intentQuery));
+  const rankedForIntent=query=>rankedEntries(query).filter(entry=>!entry.url.startsWith("/tools/")||entry.url==="/tools/"||TOOL_INTENT_QUERY.test(intentQuery));
+  const ranked=rankedForIntent(safeQuery);
   if(!ranked.length)return [];
 
   const primaryQuery=typeof safeOptions.primaryQuery==="string"?safeOptions.primaryQuery.trim():"";
@@ -93,7 +94,7 @@ export function findRelevantKnowledge(query,limit=5,options={}){
     return ranked.filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title)).slice(0,safeLimit).map(({score,...entry})=>entry);
   }
 
-  const primary=rankedEntries(primaryQuery).filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title));
+  const primary=rankedForIntent(primaryQuery).filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title));
   const primaryTokens=tokens(primaryQuery);
   const vagueFollowUp=primaryTokens.length>0&&primaryTokens.every(token=>VAGUE_FOLLOW_UP_TERMS.has(token));
   const canUseContextForVagueFollowUp=vagueFollowUp&&primaryTokens.length<=3;
