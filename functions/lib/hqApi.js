@@ -201,3 +201,20 @@ export async function verifyAndAuthorizeOwner(request, env, options = {}) {
     user: firebaseUser
   };
 }
+
+
+export function optionsResponse(request, methods) {
+  const origin = request?.headers?.get('origin');
+  const requestOrigin = request ? new URL(request.url).origin : null;
+  if (origin && origin !== requestOrigin) {
+    return errorResponse(403, 'ORIGIN_NOT_ALLOWED', 'Cross-origin HQ requests are not allowed');
+  }
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'cache-control': 'no-store',
+      'allow': methods,
+      'vary': 'Origin'
+    }
+  });
+}
