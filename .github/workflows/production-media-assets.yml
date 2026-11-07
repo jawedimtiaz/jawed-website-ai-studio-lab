@@ -3,13 +3,6 @@ concurrency:
   group: production-media-assets-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "assets/images/**"
-      - "favicon.svg"
-      - "config/production-media-asset-contract.json"
-      - "scripts/validate-production-media-assets.mjs"
-      - ".github/workflows/production-media-assets.yml"
   push:
     branches:
       - main
