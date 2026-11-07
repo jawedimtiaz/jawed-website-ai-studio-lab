@@ -3,21 +3,6 @@ concurrency:
   group: production-smoke-${{ github.ref }}
   cancel-in-progress: true
 on:
-  push:
-    branches: [main]
-    paths:
-      - "config/production-smoke-contract.json"
-      - "scripts/validate-production-smoke.mjs"
-      - ".github/workflows/production-smoke-reliability.yml"
-      - "_headers"
-      - "_redirects"
-      - "_routes.json"
-      - "404.html"
-      - "index.html"
-      - "sitemap.xml"
-      - "ai/**"
-      - "notes/**"
-      - "functions/**"
   workflow_dispatch:
   schedule:
     - cron: "17 */6 * * *"
