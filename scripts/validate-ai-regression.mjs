@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import fs from "node:fs";
-import {MAX_REQUESTS,WINDOW_MS} from "../functions/lib/ai-rate-limit.js";
+import {MAX_REQUESTS,WINDOW_MS} from "../functions/lib/ai-rate-limit.js";\nimport {isAllowedOrigin} from "../functions/api/ai.js";
 import {createRequire} from "node:module";
 const require=createRequire(import.meta.url);
 const {MAX_REPLY_CHARS}=require("../functions/lib/ai-provider-common.js");
@@ -98,7 +98,7 @@ const contracts=[
   ["server request-size boundary",/MAX_BODY_BYTES=\d+/.test(endpoint)],
   ["server message-count boundary",/MAX_MESSAGES=\d+/.test(endpoint)],
   ["server message-length boundary",/MAX_MESSAGE_CHARS=\d+/.test(endpoint)],
-  ["same-site origin boundary",endpoint.includes("https://jawed.co.in")],
+  ["same-site origin boundary",originBoundaryCases.every(([origin,expected])=>isAllowedOrigin(origin)===expected)],
   ["rate-limit boundary",rateLimit.includes("MAX_REQUESTS="+MAX_REQUESTS)&&rateLimit.includes("WINDOW_MS="+WINDOW_MS)],
   ["server-side Workers AI binding",endpoint.includes("env.AI")&&provider.includes("ai.run")],
   ["fixed free-tier model boundary",endpoint.includes("model:DEFAULT_MODEL")&&!endpoint.includes("AI_PROVIDER_MODEL")&&provider.includes("FREE_MODEL=DEFAULT_MODEL")],
