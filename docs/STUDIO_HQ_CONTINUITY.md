@@ -127,6 +127,30 @@ The actual merge-base versions and current feature/main file contents were inspe
 
 These conclusions are based on file content inspection at the recorded merge bases, PR branch tips and current main. No application files or Cloudflare resources were modified during this review.
 
+
+## 2F. Contact persistence reconciliation PR opened — 2026-11-07
+
+A new isolated branch and draft PR were created from the current `main` branch to avoid rebasing or rewriting the original conflicted PR #2 branch.
+
+- Branch: `fix/phase-1-contact-persistence-reconcile`
+- Draft PR: #13 — https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/13
+- Initial PR head SHA: `423a12a9be350ebeccdc7d2fb0b733773a09fb07`
+- GitHub reports PR #13 mergeable=true at the latest check.
+- PR #13 contains the D1-backed contact API, privacy-minimized logger, D1 migration file, mocked-D1 tests, contact privacy notice, root Wrangler CONTACT_DB bindings, isolated preview config, and a dedicated CI workflow.
+- The Worker router was reconciled against current main: the current HQ session/clients/projects/tasks/milestones imports and routing were retained; only the contact log route was changed to call `contactLogGet`/`contactLogPost`. The PR #2 Worker file was not copied wholesale.
+- The isolated preview Worker config explicitly sets `DISABLE_AI_API=true` and `DISABLE_CONTACT_EMAIL=true`; the current Worker router now honors the AI disable flag and the contact API honors the email disable flag.
+- Contact privacy notice now accurately describes database storage and limited technical contact-attempt logging.
+
+### Read-only D1 verification
+
+On 2026-11-07, Cloudflare D1 queries confirmed both `jawed-contact-submissions` (UUID `645619c4-264f-4ef2-b29f-8c500434aa8f`) and `jawed-contact-preview` (UUID `09eba512-2949-4dec-ab58-070ac2160a6a`) contain `contact_submissions`, `contact_attempt_logs`, and the `d1_migrations` history row for `0001_contact_persistence.sql`. Both application tables contain zero rows in each database. No D1 mutation occurred.
+
+### PR #13 checks at handover
+
+At the last check, these workflows were queued (not yet passed): Phase 1 Contact API Build and Tests, Deployment Runtime Reliability Gate, AdSense Readiness Gate, AI Regression Gate, and Security Supply Chain Gate. Refresh the checks before any merge decision. PR #13 is draft and must remain unmerged until all required checks are complete and the code review is finished.
+
+No Cloudflare deployment or binding change occurred. Root Wrangler configuration changes are source changes only; the live Lab Worker still needs a separately approved deployment and post-deployment verification before D1 persistence can be considered live.
+
 ## 3. Studio HQ architecture and implemented foundations
 
 The intended product is an owner-operated business management workspace for Jawed Web Studio, not just a website dashboard.
