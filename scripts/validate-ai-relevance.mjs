@@ -19,6 +19,8 @@ const mixed=buildRetrievalQuery([
   {role:"user",content:"What is Jamf?"}
 ]);
 const mixedResults=findRelevantKnowledge(mixed,5,{primaryQuery:"What is Jamf?"});
+const jamfToolResults=findRelevantKnowledge("Jamf triage helper",5,{primaryQuery:"Show me the Jamf triage helper"});
+assert.equal(jamfToolResults[0]?.url,"/tools/apple-macos-jamf-support-helper/");
 assert.equal(mixedResults[0].title,"Apple Device Management Enrollment Models");
 assert.equal(mixedResults.slice(0,3).some(entry=>entry.title==="Retirement Planning: Start With the Number"),false);
 assert.equal(mixedResults.some(entry=>entry.title==="Retirement Planning: Start With the Number"),false);
