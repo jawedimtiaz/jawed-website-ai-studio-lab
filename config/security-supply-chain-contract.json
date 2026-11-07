@@ -10,8 +10,8 @@
     "workflow_action_sha_pinning": "required",
     "workflow_permissions": "contents-read",
     "workflow_secret_access": "blocked",
-    "runtime_dependency_manifest": "not-applicable-no-package-manifest",
-    "dependency_lockfile": "not-applicable-no-package-manifest"
+    "runtime_dependency_manifest": "root-private-package-json-allowed",
+    "dependency_lockfile": "blocked-unless-reviewed-and-approved"
   },
   "scope": "repository-source-and-github-actions",
   "principle": "Do not introduce dependency, platform, or deployment changes without a concrete finding."
