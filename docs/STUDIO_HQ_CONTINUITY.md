@@ -1065,7 +1065,7 @@ Next implementation should harden the existing `jose` verifier in place on a new
 - Same-origin request enforcement.
 - Active owner-row and email-match checks.
 - Transaction-time owner authorization guards on mutating D1 batches.
-- Current 18-table schema and API field names.
+- Current 17-table schema and API field names.
 
 Do not replace the existing `jose` implementation with PR #25's custom DER parser without a compelling compatibility reason. Prefer the maintained JOSE certificate import/verification path and port the proven controls: bounded certificate stream reading, timeout, bounded cache lifetime, unknown-`kid` refresh, strict JWT header policy, fail-closed handling, and cryptographic negative tests. Independently validate with a genuine Google certificate fixture or a controlled live certificate fetch in a non-production test; do not use production tokens.
 
@@ -1129,13 +1129,13 @@ This was a source-level audit only. No application file on the security branch w
 
 ### Corrected migration inventory
 
-The schema-aligned `feat/studio-hq-private-ui` branch does not store the 18-table base schema at `migrations/hq/0001_studio_hq_schema.sql`; that path is present on the later divergent `feat/studio-hq-approvals-qa` branch. The private-UI branch has a separate root-level `migrations/0002_hq_owner_authorization_hardening.sql`, which creates the **legacy** `hq_users(id)`, `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`, and `hq_audit_logs` tables. It is incompatible with the schema-aligned API using `hq_users(uid)`, `clients`, `projects`, `project_tasks`, `project_milestones`, and `audit_logs`.
+The schema-aligned `feat/studio-hq-private-ui` branch does not store the 17-table base schema at `migrations/hq/0001_studio_hq_schema.sql`; that path is present on the later divergent `feat/studio-hq-approvals-qa` branch. The private-UI branch has a separate root-level `migrations/0002_hq_owner_authorization_hardening.sql`, which creates the **legacy** `hq_users(id)`, `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`, and `hq_audit_logs` tables. It is incompatible with the schema-aligned API using `hq_users(uid)`, `clients`, `projects`, `project_tasks`, `project_milestones`, and `audit_logs`.
 
 Do not apply `migrations/0002_hq_owner_authorization_hardening.sql` to the current/new HQ D1. Its `CREATE TABLE IF NOT EXISTS` statements do not safely reconcile columns on already-existing tables; where a table name collides, the existing table remains unchanged, while the legacy tables can also be created alongside the newer tables. Treat this migration as legacy/unsafe for the current HQ schema pending explicit disposition. No migration was run.
 
 ### Expanded feature inventory
 
-The separate `feat/studio-hq-approvals-qa` branch adds a larger 18-table Studio HQ schema, including `approvals`, `qa_checks`, finance, asset, repository, deployment and activity tables, plus a release/approval API. However, GitHub compare confirms this branch is **diverged** from `feat/studio-hq-private-ui` (79 commits ahead, 32 behind) and from `fix/studio-hq-api-schema-contract` (79 ahead, 23 behind). It is not a safe direct source to cherry-pick or merge wholesale.
+The separate `feat/studio-hq-approvals-qa` branch adds a larger 17-table Studio HQ schema, including `approvals`, `qa_checks`, finance, asset, repository, deployment and activity tables, plus a release/approval API. However, GitHub compare confirms this branch is **diverged** from `feat/studio-hq-private-ui` (79 commits ahead, 32 behind) and from `fix/studio-hq-api-schema-contract` (79 ahead, 23 behind). It is not a safe direct source to cherry-pick or merge wholesale.
 
 ### Critical owner reactivation flaw in approvals/QA branch
 
@@ -1158,3 +1158,45 @@ Before implementing any database guard, reconcile the schema/migration set and a
 ### Safety
 
 This section records source-level findings only. No application branch, migration, D1 database, Cloudflare Worker, owner row, deployment, personal website or customer project was modified.
+
+
+## 22. Exact schema inventory correction and release API write-path review — 2026-11-08
+
+### Verified migration counts
+
+Re-fetched `migrations/hq/0001_studio_hq_schema.sql` from `feat/studio-hq-approvals-qa` and counted the DDL declarations directly. The migration creates **17 tables**, not 18:
+
+1. `hq_users`
+2. `clients`
+3. `client_contacts`
+4. `projects`
+5. `project_milestones`
+6. `project_tasks`
+7. `repositories`
+8. `deployments`
+9. `approvals`
+10. `qa_checks`
+11. `quotations`
+12. `invoices`
+13. `payments`
+14. `maintenance_plans`
+15. `assets`
+16. `activity_notes`
+17. `audit_logs`
+
+The same migration defines 20 indexes and two append-only audit-log triggers. Earlier references in this report to 18 tables are corrected; use 17 as the verified DDL count. This count describes the migration file only and is not a fresh live D1 inventory.
+
+### Release API mutation confirmation
+
+Re-fetched `functions/api/hq/release.js` from `feat/studio-hq-approvals-qa`. It performs four mutation categories using `db.batch()`:
+
+- Create approval: INSERT into `approvals`.
+- Decide approval: UPDATE pending `approvals`.
+- Create QA check: INSERT into `qa_checks`.
+- Update QA check: UPDATE `qa_checks`.
+
+Each batch begins with `ownerUpsertStatement(db, identity)`. Re-fetched `functions/lib/hqApi.js` confirms that this helper inserts an active owner row and uses `ON CONFLICT(uid) DO UPDATE SET status = 'active'`. Thus disabled owners can be reactivated by these mutation paths, and missing owners can be provisioned by an HTTP request. The existing batch structure does not satisfy manual enrollment or disabled-owner denial requirements.
+
+### Security disposition
+
+No code was changed. No migration was applied. No database binding, owner row, Worker, deployment, PR, or production/personal website was modified. Keep the divergent approvals/QA branch excluded from the candidate until the schema and authorization model are reconciled and every mutation is guarded by active-owner authorization at write time.
