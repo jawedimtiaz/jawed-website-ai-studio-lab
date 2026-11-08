@@ -3,6 +3,7 @@ import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOpti
 import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
 import { handleHqClients } from './functions/api/hq/clients.js';
 import { handleHqProjects } from './functions/api/hq/projects.js';
+import { handleHqRelease } from './functions/api/hq/release.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -85,14 +86,25 @@ export default {
       return addSecurityHeaders(response);
     }
 
-    // 4. Private Studio HQ project endpoints.
+    // 4. Private Studio HQ approvals and QA endpoints.
+    if (pathname.startsWith('/api/hq/projects/') || pathname.startsWith('/api/hq/approvals/') || pathname.startsWith('/api/hq/qa/')) {
+      const hqParts = pathname.replace(/\/$/, '').split('/').slice(3);
+      const isReleaseRoute = (hqParts[0] === 'projects' && ['approvals', 'qa'].includes(hqParts[2])) ||
+        ['approvals', 'qa'].includes(hqParts[0]);
+      if (isReleaseRoute) {
+        const response = await handleHqRelease({ request, env, segments: hqParts });
+        return addSecurityHeaders(response);
+      }
+    }
+
+    // 5. Private Studio HQ project endpoints.
     if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
       const segments = pathname.replace(/\/$/, '').split('/').slice(4);
       const response = await handleHqProjects({ request, env, segments });
       return addSecurityHeaders(response);
     }
 
-    // 5. Handle /api/ai endpoints
+    // 6. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -110,7 +122,7 @@ export default {
       });
     }
 
-    // 6. Handle /api/contact endpoints
+    // 7. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -128,7 +140,7 @@ export default {
       });
     }
 
-    // 7. Handle /api/contact/log endpoint
+    // 8. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
@@ -168,7 +180,7 @@ export default {
       });
     }
 
-    // 8. Reject other /api/* with standard 404 JSON
+    // 9. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
@@ -176,7 +188,7 @@ export default {
       });
     }
 
-    // 9. Serve static assets via Cloudflare Workers Assets binding if present
+    // 10. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);

@@ -1,0 +1,290 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { validateApproval, validateQaCheck, handleAuthorizedHqRelease } from './release.js';
+
+class TestD1 {
+  constructor() {
+    this.sqlite = new DatabaseSync(':memory:');
+    this.sqlite.exec('PRAGMA foreign_keys = ON');
+    this.sqlite.exec(readFileSync('migrations/hq/0001_studio_hq_schema.sql', 'utf8'));
+  }
+  prepare(sql) {
+    const database = this.sqlite;
+    return {
+      bind(...params) {
+        return {
+          sql,
+          all: () => ({ results: database.prepare(sql).all(...params), success: true, meta: { changes: 0 } }),
+          first: () => database.prepare(sql).get(...params) || null,
+          run: () => {
+            const result = database.prepare(sql).run(...params);
+            return { success: true, meta: { changes: Number(result.changes) } };
+          }
+        };
+      }
+    };
+  }
+  batch(statements) {
+    this.sqlite.exec('BEGIN');
+    try {
+      const results = statements.map(statement =>
+        (/\bRETURNING\b/i.test(statement.sql) || /^\s*SELECT\b/i.test(statement.sql))
+          ? statement.all()
+          : statement.run()
+      );
+      this.sqlite.exec('COMMIT');
+      return results;
+    } catch (error) {
+      this.sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  close() { this.sqlite.close(); }
+}
+
+const identity = { uid: 'owner-release-test', email: 'jawedimtiaz@gmail.com' };
+const request = (path, method = 'GET', body) => new Request('https://lab.jawed.co.in' + path, {
+  method,
+  headers: body === undefined ? {} : { 'content-type': 'application/json' },
+  body: body === undefined ? undefined : JSON.stringify(body)
+});
+const call = (db, req, segments) => handleAuthorizedHqRelease({
+  request: req, env: { HQ_DB: db }, segments, identity
+});
+
+test('validates approval and QA request contracts', () => {
+  assert.equal(validateApproval({ approval_type: 'production-release', requested_from_email: 'client@example.com' }).ok, true);
+  assert.deepEqual(validateApproval({ approval_type: 'root-access' }), { ok: false, error: 'APPROVAL_TYPE_INVALID' });
+  assert.deepEqual(validateApproval({ approval_type: 'production-release', requested_from_email: 'not-an-email' }), { ok: false, error: 'REQUESTED_FROM_EMAIL_INVALID' });
+  assert.deepEqual(validateApproval({ approval_type: 'production-release', extra: 'bad' }), { ok: false, error: 'FIELD_NOT_ALLOWED' });
+  assert.equal(validateQaCheck({ category: 'security', check_name: 'No exposed secrets' }).ok, true);
+  assert.deepEqual(validateQaCheck({ category: 'security', check_name: 'Security test', result: 'excellent' }), { ok: false, error: 'QA_RESULT_INVALID' });
+  assert.deepEqual(validateQaCheck({ category: 'security', check_name: 'Security test', evidence_url: 'javascript:alert(1)' }), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validateQaCheck({ category: 'invalid-cat', check_name: 'Test' }), { ok: false, error: 'QA_CATEGORY_INVALID' });
+  assert.deepEqual(validateQaCheck({ category: 'security', check_name: ' ' }), { ok: false, error: 'CHECK_NAME_REQUIRED' });
+});
+
+test('creates and decides approvals and creates and updates QA checks with audit logs', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('client-release', 'Release Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)")
+      .run('project-release', 'client-release', 'Release Website', identity.uid);
+
+    // Create approval
+    const approvalResponse = await call(db, request('/api/hq/projects/project-release/approvals', 'POST', {
+      approval_type: 'production-release', requested_from_email: 'client@example.com'
+    }), ['projects', 'project-release', 'approvals']);
+    assert.equal(approvalResponse.status, 201);
+    const approval = (await approvalResponse.json()).approval;
+    assert.equal(approval.approval_type, 'production-release');
+    assert.equal(approval.status, 'pending');
+
+    // List approvals
+    const listAppr = await (await call(db, request('/api/hq/projects/project-release/approvals'), ['projects', 'project-release', 'approvals'])).json();
+    assert.equal(listAppr.approvals.length, 1);
+    assert.equal(listAppr.approvals[0].id, approval.id);
+
+    // Decide approval
+    const decisionResponse = await call(db, request('/api/hq/approvals/' + approval.id, 'PATCH', {
+      status: 'approved', decision_note: 'Final review complete'
+    }), ['approvals', approval.id]);
+    assert.equal(decisionResponse.status, 200);
+    const decided = (await decisionResponse.json()).approval;
+    assert.equal(decided.status, 'approved');
+    assert.equal(decided.decided_by, identity.uid);
+    assert.equal(decided.decision_note, 'Final review complete');
+
+    // Cannot decide an already decided approval
+    const reDecide = await call(db, request('/api/hq/approvals/' + approval.id, 'PATCH', {
+      status: 'rejected'
+    }), ['approvals', approval.id]);
+    assert.equal(reDecide.status, 409);
+    assert.equal((await reDecide.json()).error, 'APPROVAL_ALREADY_DECIDED');
+
+    // Create QA check
+    const qaResponse = await call(db, request('/api/hq/projects/project-release/qa', 'POST', {
+      category: 'security', check_name: 'No secrets exposed', result: 'not-run'
+    }), ['projects', 'project-release', 'qa']);
+    assert.equal(qaResponse.status, 201);
+    const qa = (await qaResponse.json()).check;
+    assert.equal(qa.category, 'security');
+    assert.equal(qa.result, 'not-run');
+
+    // List QA checks
+    const listQa = await (await call(db, request('/api/hq/projects/project-release/qa'), ['projects', 'project-release', 'qa'])).json();
+    assert.equal(listQa.checks.length, 1);
+    assert.equal(listQa.checks[0].id, qa.id);
+
+    // Update QA check
+    const qaUpdate = await call(db, request('/api/hq/qa/' + qa.id, 'PATCH', {
+      result: 'pass', notes: 'Verified in code review'
+    }), ['qa', qa.id]);
+    assert.equal(qaUpdate.status, 200);
+    const updatedCheck = (await qaUpdate.json()).check;
+    assert.equal(updatedCheck.result, 'pass');
+    assert.equal(updatedCheck.checked_by, identity.uid);
+    assert.equal(updatedCheck.notes, 'Verified in code review');
+
+    // Audit logs recorded (1 for approval create, 1 for decide, 1 for QA create, 1 for QA update)
+    const auditCount = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
+    assert.equal(auditCount, 4);
+  } finally {
+    db.close();
+  }
+});
+
+test('disabled owner cannot create an approval and batch rolls back', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/projects/p1/approvals', 'POST', {
+      approval_type: 'production-release'
+    }), ['projects', 'p1', 'approvals']);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM approvals').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT status FROM hq_users WHERE uid = ?').get(identity.uid).status, 'disabled');
+  } finally {
+    db.close();
+  }
+});
+
+test('disabled owner cannot decide an approval and batch rolls back', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, ?, 'pending', ?)")
+      .run('appr-test', 'p1', 'production-release', identity.uid);
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/approvals/appr-test', 'PATCH', {
+      status: 'approved'
+    }), ['approvals', 'appr-test']);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT status FROM approvals WHERE id = ?').get('appr-test').status, 'pending');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT status FROM hq_users WHERE uid = ?').get(identity.uid).status, 'disabled');
+  } finally {
+    db.close();
+  }
+});
+
+test('disabled owner cannot create a QA check and batch rolls back', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/projects/p1/qa', 'POST', {
+      category: 'security', check_name: 'Check 1'
+    }), ['projects', 'p1', 'qa']);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM qa_checks').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT status FROM hq_users WHERE uid = ?').get(identity.uid).status, 'disabled');
+  } finally {
+    db.close();
+  }
+});
+
+test('disabled owner cannot update a QA check and batch rolls back', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result) VALUES (?, ?, 'security', 'Check 1', 'not-run')")
+      .run('qa-test', 'p1');
+    db.sqlite.prepare("UPDATE hq_users SET status = 'disabled' WHERE uid = ?").run(identity.uid);
+
+    const response = await call(db, request('/api/hq/qa/qa-test', 'PATCH', {
+      result: 'pass'
+    }), ['qa', 'qa-test']);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT result FROM qa_checks WHERE id = ?').get('qa-test').result, 'not-run');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT status FROM hq_users WHERE uid = ?').get(identity.uid).status, 'disabled');
+  } finally {
+    db.close();
+  }
+});
+
+test('un-enrolled owner cannot mutate release resources and cannot provision account', async () => {
+  const db = new TestD1();
+  try {
+    // Seed an enrolled owner to create project p1, but testing with un-enrolled identity
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES ('seeded-owner', 'seeded@example.com', 'active')").run();
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES ('c1', 'Client', 'seeded-owner')").run();
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES ('p1', 'c1', 'Project', 'seeded-owner')").run();
+
+    // identity ('owner-release-test') is NOT enrolled in hq_users
+    const response = await call(db, request('/api/hq/projects/p1/approvals', 'POST', {
+      approval_type: 'production-release'
+    }), ['projects', 'p1', 'approvals']);
+
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, 'HQ_REQUEST_FAILED');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM hq_users WHERE uid = ?').get(identity.uid).count, 0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM approvals').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('release API fails closed when HQ_DB is unavailable', async () => {
+  const response = await handleAuthorizedHqRelease({
+    request: request('/api/hq/projects/p1/approvals'),
+    env: {},
+    segments: ['projects', 'p1', 'approvals'],
+    identity
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'HQ_DATABASE_UNAVAILABLE');
+});
+
+test('release API rejects unsupported HTTP methods and invalid routes', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+
+    // Unsupported method on approvals list
+    const badMethod = await call(db, request('/api/hq/projects/p1/approvals', 'DELETE'), ['projects', 'p1', 'approvals']);
+    assert.equal(badMethod.status, 405);
+    assert.equal((await badMethod.json()).error, 'METHOD_NOT_ALLOWED');
+
+    // Unsupported method on qa list
+    const badMethodQa = await call(db, request('/api/hq/projects/p1/qa', 'DELETE'), ['projects', 'p1', 'qa']);
+    assert.equal(badMethodQa.status, 405);
+    assert.equal((await badMethodQa.json()).error, 'METHOD_NOT_ALLOWED');
+
+    // Non-existent route
+    const notFound = await call(db, request('/api/hq/invalid', 'GET'), ['invalid']);
+    assert.equal(notFound.status, 404);
+    assert.equal((await notFound.json()).error, 'NOT_FOUND');
+  } finally {
+    db.close();
+  }
+});
