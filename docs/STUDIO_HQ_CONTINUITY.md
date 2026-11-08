@@ -899,3 +899,14 @@ Create a dedicated security-fix branch from current main. Reconcile the Firebase
 ### Current scope and safety
 
 No Cloudflare resources, DNS, production site, customer data, D1 schema or Worker deployment were modified. PR #24 is separate and remains open/draft/unmerged.
+
+
+### HQ-1 implementation follow-up — latest head update (2026-11-08)
+
+- Latest PR #25 head: `d45b363e348533538d2923c59b621cef4a2c950a` (15 commits ahead of main, 0 behind; five changed files).
+- Added incremental certificate response reading with a strict 128 KiB limit, rejected unsupported JWT critical/remote-key header parameters, and required `auth_time <= iat`.
+- Updated crypto tests to construct a DER/X.509-shaped fixture from a generated RSA SPKI and exercise the actual SPKI extraction + Web Crypto import path. Added malformed and oversized certificate response cases.
+- Latest dedicated GitHub Actions job **Cryptographic Firebase token verification** passed on this head (run #5). This is deterministic CI evidence; real Google certificate compatibility and end-to-end API integration remain unverified.
+- Other checks on the same head remain failed: AI production regression, supply-chain baseline, production AI GET/POST probes, deployment runtime reliability, and AdSense privacy readiness. These are not evidence of a failure in the dedicated cryptographic test job; their underlying causes remain separately tracked.
+- Issue #22 received an updated progress comment. PR #25 remains draft/open/unmerged.
+- No Cloudflare resource, D1 binding/migration, owner enrollment, production site, or Worker deployment was changed.
