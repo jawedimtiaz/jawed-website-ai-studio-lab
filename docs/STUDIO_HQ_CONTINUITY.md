@@ -913,3 +913,38 @@ No Cloudflare resources, DNS, production site, customer data, D1 schema or Worke
 
 - Follow-up hardening at latest head `d45b363e348533538d2923c59b621cef4a2c950a`: certificate body is streamed under a strict byte limit; unsupported JWT critical/remote-key headers are rejected; `auth_time` cannot exceed `iat`; tests cover oversized and malformed certificate responses.
 - The latest dedicated security workflow run (#5) passed on the latest PR head. The suite now exercises actual DER SPKI extraction/import using generated RSA key material. No genuine Google certificate fixture or live Firebase token was used; that compatibility check remains explicitly open.
+
+
+## 17. HQ-1 follow-up: enforce the certificate response bound and identify bootstrap race — 2026-11-08
+
+### Re-audit correction
+
+A fresh source read of PR #25 head `d45b363e348533538d2923c59b621cef4a2c950a` found that the implementation defined `readBoundedText()` but `loadCertificates()` still called `response.text()`. Therefore the previously documented streaming response limit was not actually enforced on that head. The earlier wording that the certificate body was streamed under the limit was premature; this section records the correction.
+
+### Implemented on PR #25 branch
+
+- Branch: `security/hq-firebase-jwks-verification`.
+- Commit: `38f0727e22886ae57cf180c521ec9e1cb79f2e99` — `loadCertificates()` now uses `readBoundedText(response, MAX_CERTIFICATE_RESPONSE_BYTES)`.
+- Commit: `afa41c5960990a99a104d4a8929d92ca68667636` — added a regression test asserting the certificate reader does not call `response.text()` and cancels an oversized stream.
+- PR #25 remains open, draft and unmerged. The latest workflow runs triggered by the new head were still in progress at the time of this update; recheck the dedicated HQ Firebase Authentication Security Tests workflow before claiming the new test passed.
+- This is a source-level change and a new test assertion; no local test execution is claimed.
+
+### Newly identified owner-bootstrap race condition
+
+A source review of `functions/lib/hqApi.js` on PR #25 found the first-owner enrollment sequence does:
+1. `SELECT COUNT(*) FROM hq_users`;
+2. if zero, `INSERT ... ON CONFLICT(id) DO NOTHING`.
+
+Two distinct allowlisted Firebase UIDs can potentially both observe an empty table and each insert a different owner UID. The conflict target only protects duplicate IDs; it does not enforce a single first owner. This is a security blocker until the database design and transaction/constraint behavior prove a single-winner enrollment. Do not enable HQ endpoints or enroll an owner while this remains unresolved.
+
+### Remaining actions
+
+1. Inspect the actual D1 schema and constraints used by the eventual HQ API, then design a database-enforced single-owner bootstrap (not a count-then-insert assumption).
+2. Add integration tests for concurrent first-owner attempts and for the full `verifyAndAuthorizeOwner()` path using valid generated RSA certificates.
+3. Recheck PR #25 Actions after commit `afa41c5960990a99a104d4a8929d92ca68667636`.
+4. Independently validate the parser against a genuine current Google Secure Token certificate.
+5. Reconcile D1/API schema, CORS and deletion/retention policy before any merge or deployment.
+
+### Safety
+
+No PR was merged, no Cloudflare Worker or D1 resource was changed, no migration was applied, no owner was enrolled, and no production/personal website or customer project was modified.
