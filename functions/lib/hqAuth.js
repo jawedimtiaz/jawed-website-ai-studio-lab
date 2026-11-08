@@ -98,6 +98,34 @@ function cacheExpiry(response, now) {
   return now + Math.max(0, Math.min(seconds, MAX_CERTIFICATE_CACHE_MS / 1000)) * 1000;
 }
 
+async function readBoundedText(response, maxBytes) {
+  if (!response.body) throw new Error('CERTIFICATE_RESPONSE_EMPTY');
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error('CERTIFICATE_RESPONSE_TOO_LARGE');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 async function loadCertificates(fetchImpl, now, forceRefresh = false) {
   if (!forceRefresh && certificateCache.certificates && certificateCache.expiresAt > now) {
     return certificateCache.certificates;
@@ -151,7 +179,7 @@ export async function verifyFirebaseToken(idToken, env = {}, options = {}) {
     const parts = idToken.split('.');
     if (parts.length !== 3) return failure('INVALID_TOKEN', 'Malformed JWT structure');
     const header = decodeJsonSegment(parts[0]);
-    if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+    if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid || header.kid.length > 256 || header.crit !== undefined || header.b64 === false || header.jku !== undefined || header.jwk !== undefined || header.x5u !== undefined || header.x5c !== undefined) {
       return failure('INVALID_TOKEN_HEADER', 'Unsupported JWT algorithm or missing signing key ID');
     }
     const payload = decodeJsonSegment(parts[1]);
@@ -187,7 +215,7 @@ export async function verifyFirebaseToken(idToken, env = {}, options = {}) {
     if (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) || payload.iat > nowSeconds + 5) {
       return failure('INVALID_ISSUED_AT', 'Firebase token issued-at claim is invalid');
     }
-    if (typeof payload.auth_time !== 'number' || !Number.isFinite(payload.auth_time) || payload.auth_time > nowSeconds + 5) {
+    if (typeof payload.auth_time !== 'number' || !Number.isFinite(payload.auth_time) || payload.auth_time > nowSeconds + 5 || payload.auth_time > payload.iat) {
       return failure('INVALID_AUTH_TIME', 'Firebase token auth_time claim is invalid');
     }
     if (typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128) {
