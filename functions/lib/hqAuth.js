@@ -31,51 +31,6 @@ function decodeJsonSegment(value) {
 
 // Minimal strict DER reader used only to extract SubjectPublicKeyInfo from
 // Google's X.509 certificate. Signature verification itself is Web Crypto.
-function readDerNode(bytes, offset) {
-  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
-  const tag = bytes[offset++];
-  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
-  let length = bytes[offset++];
-  if (length & 0x80) {
-    const count = length & 0x7f;
-    if (count === 0 || count > 4 || offset + count > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
-    length = 0;
-    for (let i = 0; i < count; i++) length = length * 256 + bytes[offset++];
-  }
-  const start = offset;
-  const end = start + length;
-  if (end > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
-  return { tag, start, end, next: end };
-}
-
-function derChildren(bytes, parent) {
-  const children = [];
-  let offset = parent.start;
-  while (offset < parent.end) {
-    const node = readDerNode(bytes, offset);
-    children.push(node);
-    offset = node.next;
-  }
-  if (offset !== parent.end) throw new Error('INVALID_CERTIFICATE_DER');
-  return children;
-}
-
-function certificateSpki(pem) {
-  if (typeof pem !== 'string' || pem.length > 16_384) throw new Error('INVALID_CERTIFICATE');
-  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g, '');
-  const der = decodeBase64( base64 );
-  const root = readDerNode(der, 0);
-  if (root.tag !== 0x30 || root.next !== der.length) throw new Error('INVALID_CERTIFICATE_DER');
-  const certificate = derChildren(der, root);
-  if (certificate.length !== 3 || certificate[0].tag !== 0x30) throw new Error('INVALID_CERTIFICATE_DER');
-  const tbs = derChildren(der, certificate[0]);
-  let index = tbs[0]?.tag === 0xa0 ? 1 : 0;
-  // TBSCertificate: serial, signature, issuer, validity, subject, SPKI.
-  const spki = tbs[index + 5];
-  if (!spki || spki.tag !== 0x30) throw new Error('INVALID_CERTIFICATE_SPKI');
-  return der.slice(spki.start - (spki.start - (spki.start)), spki.end); // replaced below
-}
-
 function decodeBase64(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error('INVALID_CERTIFICATE_BASE64');
   const binary = atob(value);
@@ -84,7 +39,7 @@ function decodeBase64(value) {
 
 function getSpkiDer(pem) {
   if (typeof pem !== 'string' || pem.length > 16_384) throw new Error('INVALID_CERTIFICATE');
-  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g, '');
+  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\\s/g, '');
   const der = decodeBase64(base64);
   const root = readDerNode(der, 0);
   if (root.tag !== 0x30 || root.next !== der.length) throw new Error('INVALID_CERTIFICATE_DER');
@@ -94,10 +49,7 @@ function getSpkiDer(pem) {
   const index = tbs[0]?.tag === 0xa0 ? 1 : 0;
   const spki = tbs[index + 5];
   if (!spki || spki.tag !== 0x30) throw new Error('INVALID_CERTIFICATE_SPKI');
-  // Include the DER tag and length preceding the SPKI content.
-  let headerStart = spki.start - 2;
-  if (der[headerStart + 1] & 0x80) headerStart -= (der[headerStart + 1] & 0x7f);
-  return der.slice(headerStart, spki.end);
+  return der.slice(spki.offset, spki.end);
 }
 
 function ownerEmailsFromEnv(env = {}) {
