@@ -1030,3 +1030,49 @@ Use a new reviewed integration branch from the refreshed PR #10 lineage, separat
 - Newer `hq_users.uid` and 17-table schema contract.
 
 Refresh all PR heads and dependency bases immediately before branch creation; no branch or PR was changed in this lineage audit. Issue #22 received this finding. No merge, deployment, migration or owner enrollment was performed.
+
+
+## 19. Refreshed HQ branch discovery — 2026-11-08
+
+### Correction to the earlier integration target
+
+A fresh GitHub branch search and source inspection found additional HQ branches created after the older PR #3–#10 inventory. The currently visible branch set includes:
+- `feat/studio-hq-private-ui`
+- `fix/studio-hq-firebase-signature-verification`
+- `fix/studio-hq-api-schema-contract`
+- `fix/studio-hq-owner-status-enforcement`
+- `fix/studio-hq-bounded-json-body`
+- `fix/studio-hq-private-route-cache-bypass`
+- `feat/studio-hq-approvals-qa`
+
+The current `feat/studio-hq-private-ui` and `fix/studio-hq-api-schema-contract` branches expose the newer schema-aligned API implementation:
+- `hq_users(uid,email,display_name,status,created_at,last_seen_at)`
+- No HTTP first-owner bootstrap; owner must be pre-enrolled.
+- Firebase signature verification through `jose` using Google's X.509 certificates.
+- Audit events written to `audit_logs`.
+- API schema uses the newer `clients/projects/project_tasks/project_milestones` model.
+
+The inspected `hqAuth.js` on these branches is cryptographically verifying tokens, but it is not yet equivalent to PR #25's hardened implementation: it uses unbounded `response.json()` certificate retrieval, has no explicit certificate-fetch timeout or response byte cap, does not reject the full set of unsupported JWT remote-key/critical-header parameters, and has less comprehensive token/certificate regression coverage. PR #25's stronger implementation therefore remains useful as a source for a carefully adapted hardening change, not as a standalone merge.
+
+### Integration decision
+
+Do not create a branch from the older PR #10 lineage until the latest branch/PR ancestry and exact head SHAs are refreshed. The safer candidate base is the latest schema-aligned HQ branch that includes the private UI and owner authorization, likely the `feat/studio-hq-private-ui` / `fix/studio-hq-api-schema-contract` lineage; verify ancestry before branch creation.
+
+Next implementation should harden the existing `jose` verifier in place on a new isolated branch based on that confirmed latest schema-aligned head. Preserve:
+- Existing `verifyFirebaseToken(idToken, env, options)` adapter contract.
+- Environment-configured owner allowlist.
+- Manual administrator enrollment only.
+- Same-origin request enforcement.
+- Active owner-row and email-match checks.
+- Transaction-time owner authorization guards on mutating D1 batches.
+- Current 18-table schema and API field names.
+
+Do not replace the existing `jose` implementation with PR #25's custom DER parser without a compelling compatibility reason. Prefer the maintained JOSE certificate import/verification path and port the proven controls: bounded certificate stream reading, timeout, bounded cache lifetime, unknown-`kid` refresh, strict JWT header policy, fail-closed handling, and cryptographic negative tests. Independently validate with a genuine Google certificate fixture or a controlled live certificate fetch in a non-production test; do not use production tokens.
+
+### Evidence and safety
+
+- Read-only source inspection confirmed the schema-aligned `hqApi.js` and existing JOSE-based verifier on `feat/studio-hq-private-ui` and `fix/studio-hq-api-schema-contract`.
+- No branch was created or updated in this step.
+- No PR was merged or retargeted.
+- No Worker, D1 binding, migration, owner record, Firebase configuration, production site, or customer project was changed.
+- The previous PR #10 integration recommendation is superseded by this refreshed branch discovery and must not be acted on without another ancestry/head audit.
