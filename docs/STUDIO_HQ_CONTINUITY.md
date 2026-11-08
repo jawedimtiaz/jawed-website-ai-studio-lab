@@ -910,3 +910,6 @@ No Cloudflare resources, DNS, production site, customer data, D1 schema or Worke
 - Other checks on the same head remain failed: AI production regression, supply-chain baseline, production AI GET/POST probes, deployment runtime reliability, and AdSense privacy readiness. These are not evidence of a failure in the dedicated cryptographic test job; their underlying causes remain separately tracked.
 - Issue #22 received an updated progress comment. PR #25 remains draft/open/unmerged.
 - No Cloudflare resource, D1 binding/migration, owner enrollment, production site, or Worker deployment was changed.
+
+- Follow-up hardening at latest head `d45b363e348533538d2923c59b621cef4a2c950a`: certificate body is streamed under a strict byte limit; unsupported JWT critical/remote-key headers are rejected; `auth_time` cannot exceed `iat`; tests cover oversized and malformed certificate responses.
+- The latest dedicated security workflow run (#5) passed on the latest PR head. The suite now exercises actual DER SPKI extraction/import using generated RSA key material. No genuine Google certificate fixture or live Firebase token was used; that compatibility check remains explicitly open.
