@@ -68,7 +68,7 @@ function decodeBase64(value) {
 
 function getSpkiDer(pem) {
   if (typeof pem !== 'string' || pem.length > 16_384) throw new Error('INVALID_CERTIFICATE');
-  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\\s/g, '');
+  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g, '');
   const der = decodeBase64(base64);
   const root = readDerNode(der, 0);
   if (root.tag !== 0x30 || root.next !== der.length) throw new Error('INVALID_CERTIFICATE_DER');
