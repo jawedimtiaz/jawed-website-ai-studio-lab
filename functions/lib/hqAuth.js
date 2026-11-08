@@ -31,6 +31,35 @@ function decodeJsonSegment(value) {
 
 // Minimal strict DER reader used only to extract SubjectPublicKeyInfo from
 // Google's X.509 certificate. Signature verification itself is Web Crypto.
+function readDerNode(bytes, offset) {
+  const headerOffset = offset;
+  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  const tag = bytes[offset++];
+  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  let length = bytes[offset++];
+  if (length & 0x80) {
+    const count = length & 0x7f;
+    if (count === 0 || count > 4 || offset + count > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+    length = 0;
+    for (let i = 0; i < count; i++) length = length * 256 + bytes[offset++];
+  }
+  const start = offset;
+  const end = start + length;
+  if (end > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  return { tag, offset: headerOffset, start, end, next: end };
+}
+
+function derChildren(bytes, parent) {
+  const children = [];
+  let offset = parent.start;
+  while (offset < parent.end) {
+    const child = readDerNode(bytes, offset);
+    children.push(child);
+    offset = child.next;
+  }
+  if (offset !== parent.end) throw new Error('INVALID_CERTIFICATE_DER');
+  return children;
+}
 function decodeBase64(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error('INVALID_CERTIFICATE_BASE64');
   const binary = atob(value);
