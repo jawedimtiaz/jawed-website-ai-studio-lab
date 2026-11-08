@@ -236,7 +236,6 @@ test('streams certificate data and cancels immediately when the byte limit is ex
       body: new ReadableStream({
         start(controller) {
           controller.enqueue(oversizedBody);
-          controller.close();
         },
         cancel() {
           streamCancelled = true;
