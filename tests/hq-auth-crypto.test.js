@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyFirebaseToken, resetFirebaseCertificateCacheForTests } from '../functions/lib/hqAuth.js';
+import { verifyFirebaseToken, importFirebaseCertificate, resetFirebaseCertificateCacheForTests } from '../functions/lib/hqAuth.js';
 
 const projectId = 'refined-actor-skhlb';
 const now = Date.now();
@@ -15,6 +15,52 @@ function base64url(value) {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function derLength(length) {
+  if (length < 128) return Uint8Array.of(length);
+  const bytes = [];
+  while (length > 0) { bytes.unshift(length & 255); length = Math.floor(length / 256); }
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
+}
+
+function der(tag, content) {
+  const body = content instanceof Uint8Array ? content : new Uint8Array(content);
+  const length = derLength(body.length);
+  const result = new Uint8Array(1 + length.length + body.length);
+  result[0] = tag;
+  result.set(length, 1);
+  result.set(body, 1 + length.length);
+  return result;
+}
+
+function derSequence(...items) {
+  const size = items.reduce((sum, item) => sum + item.length, 0);
+  const content = new Uint8Array(size);
+  let offset = 0;
+  for (const item of items) { content.set(item, offset); offset += item.length; }
+  return der(0x30, content);
+}
+
+function fakeX509Certificate(spki) {
+  const algorithm = derSequence(
+    der(0x06, Uint8Array.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01])),
+    der(0x05, new Uint8Array())
+  );
+  const tbs = derSequence(
+    der(0xa0, der(0x02, Uint8Array.of(2))),
+    der(0x02, Uint8Array.of(1)),
+    algorithm,
+    derSequence(),
+    derSequence(),
+    derSequence(),
+    spki
+  );
+  const certificate = derSequence(tbs, algorithm, der(0x03, Uint8Array.of(0, 1)));
+  let binary = '';
+  for (const byte of certificate) binary += String.fromCharCode(byte);
+  const encoded = btoa(binary).match(/.{1,64}/g).join('\\n');
+  return '-----BEGIN CERTIFICATE-----\\n' + encoded + '\\n-----END CERTIFICATE-----';
 }
 
 async function fixture() {
@@ -50,7 +96,7 @@ async function fixture() {
     const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, signingInput));
     return header + '.' + payload + '.' + base64url(signature);
   }
-  return { makeToken, fetchImpl, importCertificate, getFetchCount: () => fetchCount };
+  return { makeToken, fetchImpl, getFetchCount: () => fetchCount };
 }
 
 async function verify(token, ctx, env = ownerEnv) {
@@ -177,3 +223,4 @@ test('rejects malformed and oversized tokens without certificate lookup', async 
   assert.equal((await verify('x'.repeat(12001), ctx)).valid, false);
   assert.equal(ctx.getFetchCount(), 0);
 });
+\ntest('imports the RSA public key from the X.509 certificate DER structure', async () => {\n  const pair = await crypto.subtle.generateKey(\n    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },\n    true,\n    ['sign', 'verify']\n  );\n  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey));\n  const imported = await importFirebaseCertificate(fakeX509Certificate(spki));\n  const message = new TextEncoder().encode('certificate parser verification');\n  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, message);\n  assert.equal(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', imported, signature, message), true);\n});\n
