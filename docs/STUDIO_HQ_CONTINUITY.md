@@ -1200,3 +1200,36 @@ Each batch begins with `ownerUpsertStatement(db, identity)`. Re-fetched `functio
 ### Security disposition
 
 No code was changed. No migration was applied. No database binding, owner row, Worker, deployment, PR, or production/personal website was modified. Keep the divergent approvals/QA branch excluded from the candidate until the schema and authorization model are reconciled and every mutation is guarded by active-owner authorization at write time.
+
+
+## 23. HQ test-suite authorization coverage review — 2026-11-08
+
+### Tests present on the divergent approvals/QA branch
+
+Read-only inspection of the branch tree and test files found these HQ modules and tests:
+
+- `functions/api/hq/clients.js`, `clients.test.js`, and `clients.api.test.js`.
+- `functions/api/hq/projects.js` and `projects.test.js` (this test file also exercises task and milestone operations exposed by that module).
+- `functions/api/hq/release.js` and `release.test.js`.
+- `functions/api/hq/session.js`.
+- `functions/lib/hqAuth.js` and `hqAuth.test.js`.
+
+The API tests use a local SQLite-backed D1-style test double with a `batch()` implementation. Existing test names and assertions cover normal client/project/task/milestone/approval/QA lifecycle behavior, validation, unknown fields, and unavailable database binding. The auth tests cover Firebase token signature/claims and owner allowlist behavior.
+
+### Missing authorization regression coverage
+
+A source scan of these test files found no tests that simulate an owner row being disabled between request-time authorization and the SQL mutation. No explicit disabled-owner mutation denial test was found, and no missing-owner-row mutation denial test was found. The CRM lifecycle test asserts one `hq_users` row exists after a successful create, which is consistent with the request-path upsert behavior and does not prove manual pre-enrollment is enforced.
+
+This confirms a test-coverage gap in addition to the implementation defect already recorded: the current tests do not demonstrate that a disabled owner remains disabled and cannot mutate records, or that an un-enrolled owner cannot be implicitly provisioned by a request.
+
+### Required additions before security sign-off
+
+1. Pre-enroll an active owner fixture, then simulate disabling it immediately before the write statement; assert the mutation is rejected and no business/audit rows change.
+2. Attempt a mutation with a disabled owner fixture; assert denial and no status reactivation.
+3. Attempt a mutation with no owner row; assert denial and no implicit row creation.
+4. Retain a positive control proving an active, pre-enrolled owner can mutate successfully.
+5. Run these tests for every write family, including CRM, projects/tasks/milestones, approvals, and QA.
+
+### Safety and status
+
+This was a read-only source/test review. No tests were executed in this audit step; no new test result is claimed. No application files, PRs, migrations, D1 data, Worker bindings, deployments, personal website, or customer project were changed.
