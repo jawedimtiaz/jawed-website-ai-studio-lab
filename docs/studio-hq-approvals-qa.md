@@ -63,6 +63,17 @@ Studio HQ Approvals and QA APIs provide owner-protected delivery control, scope 
 * JWT tokens are verified using `jose` against Google's live X.509 public certificates (`CERT_URL`).
 * Tokens are validated for RS256 algorithm, project ID (`refined-actor-skhlb`), audience, issuer, expiration, not-before, auth-time, verified email, and inclusion in the hard-coded owner allowlist (`jawedimtiaz@gmail.com`, `jawed@jawed.co.in`).
 
+### 2.6 Audit Transaction Consistency & Zero-Row Update Protection
+* Mutating endpoints that perform conditional updates (`decideApproval` where `status = 'pending'`, and `updateQaCheck` where `id = ?`) use `conditionalAuditStatement()`.
+* The audit log statement is structured with a conditional clause:
+  ```sql
+  INSERT INTO audit_logs (...)
+  SELECT ?, ?, ...
+  WHERE changes() = 1
+  ```
+* If a concurrent modification or deletion causes the preceding `UPDATE` to modify 0 rows, SQLite evaluates `changes() = 0`. The audit insert selects 0 rows and inserts nothing.
+* This guarantees that audit log records are strictly committed only when the business update actually succeeds, eliminating phantom audit log creation and ensuring HTTP 409 / 404 responses leave the audit trail untouched.
+
 ---
 
 ## 3. Database Schema Alignment

@@ -111,6 +111,23 @@ async function createApproval(request, db, identity, projectId) {
   return row ? hqJson({ ok: true, approval: row }, 201) : hqJson({ ok: false, error: 'APPROVAL_CREATE_FAILED' }, 500);
 }
 
+function conditionalAuditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
+  return db.prepare(`INSERT INTO audit_logs
+    (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE changes() = 1`).bind(
+      crypto.randomUUID(),
+      identity.uid,
+      identity.email,
+      action,
+      entityType,
+      entityId,
+      requestId,
+      before ? JSON.stringify(before) : null,
+      after ? JSON.stringify(after) : null
+    );
+}
+
 async function decideApproval(request, db, identity, approvalId) {
   const existing = await db.prepare('SELECT * FROM approvals WHERE id = ?').bind(approvalId).first();
   if (!existing) return hqJson({ ok: false, error: 'APPROVAL_NOT_FOUND' }, 404);
@@ -128,7 +145,7 @@ async function decideApproval(request, db, identity, approvalId) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'approval.decision', 'approval', approvalId, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, 'approval.decision', 'approval', approvalId, crypto.randomUUID(),
       { status: existing.status }, { status: parsed.value.status, decision_note: note.value })
   ]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'APPROVAL_ALREADY_DECIDED' }, 409);
@@ -191,7 +208,7 @@ async function updateQaCheck(request, db, identity, checkId) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'qa.update', 'qa_check', checkId, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, 'qa.update', 'qa_check', checkId, crypto.randomUUID(),
       { result: existing.result }, { result: fields.result ?? existing.result })
   ]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'QA_CHECK_NOT_FOUND' }, 404);

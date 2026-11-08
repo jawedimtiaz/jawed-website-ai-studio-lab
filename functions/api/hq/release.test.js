@@ -288,3 +288,136 @@ test('release API rejects unsupported HTTP methods and invalid routes', async ()
     db.close();
   }
 });
+
+test('approval already decided between initial read and mutation does not append audit entry and returns 409', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, ?, 'pending', ?)")
+      .run('appr-race', 'p1', 'production-release', identity.uid);
+
+    // Deterministic simulation: right before batch executes, another operation decides the approval
+    const originalBatch = db.batch.bind(db);
+    db.batch = function(statements) {
+      db.sqlite.prepare("UPDATE approvals SET status = 'approved', decided_by = ? WHERE id = ?").run(identity.uid, 'appr-race');
+      return originalBatch(statements);
+    };
+
+    const response = await call(db, request('/api/hq/approvals/appr-race', 'PATCH', {
+      status: 'approved', decision_note: 'Concurrent attempt'
+    }), ['approvals', 'appr-race']);
+
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, 'APPROVAL_ALREADY_DECIDED');
+    const auditCount = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
+    assert.equal(auditCount, 0, 'No audit entry must be appended when update modifies 0 rows');
+  } finally {
+    db.close();
+  }
+});
+
+test('QA record no longer available when its update is attempted does not append audit entry and returns 404', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result) VALUES (?, ?, 'security', 'Check 1', 'not-run')")
+      .run('qa-race', 'p1');
+
+    // Deterministic simulation: right before batch executes, the QA check is deleted
+    const originalBatch = db.batch.bind(db);
+    db.batch = function(statements) {
+      db.sqlite.prepare("DELETE FROM qa_checks WHERE id = ?").run('qa-race');
+      return originalBatch(statements);
+    };
+
+    const response = await call(db, request('/api/hq/qa/qa-race', 'PATCH', {
+      result: 'pass', notes: 'Late update'
+    }), ['qa', 'qa-race']);
+
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error, 'QA_CHECK_NOT_FOUND');
+    const auditCount = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
+    assert.equal(auditCount, 0, 'No audit entry must be appended when QA record is unavailable');
+  } finally {
+    db.close();
+  }
+});
+
+test('zero-row update does not append an audit entry for approvals or QA checks', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, ?, 'pending', ?)")
+      .run('appr-zero', 'p1', 'scope', identity.uid);
+
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+
+    const origBatch = db.batch.bind(db);
+    db.batch = function(statements) {
+      db.sqlite.prepare("UPDATE approvals SET status = 'rejected' WHERE id = 'appr-zero'").run();
+      return origBatch(statements);
+    };
+
+    const res = await call(db, request('/api/hq/approvals/appr-zero', 'PATCH', {
+      status: 'approved'
+    }), ['approvals', 'appr-zero']);
+
+    assert.equal(res.status, 409);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('successful update still appends exactly one accurate audit entry with old and new values', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c1', 'Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)").run('p1', 'c1', 'Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, ?, 'pending', ?)")
+      .run('appr-audit-test', 'p1', 'scope', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result) VALUES (?, ?, 'content', 'Grammar check', 'not-run')")
+      .run('qa-audit-test', 'p1');
+
+    // 1. Successful approval decision
+    const apprRes = await call(db, request('/api/hq/approvals/appr-audit-test', 'PATCH', {
+      status: 'approved', decision_note: 'Scope looks solid'
+    }), ['approvals', 'appr-audit-test']);
+    assert.equal(apprRes.status, 200);
+
+    const apprAudit = db.sqlite.prepare("SELECT * FROM audit_logs WHERE entity_type = 'approval' AND entity_id = ?").get('appr-audit-test');
+    assert.ok(apprAudit, 'Audit record exists for approval decision');
+    assert.equal(apprAudit.action, 'approval.decision');
+    assert.equal(apprAudit.actor_uid, identity.uid);
+    assert.equal(apprAudit.actor_email, identity.email);
+    assert.deepEqual(JSON.parse(apprAudit.before_json), { status: 'pending' });
+    assert.deepEqual(JSON.parse(apprAudit.after_json), { status: 'approved', decision_note: 'Scope looks solid' });
+
+    // 2. Successful QA check update
+    const qaRes = await call(db, request('/api/hq/qa/qa-audit-test', 'PATCH', {
+      result: 'pass', notes: 'All copy verified'
+    }), ['qa', 'qa-audit-test']);
+    assert.equal(qaRes.status, 200);
+
+    const qaAudit = db.sqlite.prepare("SELECT * FROM audit_logs WHERE entity_type = 'qa_check' AND entity_id = ?").get('qa-audit-test');
+    assert.ok(qaAudit, 'Audit record exists for QA check update');
+    assert.equal(qaAudit.action, 'qa.update');
+    assert.equal(qaAudit.actor_uid, identity.uid);
+    assert.equal(qaAudit.actor_email, identity.email);
+    assert.deepEqual(JSON.parse(qaAudit.before_json), { result: 'not-run' });
+    assert.deepEqual(JSON.parse(qaAudit.after_json), { result: 'pass' });
+
+    // Exactly 2 audit records exist
+    const totalAudits = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
+    assert.equal(totalAudits, 2);
+  } finally {
+    db.close();
+  }
+});
