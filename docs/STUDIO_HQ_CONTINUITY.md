@@ -1003,3 +1003,30 @@ Create a single reviewed integration branch from the correct newer HQ architectu
 ### Safety and status
 
 Issue #22 received this architecture finding. PR #25 remains draft/open/unmerged. No new branch was created in this step. No PR merged, D1 migration applied, owner enrolled, Worker deployed, or Cloudflare resource changed. Personal site and customer projects remain untouched.
+
+
+### HQ PR dependency lineage audit — 2026-11-08
+
+Verified the newer architecture is a dependency chain:
+- PR #3 auth foundation, base `main`.
+- PR #4 D1 schema, base PR #3.
+- PR #5 CRM API, base PR #4.
+- PR #6 projects/delivery API, base PR #5.
+- PR #7 active owner authorization, base PR #6.
+- PR #9 isolated preview Worker/D1, base PR #7.
+- PR #10 AI/route/origin regression contracts, base PR #9.
+- PR #8 bounded JSON body handling is a sibling based on PR #7 and is not included in PR #9/#10's base chain.
+
+PR #10 head at the time of this audit: `d58d7cf2c8ca0ad2c1e8a61a7c9abfca4fca21fa`. Its API/schema and owner authorization model align with the newer 17-table schema and manual owner enrollment. Its current `hqAuth.js` still uses `jose` but does not yet have the full hardened implementation and comprehensive regression tests developed on PR #25.
+
+PR #25 head at the time of this audit: `24027d9397ab4d36cb3846c07eaad77b13d1efdb`. It is based directly on main's legacy API contract and must not be merged independently.
+
+### Integration recommendation
+
+Use a new reviewed integration branch from the refreshed PR #10 lineage, separately decide whether to include sibling PR #8's bounded JSON body change, and port the hardened cryptographic verification from PR #25 while preserving:
+- Manual administrator enrollment only; no first-caller bootstrap.
+- Same-origin request policy.
+- Transaction-time D1 owner authorization guard.
+- Newer `hq_users.uid` and 17-table schema contract.
+
+Refresh all PR heads and dependency bases immediately before branch creation; no branch or PR was changed in this lineage audit. Issue #22 received this finding. No merge, deployment, migration or owner enrollment was performed.
