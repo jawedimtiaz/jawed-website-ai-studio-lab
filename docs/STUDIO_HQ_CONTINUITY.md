@@ -862,3 +862,40 @@ No production or preview Worker, D1 binding/database migration, owner record, Fi
 ### Next exact task
 
 Create a dedicated security-fix branch from current main. Reconcile the Firebase project ID and owner allowlist, add/lock `jose` with the repository's actual package manager and lockfile, implement signature/JWKS verification, and replace the mock-signature authorization tests with cryptographically valid and invalid fixtures. Keep this work independent from PR #24 and the D1 schema migration.
+
+
+## 16. HQ Firebase signature-verification implementation — 2026-11-08
+
+### PR and branch
+
+- Draft PR #25: [Security: verify Firebase ID token signatures for Studio HQ](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/25)
+- Branch: `security/hq-firebase-jwks-verification`
+- Latest recorded head at this update: `ad6e66aeb7cf296c9dd16452e1fe237079adc91d`
+- PR remains open, draft and unmerged.
+
+### Implemented
+
+- Replaced claim-only JWT decoder with actual RSASSA-PKCS1-v1_5 / SHA-256 verification through Worker Web Crypto.
+- Backend default Firebase project ID now matches frontend config `refined-actor-skhlb`.
+- Retrieves Google's Firebase Secure Token X.509 certificates, selects by JWT `kid`, respects response `max-age` capped at one hour, refreshes once on unknown key ID, applies a 5-second request timeout and 128 KiB response bound, and fails closed on fetch/parse/import/signature failures.
+- Enforces issuer, audience, expiry, issued-at, auth_time, subject, verified email and environment-configured owner email allowlist after signature verification.
+- Removed legacy tests that accepted fabricated JWT signatures. Added real RSA-generated token tests and a DER/X.509-shaped fixture that exercises the SPKI extraction/import function.
+- Added dedicated workflow `.github/workflows/hq-auth-security.yml` and `test:hq-auth` package script. No new runtime dependency was added; Bun lockfile remains unchanged.
+
+### CI evidence
+
+- Dedicated GitHub Actions run #5, job **Cryptographic Firebase token verification**, passed on `ad6e66aeb7cf296c9dd16452e1fe237079adc91d`.
+- The test run covers valid signed token, payload tampering, wrong RSA signing key, unknown `kid` with refresh, issuer/audience mismatch, expired/future claims, unverified/disallowed email, unsupported algorithm, malformed/oversized token, certificate-service failure, and actual SPKI extraction/import from generated DER fixture.
+- This is deterministic unit-test evidence only. It is not a live Firebase certificate integration test, production Worker test, or end-to-end HQ API test.
+
+### Important remaining review items
+
+1. Independently validate the custom X.509 DER parser against a genuine current Google Secure Token certificate. The generated fixture tests DER extraction but does not prove compatibility with Google's live certificate encoding.
+2. Add end-to-end tests through `verifyAndAuthorizeOwner` using valid signed test certificates, including first-owner enrollment race safety.
+3. Confirm `FIREBASE_PROJECT_ID` and `HQ_ALLOWED_OWNER_EMAILS` are configured correctly in the eventual isolated preview environment before any exposure.
+4. Reconcile the D1 schema/API mismatch, wildcard CORS, and hard-delete policy from Issue #22.
+5. Keep PR #25 draft; no deployment, HQ_DB binding, migration, or owner enrollment until all blockers are reviewed and explicitly approved.
+
+### Current scope and safety
+
+No Cloudflare resources, DNS, production site, customer data, D1 schema or Worker deployment were modified. PR #24 is separate and remains open/draft/unmerged.
