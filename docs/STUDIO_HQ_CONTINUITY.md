@@ -1076,3 +1076,13 @@ Do not replace the existing `jose` implementation with PR #25's custom DER parse
 - No PR was merged or retargeted.
 - No Worker, D1 binding, migration, owner record, Firebase configuration, production site, or customer project was changed.
 - The previous PR #10 integration recommendation is superseded by this refreshed branch discovery and must not be acted on without another ancestry/head audit.
+
+
+### Isolated hardening branch prepared; guard check blocks implementation — 2026-11-08
+
+- Created non-destructive branch `security/hq-jose-hardening-schema-aligned` from `feat/studio-hq-private-ui`.
+- GitHub compare confirms the new branch is exactly identical to its base at creation (0 ahead / 0 behind); no code changes have been committed to it.
+- Re-fetched the candidate base files. The schema-aligned `hqApi.js` confirms manual owner enrollment and same-origin handling, but a direct search of that file did not find the expected `ownerAuthorizationGuardStatement` helper. Therefore the prior assumption that this exact candidate branch retained transaction-time authorization guards is not yet proven.
+- The candidate `hqAuth.js` still uses JOSE but has no bounded certificate stream reader. This remains the intended hardening target.
+- Before editing auth, inspect all mutating HQ endpoints and their D1 batch/transaction construction to determine whether owner status is rechecked atomically at write time. Do not claim the transaction-time guard exists until the exact code and tests prove it.
+- No PR was opened, no files were changed on the new branch, and no merge/deployment/D1/owner action occurred.
