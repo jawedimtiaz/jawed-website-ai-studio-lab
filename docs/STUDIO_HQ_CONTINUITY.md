@@ -1123,3 +1123,38 @@ Before implementing:
 ### Scope and status
 
 This was a source-level audit only. No application file on the security branch was changed. The continuity report was updated. No PR was opened, merged or retargeted; no D1 migration, binding, owner enrollment, Worker deployment, or production/personal-site change occurred.
+
+
+## 21. Expanded HQ schema, release/approval lineage, and migration safety review — 2026-11-08
+
+### Corrected migration inventory
+
+The schema-aligned `feat/studio-hq-private-ui` branch does not store the 18-table base schema at `migrations/hq/0001_studio_hq_schema.sql`; that path is present on the later divergent `feat/studio-hq-approvals-qa` branch. The private-UI branch has a separate root-level `migrations/0002_hq_owner_authorization_hardening.sql`, which creates the **legacy** `hq_users(id)`, `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`, and `hq_audit_logs` tables. It is incompatible with the schema-aligned API using `hq_users(uid)`, `clients`, `projects`, `project_tasks`, `project_milestones`, and `audit_logs`.
+
+Do not apply `migrations/0002_hq_owner_authorization_hardening.sql` to the current/new HQ D1. Its `CREATE TABLE IF NOT EXISTS` statements do not safely reconcile columns on already-existing tables; where a table name collides, the existing table remains unchanged, while the legacy tables can also be created alongside the newer tables. Treat this migration as legacy/unsafe for the current HQ schema pending explicit disposition. No migration was run.
+
+### Expanded feature inventory
+
+The separate `feat/studio-hq-approvals-qa` branch adds a larger 18-table Studio HQ schema, including `approvals`, `qa_checks`, finance, asset, repository, deployment and activity tables, plus a release/approval API. However, GitHub compare confirms this branch is **diverged** from `feat/studio-hq-private-ui` (79 commits ahead, 32 behind) and from `fix/studio-hq-api-schema-contract` (79 ahead, 23 behind). It is not a safe direct source to cherry-pick or merge wholesale.
+
+### Critical owner reactivation flaw in approvals/QA branch
+
+Read-only inspection of `functions/lib/hqApi.js` on `feat/studio-hq-approvals-qa` found `ownerUpsertStatement()` executes:
+`INSERT INTO hq_users (uid,email,status,last_seen_at) VALUES (...,'active',...)`
+with `ON CONFLICT(uid) DO UPDATE SET email=excluded.email, status='active'`.
+
+This silently reactivates an existing disabled owner whenever a mutation batch runs. It also performs implicit owner provisioning during an HTTP request, contrary to the manual administrator enrollment policy. This is a critical authorization defect. Do not use this helper or merge that branch as-is. The batch also places this upsert before the mutation and audit statements; atomic batch execution does not make the policy safe because the upsert itself changes the disabled status to active.
+
+### Release/approval/QA mutation inventory
+
+The divergent branch's `functions/api/hq/release.js` uses `db.batch()` for approval creation, approval decisions, QA creation and QA updates, but each batch begins with the unsafe `ownerUpsertStatement()`. Therefore these batches are not acceptable examples of safe transaction-time owner authorization. The individual mutation statements do not independently require an already-active owner row.
+
+### Current safe working branch disposition
+
+Keep `security/hq-jose-hardening-schema-aligned` based on the linear schema-aligned API + private-UI lineage (PR #14 → #15 → #18). This branch has only been created and remains unchanged from its base; no auth code or API writes have been altered yet.
+
+Before implementing any database guard, reconcile the schema/migration set and all HQ modules from a single linear ancestry. Do not pull the release/QA branch into the candidate until its owner-upsert reactivation flaw, auth model differences, and divergent history are resolved in a separate review.
+
+### Safety
+
+This section records source-level findings only. No application branch, migration, D1 database, Cloudflare Worker, owner row, deployment, personal website or customer project was modified.
