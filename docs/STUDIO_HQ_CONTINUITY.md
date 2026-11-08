@@ -965,3 +965,41 @@ No PR was merged, no Cloudflare Worker or D1 resource was changed, no migration 
 - Test output: 15 tests passed, 0 failed. The new streaming test confirms `response.text()` is not called and the oversized stream is cancelled.
 - This confirms the deterministic Node 22 unit tests on the PR merge ref. It does not validate Google's live certificate encoding, deployed Worker runtime, owner-bootstrap concurrency, D1 schema, or overall repository CI.
 - All six other workflows on this head failed: Deployment Runtime, Production AI POST, Production AI GET, Security Supply Chain, AI Regression, and AdSense Readiness. Do not claim overall CI is green.
+
+
+## 18. HQ architecture reconciliation: legacy bootstrap vs manually enrolled owner — 2026-11-08
+
+### Finding: two incompatible D1/API contracts
+
+Read-only source comparison found the PR #25 auth implementation is layered on the legacy HQ API contract from current main:
+- `hq_users.id`, `role`, `created_at`, `updated_at`, `last_login_at`
+- Legacy tables `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`
+- Public first-owner bootstrap in `verifyAndAuthorizeOwner()`, implemented as a separate `COUNT(*)` followed by insert.
+
+The newer PR #7 / PR #9 architecture uses a different contract:
+- `hq_users.uid`, `display_name`, `last_seen_at`
+- Business tables `clients`, `projects`, `project_tasks`, `project_milestones`, and the 17-table Studio HQ schema.
+- Owner must already exist in `hq_users`; no public first-owner bootstrap. The runbook specifies manual administrator enrollment of a UID/email verified from Firebase's trusted admin interface, into the exact isolated environment.
+- Owner authorization checks same-origin request policy and active D1 owner record.
+- Mutating D1 batches use `ownerAuthorizationGuardStatement()` as a transaction-time guard so disabling an owner blocks the write batch.
+
+### Conclusion
+
+Do not attempt to fix the legacy count-then-insert race by adding a uniqueness constraint and then keep this API. The intended architecture is the manually provisioned owner model. PR #25 cannot be merged as a standalone auth fix because its base API/schema contract is incompatible with the newer HQ design.
+
+### Source evidence
+
+- PR #25 `functions/lib/hqApi.js`: blob `29366434d174f3ffcb2505c4bec6201131ffd4a5`.
+- PR #25 `functions/lib/hqAuth.js`: blob `cdbbbb5cd4825dc63a2531d61a4cfed32cbdbe41`.
+- PR #7 `functions/lib/hqApi.js`: blob `47abb1d1b1d7b7ba1ad4a09ee4049253a525b099`.
+- PR #7 owner-authorization runbook: blob `1e2bbeba4cd46a0badcf6bbbd53b165251ecd5c6`.
+- PR #9 migration `migrations/hq/0001_studio_hq_schema.sql`: blob `2e6b7df7ee5653541618448037710bfcb12c5bc1`.
+- PR #9 runbook: preview database was isolated and empty at its last recorded inspection; this must be rechecked before any future approved migration.
+
+### Next integration task
+
+Create a single reviewed integration branch from the correct newer HQ architecture lineage. Port only the cryptographic Firebase verification from PR #25, preserving the newer API's manually provisioned owner model, same-origin policy, and transaction-time owner authorization guard. Add integration tests for valid/invalid signed tokens, missing/disabled owner, email mismatch, no automatic enrollment, and atomic rejection of writes. Reconcile all schema fields/table names before connecting any D1 binding.
+
+### Safety and status
+
+Issue #22 received this architecture finding. PR #25 remains draft/open/unmerged. No new branch was created in this step. No PR merged, D1 migration applied, owner enrolled, Worker deployed, or Cloudflare resource changed. Personal site and customer projects remain untouched.
