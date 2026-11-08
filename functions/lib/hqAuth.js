@@ -137,8 +137,7 @@ async function loadCertificates(fetchImpl, now, forceRefresh = false) {
   if (!response.ok) throw new Error('CERTIFICATE_FETCH_FAILED');
   const declaredLength = Number(response.headers.get('content-length') || 0);
   if (declaredLength > MAX_CERTIFICATE_RESPONSE_BYTES) throw new Error('CERTIFICATE_RESPONSE_TOO_LARGE');
-  const body = await response.text();
-  if (body.length > MAX_CERTIFICATE_RESPONSE_BYTES) throw new Error('CERTIFICATE_RESPONSE_TOO_LARGE');
+  const body = await readBoundedText(response, MAX_CERTIFICATE_RESPONSE_BYTES);
   const certificates = JSON.parse(body);
   if (!certificates || typeof certificates !== 'object' || Array.isArray(certificates)) {
     throw new Error('CERTIFICATE_RESPONSE_INVALID');
