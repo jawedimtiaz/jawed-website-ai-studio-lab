@@ -123,7 +123,7 @@ async function loadCertificates(fetchImpl, now, forceRefresh = false) {
   return certificates;
 }
 
-async function importFirebaseCertificate(pem) {
+export async function importFirebaseCertificate(pem) {
   const spki = getSpkiDer(pem);
   return crypto.subtle.importKey(
     'spki',
