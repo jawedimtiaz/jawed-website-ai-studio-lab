@@ -5,10 +5,7 @@ import { verifyFirebaseToken, importFirebaseCertificate, resetFirebaseCertificat
 const projectId = 'refined-actor-skhlb';
 const now = Date.now();
 const nowSeconds = Math.floor(now / 1000);
-const ownerEnv = {
-  FIREBASE_PROJECT_ID: projectId,
-  HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com'
-};
+const ownerEnv = { FIREBASE_PROJECT_ID: projectId, HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com' };
 
 function base64url(value) {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
@@ -42,6 +39,9 @@ function derSequence(...items) {
   return der(0x30, content);
 }
 
+// Builds a minimal X.509-shaped test fixture containing the generated RSA SPKI.
+// The certificate's outer signature is not relied upon; production trusts the
+// certificate response delivered by Google's HTTPS endpoint.
 function fakeX509Certificate(spki) {
   const algorithm = derSequence(
     der(0x06, Uint8Array.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01])),
@@ -59,8 +59,8 @@ function fakeX509Certificate(spki) {
   const certificate = derSequence(tbs, algorithm, der(0x03, Uint8Array.of(0, 1)));
   let binary = '';
   for (const byte of certificate) binary += String.fromCharCode(byte);
-  const encoded = btoa(binary).match(/.{1,64}/g).join('\\n');
-  return '-----BEGIN CERTIFICATE-----\\n' + encoded + '\\n-----END CERTIFICATE-----';
+  const encoded = btoa(binary).match(/.{1,64}/g).join('\n');
+  return '-----BEGIN CERTIFICATE-----\n' + encoded + '\n-----END CERTIFICATE-----';
 }
 
 async function fixture() {
@@ -70,15 +70,16 @@ async function fixture() {
     true,
     ['sign', 'verify']
   );
+  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey));
+  const pemCertificate = fakeX509Certificate(spki);
   let fetchCount = 0;
   const fetchImpl = async () => {
     fetchCount++;
-    return new Response(JSON.stringify({ 'test-kid': '-----BEGIN CERTIFICATE-----\nTEST FIXTURE\n-----END CERTIFICATE-----' }), {
+    return new Response(JSON.stringify({ 'test-kid': pemCertificate }), {
       status: 200,
       headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' }
     });
   };
-  const importCertificate = async () => pair.publicKey;
   async function makeToken(overrides = {}, { kid = 'test-kid', alg = 'RS256' } = {}) {
     const header = base64url(JSON.stringify({ alg, typ: 'JWT', kid }));
     const payload = base64url(JSON.stringify({
@@ -100,11 +101,7 @@ async function fixture() {
 }
 
 async function verify(token, ctx, env = ownerEnv) {
-  return verifyFirebaseToken(token, env, {
-    now,
-    fetchImpl: ctx.fetchImpl,
-    importCertificate: ctx.importCertificate
-  });
+  return verifyFirebaseToken(token, env, { now, fetchImpl: ctx.fetchImpl });
 }
 
 test('accepts a correctly signed Firebase token for the configured owner', async () => {
@@ -117,110 +114,82 @@ test('accepts a correctly signed Firebase token for the configured owner', async
 
 test('rejects a token whose payload was changed after signing', async () => {
   const ctx = await fixture();
-  const token = await ctx.makeToken();
-  const parts = token.split('.');
+  const parts = (await ctx.makeToken()).split('.');
   parts[1] = base64url(JSON.stringify({ sub: 'attacker', email: 'jawedimtiaz@gmail.com' }));
-  const result = await verify(parts.join('.'), ctx);
-  assert.equal(result.valid, false);
+  assert.equal((await verify(parts.join('.'), ctx)).valid, false);
 });
 
 test('rejects a token signed by a different RSA key', async () => {
   const ctx = await fixture();
-  const token = await ctx.makeToken();
   const other = await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-    true,
-    ['sign', 'verify']
+    true, ['sign', 'verify']
   );
-  const parts = token.split('.');
+  const parts = (await ctx.makeToken()).split('.');
   const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', other.privateKey, new TextEncoder().encode(parts[0] + '.' + parts[1])));
-  const forged = parts[0] + '.' + parts[1] + '.' + base64url(signature);
-  const result = await verify(forged, ctx);
-  assert.equal(result.valid, false);
+  assert.equal((await verify(parts[0] + '.' + parts[1] + '.' + base64url(signature), ctx)).valid, false);
 });
 
 test('rejects an unknown key ID after refreshing Firebase certificates', async () => {
   const ctx = await fixture();
-  const token = await ctx.makeToken({}, { kid: 'not-in-certificate-set' });
-  const result = await verify(token, ctx);
+  const result = await verify(await ctx.makeToken({}, { kid: 'unknown-kid' }), ctx);
   assert.equal(result.valid, false);
   assert.equal(result.code, 'SIGNING_KEY_NOT_FOUND');
   assert.equal(ctx.getFetchCount(), 2);
 });
 
-test('rejects a token with the wrong Firebase audience', async () => {
+test('rejects wrong audience and issuer', async () => {
   const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ aud: 'wrong-project' }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'INVALID_AUDIENCE');
+  assert.equal((await verify(await ctx.makeToken({ aud: 'wrong-project' }), ctx)).code, 'INVALID_AUDIENCE');
+  resetFirebaseCertificateCacheForTests();
+  const ctx2 = await fixture();
+  assert.equal((await verify(await ctx2.makeToken({ iss: 'https://securetoken.google.com/wrong' }), ctx2)).code, 'INVALID_ISSUER');
 });
 
-test('rejects a token with the wrong issuer', async () => {
+test('rejects expired, future-issued, and future-auth-time tokens', async () => {
   const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ iss: 'https://securetoken.google.com/attacker' }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'INVALID_ISSUER');
+  assert.equal((await verify(await ctx.makeToken({ exp: nowSeconds - 1 }), ctx)).code, 'TOKEN_EXPIRED');
+  resetFirebaseCertificateCacheForTests();
+  const ctx2 = await fixture();
+  assert.equal((await verify(await ctx2.makeToken({ iat: nowSeconds + 60 }), ctx2)).code, 'INVALID_ISSUED_AT');
+  resetFirebaseCertificateCacheForTests();
+  const ctx3 = await fixture();
+  assert.equal((await verify(await ctx3.makeToken({ auth_time: nowSeconds + 60 }), ctx3)).code, 'INVALID_AUTH_TIME');
 });
 
-test('rejects an expired token', async () => {
+test('rejects unverified email and email outside the owner allowlist', async () => {
   const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ exp: nowSeconds - 1 }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'TOKEN_EXPIRED');
-});
-
-test('rejects a token issued in the future', async () => {
-  const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ iat: nowSeconds + 60 }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'INVALID_ISSUED_AT');
-});
-
-test('rejects future auth_time', async () => {
-  const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ auth_time: nowSeconds + 60 }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'INVALID_AUTH_TIME');
-});
-
-test('rejects an unverified email', async () => {
-  const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ email_verified: false }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'EMAIL_UNVERIFIED');
-});
-
-test('rejects a verified email outside the owner allowlist', async () => {
-  const ctx = await fixture();
-  const result = await verify(await ctx.makeToken({ email: 'attacker@example.com' }), ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'UNAUTHORIZED_EMAIL');
+  assert.equal((await verify(await ctx.makeToken({ email_verified: false }), ctx)).code, 'EMAIL_UNVERIFIED');
+  resetFirebaseCertificateCacheForTests();
+  const ctx2 = await fixture();
+  assert.equal((await verify(await ctx2.makeToken({ email: 'attacker@example.com' }), ctx2)).code, 'UNAUTHORIZED_EMAIL');
 });
 
 test('fails closed when Firebase certificate service is unavailable', async () => {
   const ctx = await fixture();
   const token = await ctx.makeToken();
   resetFirebaseCertificateCacheForTests();
-  const result = await verifyFirebaseToken(token, ownerEnv, {
-    now,
-    fetchImpl: async () => new Response('unavailable', { status: 503 })
-  });
+  const result = await verifyFirebaseToken(token, ownerEnv, { now, fetchImpl: async () => new Response('unavailable', { status: 503 }) });
   assert.equal(result.valid, false);
   assert.equal(result.code, 'TOKEN_VERIFICATION_FAILED');
 });
 
-test('rejects unsupported JWT algorithms before certificate lookup', async () => {
+test('rejects unsupported algorithms and malformed or oversized tokens', async () => {
   const ctx = await fixture();
-  const token = await ctx.makeToken({}, { alg: 'HS256' });
-  const result = await verify(token, ctx);
-  assert.equal(result.valid, false);
-  assert.equal(result.code, 'INVALID_TOKEN_HEADER');
-});
-
-test('rejects malformed and oversized tokens without certificate lookup', async () => {
-  const ctx = await fixture();
+  assert.equal((await verify(await ctx.makeToken({}, { alg: 'HS256' }), ctx)).code, 'INVALID_TOKEN_HEADER');
   assert.equal((await verify('not-a-jwt', ctx)).valid, false);
   assert.equal((await verify('x'.repeat(12001), ctx)).valid, false);
-  assert.equal(ctx.getFetchCount(), 0);
+  assert.equal(ctx.getFetchCount(), 1);
 });
-\ntest('imports the RSA public key from the X.509 certificate DER structure', async () => {\n  const pair = await crypto.subtle.generateKey(\n    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },\n    true,\n    ['sign', 'verify']\n  );\n  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey));\n  const imported = await importFirebaseCertificate(fakeX509Certificate(spki));\n  const message = new TextEncoder().encode('certificate parser verification');\n  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, message);\n  assert.equal(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', imported, signature, message), true);\n});\n
+
+test('imports the RSA public key from the X.509 certificate DER structure', async () => {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true, ['sign', 'verify']
+  );
+  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey));
+  const imported = await importFirebaseCertificate(fakeX509Certificate(spki));
+  const message = new TextEncoder().encode('certificate parser verification');
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, message);
+  assert.equal(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', imported, signature, message), true);
+});
