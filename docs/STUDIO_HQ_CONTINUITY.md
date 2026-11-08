@@ -1086,3 +1086,40 @@ Do not replace the existing `jose` implementation with PR #25's custom DER parse
 - The candidate `hqAuth.js` still uses JOSE but has no bounded certificate stream reader. This remains the intended hardening target.
 - Before editing auth, inspect all mutating HQ endpoints and their D1 batch/transaction construction to determine whether owner status is rechecked atomically at write time. Do not claim the transaction-time guard exists until the exact code and tests prove it.
 - No PR was opened, no files were changed on the new branch, and no merge/deployment/D1/owner action occurred.
+
+
+## 20. HQ write-path authorization audit — 2026-11-08
+
+### Result: transaction-time owner guard is absent on the inspected candidate branch
+
+A read-only line-by-line review was completed on `security/hq-jose-hardening-schema-aligned`, based on `feat/studio-hq-private-ui`.
+
+The current `verifyAndAuthorizeOwner()` checks Firebase identity, allowlisted email, matching pre-enrolled `hq_users` row and `status = 'active'` before the handler proceeds. This is a request-time check. The reviewed mutating SQL statements do not re-check owner status atomically when the write executes.
+
+| API | Mutating operations | Current write pattern | Atomic owner-status predicate |
+|---|---|---|---|
+| `functions/api/hq/clients.js` | POST create, PUT update, DELETE archive | Three independent `.run()` statements | Not present |
+| `functions/api/hq/projects.js` | POST create, PUT update, DELETE archive | Three independent `.run()` statements; POST validates client separately | Not present |
+| `functions/api/hq/tasks.js` | POST create | One independent `.run()`; project/milestone validation is separate | Not present |
+| `functions/api/hq/milestones.js` | POST create | One independent `.run()`; project validation is separate | Not present |
+
+No `ownerAuthorizationGuardStatement` helper, D1 `.batch()`, or equivalent atomic guard was found in the inspected HQ API files. The `hq_users.last_seen_at` update and audit-log insert are telemetry, not authorization guards.
+
+### Security implication
+
+If an owner is disabled after the request-time check but before the mutation statement executes, the current write SQL has no predicate that prevents the write. This is a time-of-check/time-of-use (TOCTOU) gap. The candidate branch must not be described as having transaction-time owner enforcement, and HQ must remain unavailable for real owner data until this is addressed.
+
+### Recommended remediation design (not yet implemented)
+
+Prefer a database-enforced conditional write for each mutation, with the owner identity and active status checked inside the same SQL statement that performs the mutation. For example, use an `INSERT ... SELECT ... WHERE EXISTS (SELECT 1 FROM hq_users WHERE uid = ? AND status = 'active')` pattern for inserts, and add an equivalent `AND EXISTS (...)` predicate to UPDATE statements. Check affected-row counts so a disabled/missing owner is not reported as a successful write. If multi-statement operations are introduced, use D1 batch semantics with the authorization guard and mutations in the same atomic batch, and verify rollback behavior with integration tests.
+
+Before implementing:
+1. Inspect the full migration constraints and every HQ mutation endpoint, including approvals/release endpoints on newer branches, not only the four current CRUD modules.
+2. Confirm Cloudflare D1's supported SQL and batch atomicity semantics for the chosen design.
+3. Add tests for owner active at initial request check then disabled immediately before write; assert no row changes and no success response.
+4. Add tests for missing owner row, disabled owner, and successful active owner writes.
+5. Re-audit all write operations after the fix.
+
+### Scope and status
+
+This was a source-level audit only. No application file on the security branch was changed. The continuity report was updated. No PR was opened, merged or retargeted; no D1 migration, binding, owner enrollment, Worker deployment, or production/personal-site change occurred.
