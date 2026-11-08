@@ -193,3 +193,29 @@ test('imports the RSA public key from the X.509 certificate DER structure', asyn
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, message);
   assert.equal(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', imported, signature, message), true);
 });
+
+test('fails closed when the certificate response exceeds the streaming size limit', async () => {
+  const ctx = await fixture();
+  const token = await ctx.makeToken();
+  resetFirebaseCertificateCacheForTests();
+  const result = await verifyFirebaseToken(token, ownerEnv, {
+    now,
+    fetchImpl: async () => new Response('x'.repeat(128 * 1024 + 1), { status: 200 })
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.code, 'TOKEN_VERIFICATION_FAILED');
+});
+
+test('fails closed when a certificate is malformed', async () => {
+  const ctx = await fixture();
+  const token = await ctx.makeToken();
+  resetFirebaseCertificateCacheForTests();
+  const result = await verifyFirebaseToken(token, ownerEnv, {
+    now,
+    fetchImpl: async () => new Response(JSON.stringify({
+      'test-kid': '-----BEGIN CERTIFICATE-----\\nnot-valid-der\\n-----END CERTIFICATE-----'
+    }), { headers: { 'cache-control': 'max-age=300' } })
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.code, 'TOKEN_VERIFICATION_FAILED');
+});
