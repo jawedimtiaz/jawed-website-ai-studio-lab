@@ -948,3 +948,11 @@ Two distinct allowlisted Firebase UIDs can potentially both observe an empty tab
 ### Safety
 
 No PR was merged, no Cloudflare Worker or D1 resource was changed, no migration was applied, no owner was enrolled, and no production/personal website or customer project was modified.
+
+
+### Regression-test correction after CI — 2026-11-08
+
+- The first CI run for commit `afa41c5960990a99a104d4a8929d92ca68667636` failed: 14 tests passed and the new cancellation assertion failed. The test stream enqueued the oversized chunk and immediately closed; a closed stream cannot report the later cancellation callback. This was a test-fixture defect, not evidence that the production size guard failed.
+- Corrected the test fixture so the oversized stream remains open after enqueue, allowing the reader's `cancel()` to be observed.
+- Corrective commit: `24027d9397ab4d36cb3846c07eaad77b13d1efdb`.
+- The corrected test has not yet been validated by a completed CI run at the time of this note. Re-query the dedicated workflow on the latest PR head.
