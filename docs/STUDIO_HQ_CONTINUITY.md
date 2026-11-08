@@ -956,3 +956,12 @@ No PR was merged, no Cloudflare Worker or D1 resource was changed, no migration 
 - Corrected the test fixture so the oversized stream remains open after enqueue, allowing the reader's `cancel()` to be observed.
 - Corrective commit: `24027d9397ab4d36cb3846c07eaad77b13d1efdb`.
 - The corrected test has not yet been validated by a completed CI run at the time of this note. Re-query the dedicated workflow on the latest PR head.
+
+
+### Corrected certificate-bound regression test — CI verified
+
+- Latest PR #25 head: `24027d9397ab4d36cb3846c07eaad77b13d1efdb`.
+- Dedicated workflow run ID `42469988584`, job ID `128698107287`: **completed / success**.
+- Test output: 15 tests passed, 0 failed. The new streaming test confirms `response.text()` is not called and the oversized stream is cancelled.
+- This confirms the deterministic Node 22 unit tests on the PR merge ref. It does not validate Google's live certificate encoding, deployed Worker runtime, owner-bootstrap concurrency, D1 schema, or overall repository CI.
+- All six other workflows on this head failed: Deployment Runtime, Production AI POST, Production AI GET, Security Supply Chain, AI Regression, and AdSense Readiness. Do not claim overall CI is green.
