@@ -136,7 +136,7 @@ async function importFirebaseCertificate(pem) {
 
 /**
  * Verifies Firebase Secure Token ID tokens.
- * Optional second argument exists for deterministic unit tests only.
+ * Optional third argument provides deterministic fetch/key hooks for unit tests only.
  */
 export async function verifyFirebaseToken(idToken, env = {}, options = {}) {
   if (typeof idToken !== 'string' || idToken.length < 20 || idToken.length > MAX_TOKEN_LENGTH) {
