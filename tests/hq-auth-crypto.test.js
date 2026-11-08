@@ -179,7 +179,7 @@ test('rejects unsupported algorithms and malformed or oversized tokens', async (
   assert.equal((await verify(await ctx.makeToken({}, { alg: 'HS256' }), ctx)).code, 'INVALID_TOKEN_HEADER');
   assert.equal((await verify('not-a-jwt', ctx)).valid, false);
   assert.equal((await verify('x'.repeat(12001), ctx)).valid, false);
-  assert.equal(ctx.getFetchCount(), 1);
+  assert.equal(ctx.getFetchCount(), 0);
 });
 
 test('imports the RSA public key from the X.509 certificate DER structure', async () => {
