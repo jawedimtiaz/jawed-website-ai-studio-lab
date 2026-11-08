@@ -219,3 +219,37 @@ test('fails closed when a certificate is malformed', async () => {
   assert.equal(result.valid, false);
   assert.equal(result.code, 'TOKEN_VERIFICATION_FAILED');
 });
+
+
+test('streams certificate data and cancels immediately when the byte limit is exceeded', async () => {
+  const ctx = await fixture();
+  const token = await ctx.makeToken();
+  resetFirebaseCertificateCacheForTests();
+  let textCalled = false;
+  let streamCancelled = false;
+  const oversizedBody = new Uint8Array(128 * 1024 + 1);
+  const result = await verifyFirebaseToken(token, ownerEnv, {
+    now,
+    fetchImpl: async () => ({
+      ok: true,
+      headers: { get: () => null },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(oversizedBody);
+          controller.close();
+        },
+        cancel() {
+          streamCancelled = true;
+        }
+      }),
+      async text() {
+        textCalled = true;
+        return '{}';
+      }
+    })
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.code, 'TOKEN_VERIFICATION_FAILED');
+  assert.equal(textCalled, false, 'certificate reader must not fall back to response.text()');
+  assert.equal(streamCancelled, true, 'oversized certificate stream must be cancelled');
+});
