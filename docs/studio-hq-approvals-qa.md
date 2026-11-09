@@ -61,7 +61,7 @@ Studio HQ Approvals and QA APIs provide owner-protected delivery control, scope 
 
 ### 2.5 Defense-in-Depth Authentication
 * JWT tokens are verified using `jose` against Google's live X.509 public certificates (`CERT_URL`).
-* Tokens are validated for RS256 algorithm, project ID (`refined-actor-skhlb`), audience, issuer, expiration, not-before, auth-time, verified email, and inclusion in the hard-coded owner allowlist (`jawedimtiaz@gmail.com`, `jawed@jawed.co.in`).
+* Tokens are validated for RS256 algorithm, project ID (`<FIREBASE_PROJECT_ID>`), audience, issuer, expiration, not-before, auth-time, verified email, and inclusion in the hard-coded owner allowlist (`<OWNER_EMAIL_1>`, `<OWNER_EMAIL_2>`).
 
 ### 2.6 Audit Transaction Consistency & Zero-Row Update Protection
 * Mutating endpoints that perform conditional updates (`decideApproval` where `status = 'pending'`, and `updateQaCheck` where `id = ?`) use `conditionalAuditStatement()`.
@@ -77,7 +77,7 @@ Studio HQ Approvals and QA APIs provide owner-protected delivery control, scope 
 ---
 
 ## 3. Database Schema Alignment
-* Target Database: Dedicated Cloudflare D1 `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`).
+* Target Database: Dedicated Cloudflare D1 `jawed-studio-hq` (`<D1_HQ_DATABASE_ID>`).
 * Relies on the canonical 17-table schema defined in `migrations/hq/0001_studio_hq_schema.sql`.
 * Tables used:
   - `approvals`: Foreign keys to `projects(id)` and `hq_users(uid)` with `ON DELETE RESTRICT`.

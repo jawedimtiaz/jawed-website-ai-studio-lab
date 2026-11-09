@@ -1,3 +1,4 @@
+import { isAllowedOrigin, onRequestPost, onRequestOptions } from '../functions/api/ai.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -325,4 +326,88 @@ test('AI knowledge data includes SPA tools and maintains runtime copy parity', (
   const appleEntry = knowledge.entries.find(e => e.url === '/tools/apple-macos-jamf-support-helper/');
   assert.ok(appleEntry.summary.length >= 70, 'Summary must exceed 70 characters');
   assert.ok(appleEntry.keywords.length >= 5, 'Must have descriptive keywords');
+});
+
+test('AI API origin allowlist strictly accepts approved production, preview and localhost origins, rejecting third-party hosts and malformed origins', async () => {
+  // Approved production and lab origins
+  assert.equal(isAllowedOrigin('https://jawed.co.in'), true);
+  assert.equal(isAllowedOrigin('https://www.jawed.co.in'), true);
+  assert.equal(isAllowedOrigin('https://lab.jawed.co.in'), true);
+  assert.equal(isAllowedOrigin('https://api.jawed.co.in'), true);
+
+  // Approved project-specific Cloudflare Pages deployment and branch previews
+  assert.equal(isAllowedOrigin('https://jawed-website.pages.dev'), true);
+  assert.equal(isAllowedOrigin('https://preview-123.jawed-website.pages.dev'), true);
+  assert.equal(isAllowedOrigin('https://feat-studio-hq.jawed-website.pages.dev'), true);
+
+  // Approved project-specific Cloudflare Workers preview
+  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.workers.dev'), true);
+  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.sub.workers.dev'), true);
+
+  // Localhost development access
+  assert.equal(isAllowedOrigin('http://localhost:5173'), true);
+  assert.equal(isAllowedOrigin('http://localhost:8787'), true);
+  assert.equal(isAllowedOrigin('http://127.0.0.1:3000'), true);
+  assert.equal(isAllowedOrigin('https://localhost'), true);
+
+  // Arbitrary third-party hosting origins (MUST BE REJECTED)
+  assert.equal(isAllowedOrigin('https://attacker.pages.dev'), false);
+  assert.equal(isAllowedOrigin('https://evil-site.pages.dev'), false);
+  assert.equal(isAllowedOrigin('https://evil.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://attacker.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://my-app.run.app'), false);
+  assert.equal(isAllowedOrigin('https://evil.example.com'), false);
+  assert.equal(isAllowedOrigin('https://jawed.co.in.attacker.com'), false);
+  assert.equal(isAllowedOrigin('https://pages.dev'), false);
+  assert.equal(isAllowedOrigin('https://workers.dev'), false);
+
+  // Insecure HTTP schemes on production/preview origins (MUST BE REJECTED)
+  assert.equal(isAllowedOrigin('http://jawed.co.in'), false);
+  assert.equal(isAllowedOrigin('http://www.jawed.co.in'), false);
+  assert.equal(isAllowedOrigin('http://jawed-website.pages.dev'), false);
+
+  // Malformed and invalid origins (MUST BE REJECTED)
+  assert.equal(isAllowedOrigin(''), false);
+  assert.equal(isAllowedOrigin('   '), false);
+  assert.equal(isAllowedOrigin(null), false);
+  assert.equal(isAllowedOrigin(undefined), false);
+  assert.equal(isAllowedOrigin('not-a-url'), false);
+  assert.equal(isAllowedOrigin('file:///etc/passwd'), false);
+  assert.equal(isAllowedOrigin('javascript:alert(1)'), false);
+
+  // Requests without Origin header: allowed for non-browser / server-to-server POST, but CORS headers omitted
+  const postNoOrigin = await onRequestPost({
+    request: new Request('https://jawed.co.in/api/ai', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] })
+    }),
+    env: {}
+  });
+  // Should NOT fail with 403 AI_ORIGIN_NOT_ALLOWED
+  assert.notEqual(postNoOrigin.status, 403);
+
+  // OPTIONS preflight without Origin: 204 with NO access-control-allow-origin header
+  const optionsNoOrigin = await onRequestOptions({
+    request: new Request('https://jawed.co.in/api/ai', { method: 'OPTIONS' })
+  });
+  assert.equal(optionsNoOrigin.headers.get('access-control-allow-origin'), null);
+
+  // OPTIONS preflight with unapproved third-party Origin: NO access-control-allow-origin header
+  const optionsAttacker = await onRequestOptions({
+    request: new Request('https://jawed.co.in/api/ai', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://attacker.pages.dev' }
+    })
+  });
+  assert.equal(optionsAttacker.headers.get('access-control-allow-origin'), null);
+
+  // OPTIONS preflight with approved Origin: returns matching access-control-allow-origin
+  const optionsApproved = await onRequestOptions({
+    request: new Request('https://jawed.co.in/api/ai', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://jawed.co.in' }
+    })
+  });
+  assert.equal(optionsApproved.headers.get('access-control-allow-origin'), 'https://jawed.co.in');
 });
