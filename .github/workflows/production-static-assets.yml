@@ -4,12 +4,7 @@ concurrency:
   group: production-assets-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "assets/**"
-      - "config/production-asset-contract.json"
-      - "scripts/validate-production-assets.mjs"
-      - ".github/workflows/production-static-assets.yml"
+  # PR checks for the Lab Worker must not probe the separate personal production site.
   push:
     branches:
       - main
