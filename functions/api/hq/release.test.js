@@ -402,7 +402,11 @@ test('successful update still appends exactly one accurate audit entry with old 
 
     // 2. Successful QA check update
     const qaRes = await call(db, request('/api/hq/qa/qa-audit-test', 'PATCH', {
-      result: 'pass', notes: 'All copy verified'
+      category: 'security',
+      check_name: 'Updated grammar review',
+      result: 'pass',
+      evidence_url: 'https://example.com/evidence',
+      notes: 'All copy verified'
     }), ['qa', 'qa-audit-test']);
     assert.equal(qaRes.status, 200);
 
@@ -411,8 +415,33 @@ test('successful update still appends exactly one accurate audit entry with old 
     assert.equal(qaAudit.action, 'qa.update');
     assert.equal(qaAudit.actor_uid, identity.uid);
     assert.equal(qaAudit.actor_email, identity.email);
-    assert.deepEqual(JSON.parse(qaAudit.before_json), { result: 'not-run' });
-    assert.deepEqual(JSON.parse(qaAudit.after_json), { result: 'pass' });
+    assert.deepEqual(JSON.parse(qaAudit.before_json), {
+      category: 'content',
+      check_name: 'Grammar check',
+      result: 'not-run',
+      evidence_url: null,
+      notes: null,
+      checked_by: null,
+      checked_at: null
+    });
+    const qaAuditAfter = JSON.parse(qaAudit.after_json);
+    assert.deepEqual({
+      category: qaAuditAfter.category,
+      check_name: qaAuditAfter.check_name,
+      result: qaAuditAfter.result,
+      evidence_url: qaAuditAfter.evidence_url,
+      notes: qaAuditAfter.notes,
+      checked_by: qaAuditAfter.checked_by
+    }, {
+      category: 'security',
+      check_name: 'Updated grammar review',
+      result: 'pass',
+      evidence_url: 'https://example.com/evidence',
+      notes: 'All copy verified',
+      checked_by: identity.uid
+    });
+    assert.equal(typeof qaAuditAfter.checked_at, 'string');
+    assert.ok(qaAuditAfter.checked_at.length > 0);
 
     // Exactly 2 audit records exist
     const totalAudits = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
