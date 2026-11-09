@@ -3,13 +3,7 @@ concurrency:
   group: production-ai-post-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "config/production-ai-post-contract.json"
-      - "scripts/validate-production-ai-post.mjs"
-      - ".github/workflows/production-ai-post-reliability.yml"
-      - "functions/api/ai.js"
-      - "functions/lib/**"
+  # PR checks for the Lab Worker must not probe the separate personal production site.
   push:
     branches:
       - main
