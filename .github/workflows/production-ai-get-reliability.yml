@@ -1,13 +1,7 @@
 name: Production AI GET Runtime Reliability Gate
 
 on:
-  pull_request:
-    paths:
-      - "config/production-ai-get-contract.json"
-      - "scripts/validate-production-ai-get.mjs"
-      - ".github/workflows/production-ai-get-reliability.yml"
-      - "functions/api/ai.js"
-      - "functions/lib/**"
+  # PR checks for the Lab Worker must not probe the separate personal production site.
   push:
     branches:
       - main
