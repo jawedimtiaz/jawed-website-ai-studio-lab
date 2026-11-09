@@ -205,11 +205,18 @@ async function updateQaCheck(request, db, identity, checkId) {
   assignments.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
   const values = keys.map(key => fields[key]);
   const update = db.prepare(`UPDATE qa_checks SET ${assignments.join(', ')} WHERE id = ?`).bind(...values, checkId);
+  const auditBefore = {};
+  const auditAfter = {};
+  for (const key of keys) {
+    const auditKey = key === '__checked_by' ? 'checked_by' : key === '__checked_at' ? 'checked_at' : key;
+    auditBefore[auditKey] = existing[auditKey] ?? null;
+    auditAfter[auditKey] = fields[key] ?? null;
+  }
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
     conditionalAuditStatement(db, identity, 'qa.update', 'qa_check', checkId, crypto.randomUUID(),
-      { result: existing.result }, { result: fields.result ?? existing.result })
+      auditBefore, auditAfter)
   ]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'QA_CHECK_NOT_FOUND' }, 404);
   return hqJson({ ok: true, check: await db.prepare('SELECT * FROM qa_checks WHERE id = ?').bind(checkId).first() });
