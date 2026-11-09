@@ -313,7 +313,7 @@ test('Security scanner strictly rejects AIza credential literals in non-config s
 
 test('AI knowledge data includes SPA tools and maintains runtime copy parity', () => {
   const knowledge = JSON.parse(fs.readFileSync('assets/data/ai-knowledge.json', 'utf8'));
-  const runtimeCode = fs.readFileSync('functions/lib/ai-knowledge-data.js', 'utf8');
+  const runtimeCode = fs.readFileSync('functions/lib/ai-knowledge-data.js', 'utf8').replace(/\r\n/g, '\n');
   const expectedRuntime = `const knowledge=${JSON.stringify(knowledge)};\nexport default knowledge;\n`;
 
   assert.equal(runtimeCode, expectedRuntime, 'Runtime AI knowledge copy must exactly match assets/data/ai-knowledge.json');
