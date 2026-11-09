@@ -14,7 +14,46 @@ const allSitemapLocs=[...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match=>ma
 const sitemapPaths=allSitemapLocs.filter(url=>url.startsWith("https://jawed.co.in/")).map(url=>url.slice("https://jawed.co.in".length)||"/");
 const workflow=fs.readFileSync(".github/workflows/ai-regression.yml","utf8");
 const indexPaths=knowledge.entries.map(entry=>entry.url);
-const sourcePath=(url)=>url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
+const toolComponents=fs.existsSync("src/components/tools")?fs.readdirSync("src/components/tools"):[];
+const SPA_TOOL_MAP = {
+  "apple-macos-jamf-support-helper": "src/components/tools/AppleMacOsJamfSupportHelper.tsx",
+  "m365-workplace-sign-in-diagnostic": "src/components/tools/M365WorkplaceSignInDiagnostic.tsx",
+  "hardware-diagnostic": "src/pages/HardwareDiagnosticPage.tsx",
+  "service-desk-note-formatter": "src/components/tools/ServiceDeskNoteFormatter.tsx",
+  "it-troubleshooting-assistant": "src/components/tools/ItTroubleshootingAssistant.tsx",
+  "ticket-to-knowledge-base-draft": "src/components/tools/TicketToKbDraft.tsx",
+  "ai-prompt-builder": "src/components/tools/AiPromptBuilder.tsx",
+  "career-match-resume-review": "src/components/tools/CareerMatchResumeReview.tsx",
+  "resume-bullet-strength-checker": "src/components/tools/ResumeBulletStrengthChecker.tsx",
+  "interview-preparation-planner": "src/components/tools/InterviewPreparationPlanner.tsx",
+  "compound-growth-sip-calculator": "src/components/tools/CompoundGrowthSipCalculator.tsx",
+  "inflation-goal-planning-calculator": "src/components/tools/InflationGoalPlanningCalculator.tsx",
+  "personal-finance-snapshot": "src/components/tools/PersonalFinanceSnapshot.tsx",
+  "retirement-planning-calculator": "src/components/tools/RetirementPlanningCalculator.tsx",
+  "finance-planning-workspace": "src/components/tools/FinancePlanningWorkspace.tsx"
+};
+const resolveSourcePath=(url)=>{
+  const staticPath=url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
+  if(fs.existsSync(staticPath))return staticPath;
+  const toolMatch=url.match(/^\/tools\/([^/]+)\/?$/);
+  if(toolMatch){
+    const slug=toolMatch[1];
+    const slugNorm=slug.toLowerCase().replace(/[^a-z0-9]/g,"");
+    const matches=toolComponents.filter(f=>f.replace(/\.[^.]+$/,"").toLowerCase().replace(/[^a-z0-9]/g,"")===slugNorm);
+    if(matches.length>1){
+      throw new Error(`Multiple matching components found for SPA route "${url}": ${matches.join(", ")}`);
+    }
+    if(matches.length===1&&fs.existsSync("src/components/tools/"+matches[0])){
+      return "src/components/tools/"+matches[0];
+    }
+    if(SPA_TOOL_MAP[slug]&&fs.existsSync(SPA_TOOL_MAP[slug])){
+      return SPA_TOOL_MAP[slug];
+    }
+    throw new Error(`No matching component found for SPA route "${url}"`);
+  }
+  return staticPath;
+};
+const sourcePath=resolveSourcePath;
 const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!fs.existsSync(sourcePath(path)));
 const duplicates=indexPaths.filter((path,index)=>indexPaths.indexOf(path)!==index);
 const missing=sitemapPaths.filter(path=>!excluded.has(path)&&!indexPaths.includes(path));

@@ -12,11 +12,54 @@ const publishedRoutes=publishedSitemap.split("<loc>").slice(1).map(entry=>{
   const slashIndex=withoutProtocol.indexOf("/");
   return slashIndex<0?"/":withoutProtocol.slice(slashIndex);
 });
-const citationPlaceholderPattern=new RegExp("turn0search[0-9]+|cite|");
-for(const routePath of publishedRoutes){
+const toolsDir = ["src", "components", "tools"].join("/");
+let toolComponents = [];
+try { toolComponents = fs.readdirSync(toolsDir); } catch {}
+const SPA_TOOL_MAP = {
+  "apple-macos-jamf-support-helper": ["src", "components", "tools", "AppleMacOsJamfSupportHelper.tsx"].join("/"),
+  "m365-workplace-sign-in-diagnostic": ["src", "components", "tools", "M365WorkplaceSignInDiagnostic.tsx"].join("/"),
+  "hardware-diagnostic": ["src", "pages", "HardwareDiagnosticPage.tsx"].join("/"),
+  "service-desk-note-formatter": ["src", "components", "tools", "ServiceDeskNoteFormatter.tsx"].join("/"),
+  "it-troubleshooting-assistant": ["src", "components", "tools", "ItTroubleshootingAssistant.tsx"].join("/"),
+  "ticket-to-knowledge-base-draft": ["src", "components", "tools", "TicketToKbDraft.tsx"].join("/"),
+  "ai-prompt-builder": ["src", "components", "tools", "AiPromptBuilder.tsx"].join("/"),
+  "career-match-resume-review": ["src", "components", "tools", "CareerMatchResumeReview.tsx"].join("/"),
+  "resume-bullet-strength-checker": ["src", "components", "tools", "ResumeBulletStrengthChecker.tsx"].join("/"),
+  "interview-preparation-planner": ["src", "components", "tools", "InterviewPreparationPlanner.tsx"].join("/"),
+  "compound-growth-sip-calculator": ["src", "components", "tools", "CompoundGrowthSipCalculator.tsx"].join("/"),
+  "inflation-goal-planning-calculator": ["src", "components", "tools", "InflationGoalPlanningCalculator.tsx"].join("/"),
+  "personal-finance-snapshot": ["src", "components", "tools", "PersonalFinanceSnapshot.tsx"].join("/"),
+  "retirement-planning-calculator": ["src", "components", "tools", "RetirementPlanningCalculator.tsx"].join("/"),
+  "finance-planning-workspace": ["src", "components", "tools", "FinancePlanningWorkspace.tsx"].join("/")
+};
+function resolveSourceFile(routePath){
   const routeWithoutLeadingSlash=routePath.startsWith("/")?routePath.slice(1):routePath;
   const normalizedRoute=routeWithoutLeadingSlash.endsWith("/")?routeWithoutLeadingSlash.slice(0,-1):routeWithoutLeadingSlash;
-  const sourcePath=routePath==="/"?"index.html":normalizedRoute+"/index.html";
+  const staticPath=routePath==="/"?"index.html":normalizedRoute+"/index.html";
+  if(fs.existsSync(staticPath))return staticPath;
+  const toolMatch=routePath.match(/^\/tools\/([^/]+)\/?$/);
+  if(toolMatch){
+    const slug=toolMatch[1];
+    const slugNorm=slug.toLowerCase().replace(/[^a-z0-9]/g,"");
+    const matches=toolComponents.filter(f=>f.replace(/\.[^.]+$/,"").toLowerCase().replace(/[^a-z0-9]/g,"")===slugNorm);
+    if(matches.length>1){
+      throw new Error(`Multiple matching components found for SPA route "${routePath}": ${matches.join(", ")}`);
+    }
+    if(matches.length===1){
+      const compPath=toolsDir+"/"+matches[0];
+      if(fs.existsSync(compPath))return compPath;
+    }
+    if(SPA_TOOL_MAP[slug]){
+      const mapped=SPA_TOOL_MAP[slug];
+      if(fs.existsSync(mapped))return mapped;
+    }
+    throw new Error(`No matching component found for SPA route "${routePath}"`);
+  }
+  return staticPath;
+}
+const citationPlaceholderPattern=new RegExp("turn0search[0-9]+|\uE200cite|\uE201");
+for(const routePath of publishedRoutes){
+  const sourcePath=resolveSourceFile(routePath);
   const publishedHtml=fs.readFileSync(sourcePath,"utf8");
   assert.equal(citationPlaceholderPattern.test(publishedHtml),false,"Published page exposes internal citation placeholders: "+sourcePath);
 }

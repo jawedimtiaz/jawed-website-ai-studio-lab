@@ -17,7 +17,7 @@ const failure=(error,code,status,id,extra={})=>{
 };
 
 function isAllowedOrigin(origin){
-  if(!origin)return true;
+  if(!origin||origin==="https://jawed.co.in"||origin==="https://www.jawed.co.in")return true;
   try{
     const url=new URL(origin);
     const host=url.hostname.toLowerCase();
