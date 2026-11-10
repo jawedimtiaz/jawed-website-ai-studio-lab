@@ -36,8 +36,6 @@ export function isAllowedOrigin(origin){
     // Verified Cloudflare Pages project deployment and branch previews
     if(host==="jawed-website.pages.dev"||host.endsWith(".jawed-website.pages.dev"))return true;
 
-    // Verified Cloudflare Workers lab project preview
-    if(host==="jawed-website-ai-studio-lab.workers.dev"||(host.endsWith(".workers.dev")&&host.startsWith("jawed-website-ai-studio-lab.")))return true;
   }catch{
     return false;
   }

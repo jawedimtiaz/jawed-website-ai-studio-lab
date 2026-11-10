@@ -340,9 +340,13 @@ test('AI API origin allowlist strictly accepts approved production, preview and 
   assert.equal(isAllowedOrigin('https://preview-123.jawed-website.pages.dev'), true);
   assert.equal(isAllowedOrigin('https://feat-studio-hq.jawed-website.pages.dev'), true);
 
-  // Approved project-specific Cloudflare Workers preview
-  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.workers.dev'), true);
-  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.sub.workers.dev'), true);
+  // Workers preview origins: no legitimate Workers preview origin or account subdomain is configured in repository/docs
+  // (Lab environment is configured under https://lab.jawed.co.in; unverified workers.dev origins are rejected)
+  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.attacker.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://jawed-website-ai-studio-lab.sub.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://preview.sub.workers.dev'), false);
+  assert.equal(isAllowedOrigin('https://sub.domain.workers.dev'), false);
 
   // Localhost development access
   assert.equal(isAllowedOrigin('http://localhost:5173'), true);
@@ -401,6 +405,24 @@ test('AI API origin allowlist strictly accepts approved production, preview and 
     })
   });
   assert.equal(optionsAttacker.headers.get('access-control-allow-origin'), null);
+
+  // OPTIONS preflight with unapproved/spoofed Workers Origin: NO access-control-allow-origin header
+  const optionsWorkersAttacker = await onRequestOptions({
+    request: new Request('https://jawed.co.in/api/ai', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://jawed-website-ai-studio-lab.attacker.workers.dev' }
+    })
+  });
+  assert.equal(optionsWorkersAttacker.headers.get('access-control-allow-origin'), null);
+
+  // OPTIONS preflight with unverified Workers Origin: NO access-control-allow-origin header
+  const optionsUnverifiedWorkers = await onRequestOptions({
+    request: new Request('https://jawed.co.in/api/ai', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://jawed-website-ai-studio-lab.workers.dev' }
+    })
+  });
+  assert.equal(optionsUnverifiedWorkers.headers.get('access-control-allow-origin'), null);
 
   // OPTIONS preflight with approved Origin: returns matching access-control-allow-origin
   const optionsApproved = await onRequestOptions({
