@@ -1025,9 +1025,38 @@
         "privacy",
         "security"
       ]
+    },
+    {
+      "url": "/tools/apple-macos-jamf-support-helper/",
+      "title": "macOS Endpoint Triage & Diagnostic Helper",
+      "summary": "Guided diagnostic checklist for diagnosing Mac application crashes, FileVault encryption, MDM enrollment, and Jamf agent communication with safe terminal commands.",
+      "keywords": [
+        "apple macos jamf diagnostic helper",
+        "macos triage",
+        "filevault",
+        "terminal commands",
+        "gatekeeper",
+        "jamf policy"
+      ]
+    },
+    {
+      "url": "/tools/m365-workplace-sign-in-diagnostic/",
+      "title": "Microsoft 365 & Workplace Sign-In Triage",
+      "summary": "Systematic triage workflow for Microsoft Entra ID (Azure AD), MFA notification loops, Conditional Access compliance blocks, and Windows PRT token refresh issues.",
+      "keywords": [
+        "m365 workplace sign in diagnostic",
+        "microsoft 365",
+        "entra id",
+        "azure ad",
+        "mfa loop",
+        "conditional access",
+        "sso",
+        "prt token",
+        "authentication triage"
+      ]
     }
   ],
-  "reviewed_against_sitemap_on": "2026-10-17",
+  "reviewed_against_sitemap_on": "2026-11-06",
   "coverage_policy": {
     "included": "Public site pages intended to provide factual Jawed.co.in content for AI grounding.",
     "excluded_paths": [

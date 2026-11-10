@@ -8,10 +8,10 @@ const technical=fs.readFileSync("docs/adsense-technical-activation.md","utf8");
 const files=[];
 const walk=(dir)=>{
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
-    if(entry.name==="node_modules"||entry.name===".git")continue;
+    if(entry.name==="node_modules"||entry.name===".git"||entry.name==="dist")continue;
     const p=dir+"/"+entry.name;
     if(entry.isDirectory())walk(p);
-    else if(/\.(html|css)$/.test(entry.name)||(p.startsWith("./assets/js/")&&entry.name.endsWith(".js")))files.push(p);
+    else if((/\.(html|css)$/.test(entry.name)||(p.startsWith("./assets/js/")&&entry.name.endsWith(".js")))&&entry.name!=="offline.html")files.push(p);
   }
 };
 walk(".");

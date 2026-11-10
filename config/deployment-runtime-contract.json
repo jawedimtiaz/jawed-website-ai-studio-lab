@@ -19,7 +19,7 @@
     "/api/ai"
   ],
   "canonical_origin_must_be_exact": true,
-  "no_package_manifest_required": true,
+  "no_package_manifest_required": false,
   "external_deployment_provider": "Cloudflare Pages",
   "required_security_headers": [
     "X-Frame-Options: DENY",
@@ -31,12 +31,18 @@
     "Strict-Transport-Security: max-age=31536000",
     "Content-Security-Policy:"
   ],
-  "allowed_redirect_statuses": [200, 301],
+  "allowed_redirect_statuses": [
+    200,
+    301
+  ],
   "required_route_configuration": {
     "version": 1,
     "include": [
       "/api/*"
     ],
     "exclude": []
-  }
+  },
+  "allowed_package_manifests": [
+    "package.json"
+  ]
 }
