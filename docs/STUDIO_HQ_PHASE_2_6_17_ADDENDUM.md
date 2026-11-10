@@ -251,3 +251,112 @@ No new feature port is justified solely from the main-only code. Before any futu
 - No source code, migrations, D1 data, Cloudflare settings, deployment or Git history was modified.
 
 **Next phase:** Phase 2.6.21 — Studio HQ release-readiness review of the integration branch only. Review authentication/session lifecycle, owner allowlist/project configuration, API authorization and CSRF/origin policy, bounded request parsing, audit atomicity, schema/migration correctness, data retention/backup, privacy, accessibility and deployment isolation. This remains a read-only assessment until a separately approved remediation is defined.
+
+
+## 9. Phase 2.6.20 — security and schema reconciliation (read-only)
+
+The main-only commit was compared against the integration branch at source level. The review covered owner authentication, authorization helpers, CRM/projects/session handlers, tasks/milestones handlers, both schema migrations, owner-authorization documentation, and the corresponding test suites.
+
+### 9.1 Authentication — do not import the main implementation
+
+**Main-only implementation:**
+- `functions/lib/hqAuth.js` decodes JWT header/payload and checks `alg === RS256`, issuer, audience, expiry, auth time, email verification and an email allowlist.
+- It does not verify the JWT signature with Google's public signing certificate. A decoded token with fabricated claims is not authenticated merely because the header says RS256.
+- It includes a fallback email allowlist.
+- The main-only authorization test constructs a token with a literal mock signature string and tests claim/owner policy behavior; that suite does not demonstrate cryptographic signature verification.
+
+**Integration implementation:**
+- Uses `jose` (`jwtVerify` and `importX509`) with Google's Secure Token certificate endpoint.
+- Enforces RS256, key ID, signature, Firebase issuer/audience, expiry and identity claims.
+- The integration auth tests generate an RSA key pair and include a tampered-signature rejection case.
+- It then requires a matching active owner row in D1.
+
+**Decision:** retain the integration cryptographic verification path. Do not copy the main-only `hqAuth.js`, its tests as proof of cryptographic verification, or its fallback allowlist behavior.
+
+### 9.2 Owner authorization and bootstrap
+
+- Main's `hqApi.js` automatically creates the first owner when the owner table is empty after token/allowlist checks.
+- Integration requires an already enrolled `hq_users.uid` row and rejects unregistered UIDs. Manual administrator enrollment is deliberately documented.
+- Integration mutating CRM/project operations put `ownerAuthorizationGuardStatement` first in the same D1 batch as the write and audit statement. This rechecks active owner status at transaction time.
+- Integration session handling applies same-origin / Fetch Metadata checks and returns no-store private responses.
+
+**Decision:** retain manual, out-of-band owner enrollment and the integration transaction-time guard. No request-driven bootstrap. Owner enrollment remains a separately approved administrative operation.
+
+### 9.3 Schema incompatibility — do not run the main migration
+
+Main-only migration `migrations/0002_hq_owner_authorization_hardening.sql` creates six legacy tables:
+
+- `hq_users(id, ...)`
+- `hq_audit_logs`
+- `hq_clients`
+- `hq_projects`
+- `hq_tasks`
+- `hq_milestones`
+
+The integration migration `migrations/hq/0001_studio_hq_schema.sql` defines a different canonical model, including:
+
+- `hq_users(uid, ...)`
+- `clients`
+- `projects`
+- `project_milestones`
+- `project_tasks`
+- `audit_logs`
+- Plus related CRM, delivery, approvals/QA, finance and asset tables.
+
+The two models differ in primary-key column names, table names, foreign-key references, audit structure, timestamps and feature scope. The main migration does not constitute a safe additive migration to the integration schema. Running it could create parallel legacy tables and split application data across two models.
+
+**Decision:** do not run, cherry-pick or adapt the main migration as-is. Any required feature must be implemented against the canonical integration schema through a separately reviewed migration only if a genuine schema gap is demonstrated.
+
+### 9.4 API behavior and functional requirements
+
+The main-only files add legacy-style CRM, projects, tasks and milestones handlers. Source review identified these concerns:
+
+- Main CRM/projects handlers use direct `request.json()` parsing, accept broad/unbounded input shapes and perform individual D1 writes rather than the integration's bounded parser, strict field validation, transaction-time owner guard and audit batch.
+- Main tasks and milestones handlers are simple GET/POST endpoints using `hq_tasks` and `hq_milestones`; those table names do not exist in the integration schema.
+- Integration schema already contains `project_tasks` and `project_milestones` with owner foreign keys, status constraints, archival metadata and indexes. The main endpoints therefore express potentially useful functional requirements, but cannot be copied without mapping their behavior to these canonical tables.
+- Main session/Worker routing is coupled to the legacy endpoint modules and schema. Integration has its own session, clients, projects and release/approvals/QA route handlers.
+
+**Potential requirements worth retaining for future design (not yet approved implementation):**
+1. Task list/create/update lifecycle, with project ownership/reference validation, allowed status/priority values, bounded text and audit history.
+2. Milestone list/create/update lifecycle, with project reference validation, valid status/date transitions and audit history.
+3. Any missing CRM/project fields or operations, only after mapping against existing canonical tables and API behavior.
+4. Consistent HTTP method handling and explicit 404/405 responses.
+
+Before implementing any of these, inspect the Studio HQ UI/client calls and current API contract so the feature is not duplicated or made incompatible.
+
+### 9.5 Security control comparison summary
+
+| Control | Main-only implementation | Integration implementation | Decision |
+|---|---|---|---|
+| JWT signature | No cryptographic signature verification in reviewed code | Certificate-backed RS256 verification | Keep integration |
+| Issuer/audience/expiry | Claim checks after decode | Enforced as part of JWT verification plus claim checks | Keep integration |
+| Owner allowlist | Environment list with fallback default | Explicit configured owner set plus D1 enrollment | Keep integration; review owner configuration separately |
+| D1 owner record | `id` key | `uid` key | Keep integration schema |
+| First owner | Request-triggered bootstrap | Manual admin enrollment | Keep manual enrollment |
+| Mutation authorization | Request-level check | Request check plus same-batch SQL guard | Keep integration |
+| Request body | Unbounded `request.json()` | Bounded streaming parser | Keep integration |
+| Field validation | Basic checks | Strict allowlists, type/length/status/URL checks | Keep integration |
+| Audit | Legacy `hq_audit_logs` writes, not consistently atomic with CRUD | Same-batch audit statements for guarded mutations | Keep integration |
+| Task/milestone storage | Legacy `hq_tasks` / `hq_milestones` | Canonical `project_tasks` / `project_milestones` schema | Map requirements; do not copy handlers |
+
+### 9.6 Phase 2.6.20 outcome
+
+- Reviewed source-level authentication, authorization, API handlers, tests, docs and migrations.
+- Identified no safe whole-file or whole-migration cherry-pick from the main-only commit.
+- Identified tasks/milestones as functional requirements that may warrant a separate design against the canonical schema.
+- No source files were changed on the integration branch.
+- No migration was applied or executed.
+- No D1 or Cloudflare resource was accessed or mutated.
+- No live security test or deployed runtime test was performed; this is a source review only.
+
+### 9.7 Recommended next phase
+
+**Phase 2.6.21 — canonical API coverage and release-readiness gap analysis:**
+
+1. Inspect the existing Studio HQ UI/client code to identify which CRM, project, task, milestone, approvals and QA operations are actually invoked.
+2. Map each UI operation to the current integration API handler and canonical D1 table.
+3. Identify only genuinely missing API operations; do not assume the main-only endpoints are required just because they exist.
+4. For any gap, write a design-only contract specifying route, method, schema, validation, owner guard, audit behavior and tests.
+5. Separately review Firebase project configuration, owner allowlist and deployment binding consistency without exposing secrets or changing settings.
+
+No code implementation, migration, owner enrollment, merge or deployment is authorized by this phase.
