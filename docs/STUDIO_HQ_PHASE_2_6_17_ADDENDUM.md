@@ -475,3 +475,30 @@ The `wrangler.jsonc` and `wrangler.toml` values were inspected and are consisten
 **Phase 2.6.23 — targeted release-readiness review of approvals/QA and runtime boundaries.**
 
 Review the PR #26 approvals/QA API and tests against the current release handler, Worker routing and canonical schema; determine whether the feature is intentionally API-only or whether a Studio HQ UI is required. Then review auth/session error handling, owner allowlist governance, API method boundaries and the Lab Worker deployment contract. Keep all work read-only until a specific defect or requirement is approved for implementation.
+
+
+## 12. Phase 2.6.23 — approvals/QA backend release-readiness review
+
+The source review covered `functions/api/hq/release.js`, `functions/api/hq/release.test.js`, `worker.js` and the session handler.
+
+### Backend contract
+- Project-scoped approvals: `GET/POST /api/hq/projects/:projectId/approvals`.
+- Approval decisions: `PATCH /api/hq/approvals/:approvalId`.
+- Project-scoped QA: `GET/POST /api/hq/projects/:projectId/qa`.
+- QA updates: `PATCH /api/hq/qa/:checkId`.
+- Worker routing maps these paths to `handleHqRelease`.
+- The handler uses owner authorization, bounded JSON parsing, allowlisted values, transaction-time owner guards and audit statements. Approval decisions are conditional on pending status; mutation paths check that the parent project remains active.
+
+### Tests observed in source
+The existing `release.test.js` covers validation, create/list/decide approval flow, create/list/update QA flow, disabled-owner rollback, unsupported methods, concurrent and zero-row updates, audit snapshots, archived-project protections and no-op QA update suppression. These tests were inspected, not newly executed in this phase. Earlier Antigravity-reported local test results remain separately attributed in section 2.
+
+### UI conclusion
+The inspected `StudioHqPage.tsx` does not expose approval/QA controls or call these endpoints. Backend routes and tests do not establish end-to-end UI completion. The feature may be intentionally API-only or may need a frontend workflow; this is a product-scope decision, not yet an implementation defect.
+
+### Phase outcome
+- Integration already has its own canonical approvals/QA handler and schema; no legacy code needs to be imported from `main`.
+- Backend source and test coverage reviewed; UI coverage remains unconfirmed/absent in the inspected page.
+- No tests were executed and no code, configuration, secrets, database, Cloudflare resources or deployment changed.
+
+### Next gate
+**Phase 2.6.24 — product-scope decision and final release-readiness checklist.** Record whether approvals/QA are intentionally API-only or required Studio HQ UI features. Prepare release gates for authentication, owner enrollment, same-origin/session behavior, D1 schema/migration, API coverage, audit integrity, privacy, accessibility, backup/recovery and deployment/rollback. Do not merge PR #31, implement UI, enroll an owner, migrate D1 or deploy without the relevant explicit approval.
