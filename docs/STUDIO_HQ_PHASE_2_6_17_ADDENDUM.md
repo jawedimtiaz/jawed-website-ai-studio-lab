@@ -416,3 +416,62 @@ The current page file reviewed does not show calls for approvals or QA. Their Wo
 **Phase 2.6.22 — UI-wide workflow coverage and release-readiness gap analysis.**
 
 Inspect all source files for Studio HQ route usage, approval/QA components, Firebase configuration references and environment bindings. Produce a route-to-component-to-handler-to-table matrix and list only evidence-backed gaps. Do not implement changes until the matrix is reviewed.
+
+
+## 11. Phase 2.6.22 — UI-wide workflow and configuration consistency review
+
+### 11.1 Studio HQ route and page
+
+- `src/App.tsx` registers the private `/studio-hq` route and renders `StudioHqPage`.
+- The private route suppresses the shared site header, footer, AI widget and PWA prompt in the reviewed app component.
+- `StudioHqPage.tsx` is the inspected Studio HQ interface and calls the session, clients, projects, tasks and milestones APIs described in section 10.
+- No approvals or QA API calls, approval controls or QA controls were found in the reviewed `StudioHqPage.tsx`. The backend release/approvals/QA handler exists, but the reviewed page does not demonstrate a user-facing approvals/QA workflow. This is an evidence boundary, not proof that no other component or later branch implements one.
+
+### 11.2 Firebase project identity
+
+The public Firebase web configuration file `firebase-applet-config.json` has project ID `refined-actor-skhlb`. The server verifier in `functions/lib/hqAuth.js` uses the same project ID. This is a source-level configuration consistency check only.
+
+The web config contains a Firebase web API key as expected for a browser Firebase client configuration. This review did not copy or publish the key, inspect Firebase Console settings, validate authorized domains, test sign-in against Firebase, or inspect any service-account/private credential.
+
+### 11.3 Cloudflare Worker and D1 configuration
+
+Both checked Wrangler configuration files identify:
+
+- Worker: `jawed-website-ai-studio-lab`
+- Entry point: `worker.js`
+- Environment variable `ENVIRONMENT = lab`
+- Canonical origin `https://lab.jawed.co.in`
+- D1 binding: `HQ_DB`
+- D1 database name: `jawed-studio-hq`
+- D1 database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`
+- Migration directory: `migrations/hq`
+
+The `wrangler.jsonc` and `wrangler.toml` values were inspected and are consistent for the listed Worker, asset, AI, environment and D1 binding settings. This confirms repository configuration consistency only; it does not prove the deployed Worker currently has these settings or that the remote database is accessible/at this schema version.
+
+### 11.4 Workflow coverage matrix (source review)
+
+| Workflow | UI evidence | Worker/API evidence | Canonical storage | Source-review status |
+|---|---|---|---|---|
+| Sign-in/session | Google Firebase sign-in and session POST | `/api/hq/session` | `hq_users` | Present in source |
+| CRM clients | List/create/archive/restore | `/api/hq/clients` handler | `clients` | Present in source |
+| Projects | List/create/archive/restore | `/api/hq/projects` handler | `projects` | Present in source |
+| Tasks | List/create/status update | Nested project task routes | `project_tasks` | Present in source |
+| Milestones | List/create/status update | Nested project milestone routes | `project_milestones` | Present in source |
+| Approvals | No controls/calls found in inspected page | Release handler and Worker routing exist | `approvals` | Backend present; UI coverage unconfirmed |
+| QA checks | No controls/calls found in inspected page | Release handler and Worker routing exist | `qa_checks` | Backend present; UI coverage unconfirmed |
+
+### 11.5 Phase 2.6.22 outcome
+
+- Confirmed source-level consistency between Firebase web project ID and server verifier project ID.
+- Confirmed the checked Wrangler JSONC and TOML files agree on the Lab Worker and HQ D1 binding.
+- Confirmed current UI coverage for session, CRM, projects, tasks and milestones.
+- Recorded approvals/QA as backend-present but not evidenced in the inspected UI page.
+- No Cloudflare dashboard, Firebase Console, deployed Worker or remote D1 access was performed.
+- No secrets, private credentials or Firebase API key values were copied into this document.
+- No application, configuration, database or deployment changes were made.
+
+### 11.6 Next phase recommendation
+
+**Phase 2.6.23 — targeted release-readiness review of approvals/QA and runtime boundaries.**
+
+Review the PR #26 approvals/QA API and tests against the current release handler, Worker routing and canonical schema; determine whether the feature is intentionally API-only or whether a Studio HQ UI is required. Then review auth/session error handling, owner allowlist governance, API method boundaries and the Lab Worker deployment contract. Keep all work read-only until a specific defect or requirement is approved for implementation.
