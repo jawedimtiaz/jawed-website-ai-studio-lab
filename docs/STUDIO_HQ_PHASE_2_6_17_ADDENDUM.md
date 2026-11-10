@@ -157,3 +157,97 @@ This confirms the earlier divergence snapshot is still current at the time of th
 - No source code or database migration was changed.
 - The branch divergence is **not resolved**. A safe release path has not yet been established.
 - Continue with a deliberate file-by-file and migration-by-migration reconciliation plan before proposing any release PR.
+
+
+## 9. Phase 2.6.20 — file-level security and schema reconciliation
+
+A read-only source comparison was performed between `main` and `fix/studio-hq-bounded-json-body`. The review covered the main-only API files, both HQ authorization helpers, both schema migrations, the main-only authorization tests, and Worker routing. No code was changed.
+
+### 9.1 Authentication and owner authorization
+
+| Area | Main-only implementation | Integration implementation | Assessment |
+|---|---|---|---|
+| Firebase token verification | Decodes JWT and checks selected claims/header, but does not verify the RS256 signature against Firebase signing certificates | Uses `jose` `jwtVerify`, imports Firebase X.509 certificates, checks `kid`, RS256, issuer, audience, expiry and relevant claims | Keep integration verification; main implementation is not safe to adopt |
+| Owner identity | Hardcoded fallback email allowlist; project ID differs | Explicit project ID and owner allowlist in integration auth module | Reconcile configuration intentionally; do not copy main's fallback project ID |
+| D1 owner lookup | `hq_users.id` | `hq_users.uid` | Schema/API incompatible |
+| First owner | If table is empty, request path inserts the caller as active owner | Caller must already have an active pre-enrolled owner row | Keep pre-enrollment; do not enable request-triggered bootstrap |
+| Mutation-time authorization | Performs owner lookup before endpoint mutation | Mutation uses `ownerAuthorizationGuardStatement` as first statement in D1 batch | Integration provides stronger atomic guard against owner status changing between check and mutation |
+
+**Security conclusion:** Main's `verifyFirebaseToken` is not cryptographic Firebase ID-token verification. Decoding a JWT and validating claims does not establish token authenticity. Main's request-driven first-owner bootstrap is also not acceptable for the Studio HQ security boundary. Do not import either behavior.
+
+### 9.2 API behavior and data integrity
+
+Main-only files:
+
+- `functions/api/hq/clients.js`
+- `functions/api/hq/projects.js`
+- `functions/api/hq/tasks.js`
+- `functions/api/hq/milestones.js`
+- `functions/api/hq/session.js`
+
+Observed main implementation characteristics:
+
+- Uses direct `request.json()` parsing without the integration's bounded streaming JSON reader.
+- Exposes wildcard `Access-Control-Allow-Origin: *` in OPTIONS handlers, rather than using the integration's same-origin authorization check and no public CORS policy.
+- Uses direct endpoint mutations rather than the integration's atomic D1 batch pattern that places the owner authorization guard first and records an audit statement with the mutation.
+- Client/project endpoints include hard DELETE operations. Integration's current client/project architecture uses archive/restore semantics and audit records rather than hard deletion.
+- Several main handlers accept relatively permissive field/status values and use legacy payload/database conventions.
+- The main-only `tasks.js` and `milestones.js` files are separate simple endpoints. The integration schema instead models `project_tasks` and `project_milestones` with foreign keys, status constraints, archive metadata, ownership metadata and project-scoped relationships. Integration's project handler contains task/milestone validation and operations.
+
+These differences mean the main endpoints are not drop-in additions. Useful functional requirements can be retained only by mapping them to the existing integration entities and API conventions.
+
+### 9.3 Schema incompatibility
+
+The main-only migration `migrations/0002_hq_owner_authorization_hardening.sql` creates legacy tables:
+
+- `hq_users(id, ...)`
+- `hq_audit_logs(user_id, ...)`
+- `hq_clients`
+- `hq_projects`
+- `hq_tasks`
+- `hq_milestones`
+
+The integration migration `migrations/hq/0001_studio_hq_schema.sql` defines a separate model:
+
+- `hq_users(uid, ...)`
+- `audit_logs(actor_uid, actor_email, ...)`
+- `clients`
+- `projects`
+- `project_tasks`
+- `project_milestones`
+- Related tables for contacts, repositories, deployments, approvals, QA checks, quotations and other Studio HQ operations.
+
+The two migrations are not compatible alternatives for the same database. They differ in table names, primary key columns, timestamp representation, required ownership/audit fields, foreign keys, deletion behavior and business constraints. Applying the main migration to the integration database would not convert the integration schema safely; it would create a parallel legacy model and leave the API implementations mismatched.
+
+**Migration decision:** Do not run `migrations/0002_hq_owner_authorization_hardening.sql` against `jawed-studio-hq`. Do not copy it into `migrations/hq`. Any future schema change must be designed as a new, explicitly reviewed migration against the integration schema only.
+
+### 9.4 Worker routing
+
+Main's Worker imports and routes the legacy standalone tasks/milestones endpoints and CRUD methods using the old route structure. Integration's Worker routes the current session, client, project, approvals and QA handlers through the newer handler functions. Replacing integration Worker routing with main's version would regress or bypass integration-specific endpoint behavior and route structure.
+
+Do not transplant the main Worker file. If a required route is identified, add it only through the integration route architecture with corresponding authorization, request-boundary, audit and regression tests.
+
+### 9.5 What can be retained as requirements
+
+The main-only change set does communicate product requirements that may be valid, but they are already substantially represented in the integration data model:
+
+1. Owner session verification — integration has a dedicated session endpoint.
+2. CRM client management — integration has client list/create/update/archive/restore behavior.
+3. Project management — integration has project CRUD/archive/restore and validation.
+4. Tasks and milestones — integration schema and project handlers model these as project-scoped entities.
+5. Auditability — integration uses transactional audit statements for mutations.
+6. Owner authorization — integration verifies signed Firebase tokens and checks a pre-enrolled active owner record.
+
+No new feature port is justified solely from the main-only code. Before any future port, identify a specific missing user-facing capability and prove it is absent from the integration UI/API/schema.
+
+### 9.6 Phase 2.6.20 conclusion and gate
+
+**Outcome: reconciliation review completed; no safe merge/cherry-pick is recommended.**
+
+- Main-only authentication, auto-enrollment, API handlers, Worker routing and migration should not be imported.
+- Valid product requirements are already substantially covered by integration architecture.
+- Any claimed gap must be demonstrated against current integration source and tests before implementation.
+- Branch divergence remains unresolved (126 ahead / 1 behind at the latest comparison).
+- No source code, migrations, D1 data, Cloudflare settings, deployment or Git history was modified.
+
+**Next phase:** Phase 2.6.21 — Studio HQ release-readiness review of the integration branch only. Review authentication/session lifecycle, owner allowlist/project configuration, API authorization and CSRF/origin policy, bounded request parsing, audit atomicity, schema/migration correctness, data retention/backup, privacy, accessibility and deployment isolation. This remains a read-only assessment until a separately approved remediation is defined.
