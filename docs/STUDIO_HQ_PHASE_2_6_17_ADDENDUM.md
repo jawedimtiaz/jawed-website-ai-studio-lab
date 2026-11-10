@@ -121,3 +121,39 @@ Read-only GitHub connector inspection on 10 November 2026 confirmed:
 No rollback, revert, reset, force-push, branch mutation, or PR state change was performed. Further investigation would require an authoritative GitHub audit log/event timeline not exposed by the currently available connector response. Preserve the merged history unless Jawed explicitly authorizes a separate corrective action.
 
 **Phase 2.6.18 outcome:** investigation completed to the limit of available evidence; merge-event cause remains unresolved.
+
+
+## 8. Phase 2.6.19 — fresh branch comparison (read-only)
+
+A fresh GitHub comparison was performed after the local Phase 2.6.16 verification:
+
+- Base branch `main`: `f630014aeb1414cc295986d96840d3f1dc2649d1`
+- Integration branch `fix/studio-hq-bounded-json-body`: `6019e066a09288bfb59ffeaa02787f4cba5332a0`
+- Merge base: `6603eb25e683ebe33a8a3e44271398475e9c0edf`
+- Comparison status: `diverged`
+- Integration is **126 commits ahead** and **1 commit behind** `main`.
+- Comparing the merge base to `main` confirms exactly **one main-only commit** at this checkpoint.
+
+The one main-only commit adds/changes these 11 paths:
+
+- `docs/hq-owner-authorization-hardening.md`
+- `functions/api/hq/clients.js`
+- `functions/api/hq/milestones.js`
+- `functions/api/hq/projects.js`
+- `functions/api/hq/session.js`
+- `functions/api/hq/tasks.js`
+- `functions/lib/hqApi.js`
+- `functions/lib/hqAuth.js`
+- `migrations/0002_hq_owner_authorization_hardening.sql`
+- `tests/hq-authorization.test.js`
+- `worker.js`
+
+This confirms the earlier divergence snapshot is still current at the time of this check. The main-only implementation remains incompatible with the integration branch in authentication implementation and schema conventions, and the reviewed JWT code did not perform cryptographic signature verification. It must not be merged/cherry-picked as a whole. A future reconciliation must compare each required behavior and schema object against the integration implementation, preserving the stronger signature verification and dedicated `migrations/hq` schema.
+
+### Phase 2.6.19 outcome
+
+- Fresh comparison completed.
+- No branch was merged, rebased, reset or updated.
+- No source code or database migration was changed.
+- The branch divergence is **not resolved**. A safe release path has not yet been established.
+- Continue with a deliberate file-by-file and migration-by-migration reconciliation plan before proposing any release PR.
