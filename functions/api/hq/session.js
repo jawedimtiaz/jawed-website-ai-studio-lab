@@ -1,6 +1,10 @@
-import { authorizeHqOwner, hqJson } from '../../lib/hqApi.js';
+import { authorizeHqOwner, hqJson, isHqSameOrigin, HQ_JSON_HEADERS } from '../../lib/hqApi.js';
+import { checkHqRateLimit } from '../../lib/hqRateLimit.js';
 
 export async function onRequestPost({ request, env }) {
+  const rateLimit = await checkHqRateLimit(request, env, { type: 'session' });
+  if (!rateLimit.ok) return rateLimit.response;
+
   const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
 
@@ -12,20 +16,14 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestOptions({ request }) {
-  const origin = request.headers.get('origin');
-  if (origin && origin !== new URL(request.url).origin) {
-    return hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403);
-  }
-  const fetchSite = request.headers.get('sec-fetch-site');
-  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+  if (!isHqSameOrigin(request)) {
     return hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403);
   }
   return new Response(null, {
     status: 204,
     headers: {
-      'cache-control': 'no-store, private, max-age=0',
-      'allow': 'POST, OPTIONS',
-      'vary': 'Origin'
+      ...HQ_JSON_HEADERS,
+      'allow': 'POST, OPTIONS'
     }
   });
 }

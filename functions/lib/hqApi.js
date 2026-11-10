@@ -7,8 +7,11 @@ export const HQ_JSON_HEADERS = {
   'vary': 'Authorization, Origin'
 };
 
-export function hqJson(body, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: HQ_JSON_HEADERS });
+export function hqJson(body, status = 200, extraHeaders = {}) {
+  const headers = Object.keys(extraHeaders).length
+    ? { ...HQ_JSON_HEADERS, ...extraHeaders }
+    : HQ_JSON_HEADERS;
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 export function isHqSameOrigin(request) {
@@ -131,6 +134,23 @@ export function auditStatement(db, identity, action, entityType, entityId, reque
   return db.prepare(`INSERT INTO audit_logs
     (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      crypto.randomUUID(),
+      identity.uid,
+      identity.email,
+      action,
+      entityType,
+      entityId,
+      requestId,
+      before ? JSON.stringify(before) : null,
+      after ? JSON.stringify(after) : null
+    );
+}
+
+export function conditionalAuditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
+  return db.prepare(`INSERT INTO audit_logs
+    (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE changes() = 1`).bind(
       crypto.randomUUID(),
       identity.uid,
       identity.email,

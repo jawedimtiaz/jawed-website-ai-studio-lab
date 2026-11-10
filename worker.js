@@ -75,7 +75,7 @@ export default {
       if (request.method === 'POST') return addSecurityHeaders(await hqSessionPost(context));
       return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
         status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0', 'allow': 'POST, OPTIONS' }
       }));
     }
 
@@ -87,7 +87,7 @@ export default {
     }
 
     // 4. Private Studio HQ approvals and QA endpoints.
-    if (pathname.startsWith('/api/hq/projects/') || pathname.startsWith('/api/hq/approvals/') || pathname.startsWith('/api/hq/qa/')) {
+    if (pathname.startsWith('/api/hq/projects/') || pathname === '/api/hq/approvals' || pathname.startsWith('/api/hq/approvals/') || pathname === '/api/hq/qa' || pathname.startsWith('/api/hq/qa/')) {
       const hqParts = pathname.replace(/\/$/, '').split('/').slice(3);
       const isReleaseRoute = (hqParts[0] === 'projects' && ['approvals', 'qa'].includes(hqParts[2])) ||
         ['approvals', 'qa'].includes(hqParts[0]);
@@ -182,10 +182,10 @@ export default {
 
     // 9. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
-      return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+      }));
     }
 
     // 10. Serve static assets via Cloudflare Workers Assets binding if present
