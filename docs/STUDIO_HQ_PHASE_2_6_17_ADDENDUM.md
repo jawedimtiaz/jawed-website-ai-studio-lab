@@ -360,3 +360,59 @@ Before implementing any of these, inspect the Studio HQ UI/client calls and curr
 5. Separately review Firebase project configuration, owner allowlist and deployment binding consistency without exposing secrets or changing settings.
 
 No code implementation, migration, owner enrollment, merge or deployment is authorized by this phase.
+
+
+## 10. Phase 2.6.21 — canonical UI/API coverage check
+
+A read-only review of `src/pages/StudioHqPage.tsx`, `functions/api/hq/projects.js`, `functions/api/hq/clients.js`, `functions/api/hq/release.js` and `worker.js` corrects the earlier potential-gap assessment for tasks and milestones.
+
+### 10.1 Tasks and milestones are already implemented in integration
+
+The current Studio HQ page explicitly calls:
+
+- `GET /api/hq/projects/:projectId/tasks`
+- `POST /api/hq/projects/:projectId/tasks`
+- `PATCH /api/hq/projects/:projectId/tasks/:taskId`
+- `GET /api/hq/projects/:projectId/milestones`
+- `POST /api/hq/projects/:projectId/milestones`
+- `PATCH /api/hq/projects/:projectId/milestones/:milestoneId`
+
+The integration Worker routes nested project endpoints to `handleHqProjects`. That handler implements the task/milestone routes against canonical `project_tasks` and `project_milestones` tables.
+
+The implementation includes:
+- Bounded JSON parsing and strict allowlisted fields.
+- Explicit task and milestone status/priority validation.
+- Project existence checks.
+- Task milestone-reference validation against the same project.
+- Assignee validation against active `hq_users` records.
+- Transaction-time owner authorization guard and audit statements for writes.
+- Project-scoped updates and 404/405 handling.
+
+### 10.2 Revised conclusion
+
+Tasks and milestones are **not missing features** in the integration branch. The main-only `tasks.js` and `milestones.js` are legacy, incompatible implementations and are not required to restore task/milestone functionality. Do not add duplicate standalone endpoints or create the legacy tables.
+
+This supersedes the “potential requirements” framing in section 9.4 for basic task/milestone CRUD. Only a separately demonstrated UI/business requirement not supported by the current integration API should be considered for future work.
+
+### 10.3 UI/API coverage observed in the current page
+
+The inspected page calls:
+- Session authentication via POST `/api/hq/session`.
+- CRM list/create and client archive/restore operations.
+- Project list/create and project archive/restore operations.
+- Project task and milestone list/create/status-update operations.
+
+The current page file reviewed does not show calls for approvals or QA. Their Worker route and `release.js` handler exist, but the presence of the backend alone does not prove that the UI currently exposes those workflows. A separate UI-wide search/review is required before declaring approvals/QA UI coverage complete.
+
+### 10.4 Phase 2.6.21 outcome
+
+- Confirmed tasks/milestones already exist in the current UI, Worker routing, API handlers and canonical D1 schema.
+- Corrected the prior potential-gap statement: no new task/milestone API work is currently justified.
+- No code, schema, branch or deployment changes were made.
+- This remains a source-level coverage review, not browser runtime or deployed API verification.
+
+### 10.5 Next gate
+
+**Phase 2.6.22 — UI-wide workflow coverage and release-readiness gap analysis.**
+
+Inspect all source files for Studio HQ route usage, approval/QA components, Firebase configuration references and environment bindings. Produce a route-to-component-to-handler-to-table matrix and list only evidence-backed gaps. Do not implement changes until the matrix is reviewed.
