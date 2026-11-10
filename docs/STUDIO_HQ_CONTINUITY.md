@@ -163,3 +163,54 @@ Start by reading this file from the Lab repository. Then:
 - Do not ask the user to repeat project context.
 - Do not assume local tests ran just because GitHub Actions passed.
 - Keep this file updated at meaningful milestones (local verification, PR decisions, merge, deployment, migrations), preferably through a branch and PR rather than direct edits to `main`.
+
+
+## 9. Phase 2.6.16 — verified local command inventory
+
+Checked directly against `package.json` and the current GitHub workflow definitions on `fix/studio-hq-bounded-json-body` on 10 November 2026.
+
+### Package scripts
+
+- `npm run test:hq-auth` — runs the HQ authorization/API test files and private HQ service-worker/page tests listed in `package.json`.
+- `npm run lint` — runs `tsc --noEmit`.
+- `npm run build` — runs `tsc && vite build && node scripts/prepare-dist.mjs`.
+- `npm run dev` and `npm run preview) are development/preview servers.
+- No generic `npm test` script is defined in the checked package manifest.
+
+### Workflow-verified validator commands
+
+- `node scripts/validate-site-integrity.mjs`
+- `node scripts/validate-ai-regression.mjs`
+- `node scripts/validate-adsense-privacy.mjs`
+- `node scripts/validate-adsense-inventory.mjs`
+- `node scripts/validate-adsense-activation.mjs`
+- `node scripts/validate-adsense-content-readiness.mjs`
+- `node scripts/validate-adsense-placement-policy.mjs`
+- `node scripts/validate-adsense-technical.mjs`
+- `node scripts/validate-adsense-slot-architecture.mjs`
+- `node scripts/validate-adsense-mobile-readiness.mjs`
+- `node scripts/validate-adsense-consent-performance.mjs`
+- `node scripts/validate-adsense-performance-safeguards.mjs`
+- `node scripts/validate-adsense-final-performance-gate.mjs`
+- `node scripts/validate-adsense-final-readiness.mjs`
+- `node scripts/validate-adsense-preactivation.mjs`
+- `node scripts/validate-adsense-readiness.mjs`
+- `node scripts/validate-deployment-runtime-reliability.mjs`
+- `node scripts/validate-security-supply-chain.mjs`
+- `node scripts/validate-production-api-method.mjs`
+
+The GitHub AI regression workflow explicitly uses Node.js 22. The Windows local verification should use Node 22 to match CI. These commands are a verified command inventory, **not evidence that they have already passed locally**.
+
+### Suggested local sequence (after confirming clean working tree and exact branch)
+
+1. `node --version` (confirm v22.x) and `git status --short --branch`.
+2. `npm run test:hq-auth`.
+3. `node --test tests/legacy-ci-validators.test.js`.
+4. Run the workflow-verified validators above.
+5. `npm run lint`.
+6. `npm run build`.
+7. `git diff --check` and `git status --short`.
+
+If dependencies are not installed, inspect the repository's actual lockfile/package-manager state first. Do not blindly run `npm install`, generate a lockfile or change dependencies. The security contract currently says lockfiles are not applicable; resolve that policy/configuration carefully before dependency installation if the local environment lacks dependencies.
+
+No command in this inventory authorizes deployment, Wrangler publish, Cloudflare mutation or D1 migration.
