@@ -101,3 +101,23 @@ This addendum records evidence; it does not authorize:
 - Rewriting Git history or force-pushing.
 
 **Resume instruction:** Read `docs/STUDIO_HQ_CONTINUITY.md` and this addendum. Start from Phase 2.6.18 only after the documentation PR has been reviewed; do not repeat Phase 2.6.16 unless new code or a materially different runtime requires re-verification.
+
+
+## 7. Phase 2.6.18 — PR #26 merge-event investigation (read-only)
+
+Read-only GitHub connector inspection on 10 November 2026 confirmed:
+
+- PR #26 is closed and GitHub's current issue state is consistent with a completed PR lifecycle; the issue record's `updated_at` is `2026-11-10T04:33:43Z`, matching the previously observed merge-event timestamp.
+- The PR issue record still contains an older body statement saying the PR “remains open and unmerged.” Treat that sentence as stale PR-description text, not current state.
+- GitHub's current issue fetch did not expose the PR's full `merged_at`, `merged_by`, or merge-event timeline fields through the available connector response.
+- The previously recorded event-log inspection attributed the merge event to the user's GitHub account. This investigation did not independently retrieve an audit/event record that explains what action initiated it.
+- Commit `733b20d02873a0b3d0b00b88451cee10d727cc8f` exists and is authored/committed under the user's GitHub account. Its message is `test(hq): verify complete QA update audit snapshots`; the fetched commit diff is a QA test correction. This establishes commit metadata and content, but does not by itself establish who clicked the merge action or whether it was an automatic/other GitHub operation.
+- PR #26 has no issue-level comments returned by the available comments endpoint.
+
+### Finding
+
+**Root cause remains undetermined.** The available read-only evidence is insufficient to establish whether the event resulted from a manual UI action, an automation, a delayed action, or another GitHub-side operation. Do not attribute intent or speculate.
+
+No rollback, revert, reset, force-push, branch mutation, or PR state change was performed. Further investigation would require an authoritative GitHub audit log/event timeline not exposed by the currently available connector response. Preserve the merged history unless Jawed explicitly authorizes a separate corrective action.
+
+**Phase 2.6.18 outcome:** investigation completed to the limit of available evidence; merge-event cause remains unresolved.
