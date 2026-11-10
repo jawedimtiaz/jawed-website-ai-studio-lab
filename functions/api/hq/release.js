@@ -21,12 +21,12 @@ function text(value, max, field, required = false) {
   return { ok: true, value: clean || null };
 }
 
-function validEvidenceUrl(value) {
+export function validEvidenceUrl(value) {
   if (value === undefined || value === null || value === '') return { ok: true, value: null };
   if (typeof value !== 'string' || value.length > 1000) return { ok: false, error: 'EVIDENCE_URL_INVALID' };
   try {
     const url = new URL(value);
-    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('invalid');
+    if (url.protocol !== 'https:') throw new Error('invalid');
     return { ok: true, value: url.toString() };
   } catch {
     return { ok: false, error: 'EVIDENCE_URL_INVALID' };
@@ -129,8 +129,14 @@ function conditionalAuditStatement(db, identity, action, entityType, entityId, r
 }
 
 async function decideApproval(request, db, identity, approvalId) {
-  const existing = await db.prepare('SELECT * FROM approvals WHERE id = ?').bind(approvalId).first();
+  const existing = await db.prepare(
+    `SELECT a.*, p.id AS parent_project_id, p.archived_at AS project_archived_at
+     FROM approvals a
+     LEFT JOIN projects p ON p.id = a.project_id
+     WHERE a.id = ?`
+  ).bind(approvalId).first();
   if (!existing) return hqJson({ ok: false, error: 'APPROVAL_NOT_FOUND' }, 404);
+  if (!existing.parent_project_id || existing.project_archived_at) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
   if (existing.status !== 'pending') return hqJson({ ok: false, error: 'APPROVAL_ALREADY_DECIDED' }, 409);
   const parsed = await readHqJson(request);
   if (!parsed.ok) return parsed.response;
@@ -140,7 +146,9 @@ async function decideApproval(request, db, identity, approvalId) {
   const note = text(parsed.value.decision_note, 2000, 'DECISION_NOTE');
   if (!note.ok) return hqJson({ ok: false, error: note.error }, 400);
   const update = db.prepare(`UPDATE approvals SET status = ?, decision_note = ?, decided_by = ?,
-    decided_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status = 'pending'`)
+    decided_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE id = ? AND status = 'pending'
+      AND EXISTS (SELECT 1 FROM projects WHERE id = approvals.project_id AND archived_at IS NULL)`)
     .bind(parsed.value.status, note.value, identity.uid, approvalId);
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
@@ -148,7 +156,16 @@ async function decideApproval(request, db, identity, approvalId) {
     conditionalAuditStatement(db, identity, 'approval.decision', 'approval', approvalId, crypto.randomUUID(),
       { status: existing.status }, { status: parsed.value.status, decision_note: note.value })
   ]);
-  if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'APPROVAL_ALREADY_DECIDED' }, 409);
+  if ((results?.[1]?.meta?.changes ?? 0) !== 1) {
+    const current = await db.prepare(
+      `SELECT a.status, p.archived_at AS project_archived_at
+       FROM approvals a
+       LEFT JOIN projects p ON p.id = a.project_id
+       WHERE a.id = ?`
+    ).bind(approvalId).first();
+    if (current?.project_archived_at) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+    return hqJson({ ok: false, error: 'APPROVAL_ALREADY_DECIDED' }, 409);
+  }
   return hqJson({ ok: true, approval: await db.prepare('SELECT * FROM approvals WHERE id = ?').bind(approvalId).first() });
 }
 
@@ -185,8 +202,14 @@ async function createQaCheck(request, db, identity, projectId) {
 }
 
 async function updateQaCheck(request, db, identity, checkId) {
-  const existing = await db.prepare('SELECT * FROM qa_checks WHERE id = ?').bind(checkId).first();
+  const existing = await db.prepare(
+    `SELECT q.*, p.id AS parent_project_id, p.archived_at AS project_archived_at
+     FROM qa_checks q
+     LEFT JOIN projects p ON p.id = q.project_id
+     WHERE q.id = ?`
+  ).bind(checkId).first();
   if (!existing) return hqJson({ ok: false, error: 'QA_CHECK_NOT_FOUND' }, 404);
+  if (!existing.parent_project_id || existing.project_archived_at) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
   const parsed = await readHqJson(request);
   if (!parsed.ok) return parsed.response;
   const valid = validateQaCheck(parsed.value, true);
@@ -194,6 +217,21 @@ async function updateQaCheck(request, db, identity, checkId) {
   const fields = valid.value;
   const keys = Object.keys(fields);
   if (!keys.length) return hqJson({ ok: false, error: 'NO_VALID_FIELDS' }, 400);
+
+  const { parent_project_id, project_archived_at, ...cleanExisting } = existing;
+
+  // No-op detection: check if all submitted values match existing values
+  const hasChanges = keys.some(key => {
+    const existingVal = cleanExisting[key] ?? null;
+    const newVal = fields[key] ?? null;
+    return existingVal !== newVal;
+  });
+
+  if (!hasChanges) {
+    // Return existing record without executing a redundant UPDATE or creating an audit entry
+    return hqJson({ ok: true, check: cleanExisting });
+  }
+
   const assignments = keys.map(key => key + ' = ?');
   if ('result' in fields) {
     const checked = fields.result !== 'not-run' && fields.result !== 'not-applicable';
@@ -204,12 +242,15 @@ async function updateQaCheck(request, db, identity, checkId) {
   }
   assignments.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
   const values = keys.map(key => fields[key]);
-  const update = db.prepare(`UPDATE qa_checks SET ${assignments.join(', ')} WHERE id = ?`).bind(...values, checkId);
+  const update = db.prepare(`UPDATE qa_checks SET ${assignments.join(', ')}
+    WHERE id = ?
+      AND EXISTS (SELECT 1 FROM projects WHERE id = qa_checks.project_id AND archived_at IS NULL)`)
+    .bind(...values, checkId);
   const auditBefore = {};
   const auditAfter = {};
   for (const key of keys) {
     const auditKey = key === '__checked_by' ? 'checked_by' : key === '__checked_at' ? 'checked_at' : key;
-    auditBefore[auditKey] = existing[auditKey] ?? null;
+    auditBefore[auditKey] = cleanExisting[auditKey] ?? null;
     auditAfter[auditKey] = fields[key] ?? null;
   }
   const results = await db.batch([
@@ -218,7 +259,16 @@ async function updateQaCheck(request, db, identity, checkId) {
     conditionalAuditStatement(db, identity, 'qa.update', 'qa_check', checkId, crypto.randomUUID(),
       auditBefore, auditAfter)
   ]);
-  if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'QA_CHECK_NOT_FOUND' }, 404);
+  if ((results?.[1]?.meta?.changes ?? 0) !== 1) {
+    const current = await db.prepare(
+      `SELECT q.id, p.archived_at AS project_archived_at
+       FROM qa_checks q
+       LEFT JOIN projects p ON p.id = q.project_id
+       WHERE q.id = ?`
+    ).bind(checkId).first();
+    if (current?.project_archived_at) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
+    return hqJson({ ok: false, error: 'QA_CHECK_NOT_FOUND' }, 404);
+  }
   return hqJson({ ok: true, check: await db.prepare('SELECT * FROM qa_checks WHERE id = ?').bind(checkId).first() });
 }
 

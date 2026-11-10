@@ -16,14 +16,26 @@ const failure=(error,code,status,id,extra={})=>{
   return json({error,code,request_id:id},status,{"x-request-id":id});
 };
 
-function isAllowedOrigin(origin){
-  if(!origin||origin==="https://jawed.co.in"||origin==="https://www.jawed.co.in")return true;
+export function isAllowedOrigin(origin){
+  if(origin==="https://jawed.co.in"||origin==="https://www.jawed.co.in")return true;
+  if(typeof origin!=="string"||!origin.trim())return false;
   try{
     const url=new URL(origin);
+    const protocol=url.protocol;
     const host=url.hostname.toLowerCase();
+
+    // Localhost development access (HTTP and HTTPS)
+    if((host==="localhost"||host==="127.0.0.1")&&(protocol==="http:"||protocol==="https:"))return true;
+
+    // Production and approved preview browser origins require HTTPS
+    if(protocol!=="https:")return false;
+
+    // Production domain and official subdomains (e.g. jawed.co.in, www.jawed.co.in, lab.jawed.co.in)
     if(host==="jawed.co.in"||host.endsWith(".jawed.co.in"))return true;
-    if(host==="localhost"||host==="127.0.0.1")return true;
-    if(host.endsWith(".run.app")||host.endsWith(".pages.dev")||host.endsWith(".workers.dev"))return true;
+
+    // Verified Cloudflare Pages project deployment and branch previews
+    if(host==="jawed-website.pages.dev"||host.endsWith(".jawed-website.pages.dev"))return true;
+
   }catch{
     return false;
   }
@@ -32,6 +44,8 @@ function isAllowedOrigin(origin){
 
 function allowedOrigin(request){
   const origin=request.headers.get("origin");
+  // Non-browser or server-to-server requests without an Origin header are permitted
+  if(!origin)return true;
   return isAllowedOrigin(origin);
 }
 

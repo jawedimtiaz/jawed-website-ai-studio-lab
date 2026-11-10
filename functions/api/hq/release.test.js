@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { validateApproval, validateQaCheck, handleAuthorizedHqRelease } from './release.js';
+import { validateApproval, validateQaCheck, handleAuthorizedHqRelease, validEvidenceUrl } from './release.js';
 
 class TestD1 {
   constructor() {
@@ -64,6 +64,19 @@ test('validates approval and QA request contracts', () => {
   assert.deepEqual(validateQaCheck({ category: 'security', check_name: 'Security test', evidence_url: 'javascript:alert(1)' }), { ok: false, error: 'EVIDENCE_URL_INVALID' });
   assert.deepEqual(validateQaCheck({ category: 'invalid-cat', check_name: 'Test' }), { ok: false, error: 'QA_CATEGORY_INVALID' });
   assert.deepEqual(validateQaCheck({ category: 'security', check_name: ' ' }), { ok: false, error: 'CHECK_NAME_REQUIRED' });
+
+  // HTTPS-only evidence URL tests
+  assert.equal(validEvidenceUrl('https://example.com/evidence').ok, true);
+  assert.equal(validEvidenceUrl('https://github.com/org/repo/pull/1').value, 'https://github.com/org/repo/pull/1');
+  assert.equal(validEvidenceUrl(null).ok, true);
+  assert.equal(validEvidenceUrl('').ok, true);
+  assert.equal(validEvidenceUrl(undefined).ok, true);
+  assert.deepEqual(validEvidenceUrl('http://insecure.example.com/test'), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validEvidenceUrl('javascript:alert(1)'), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validEvidenceUrl('data:text/html,bad'), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validEvidenceUrl('file:///etc/passwd'), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validEvidenceUrl('not-a-url'), { ok: false, error: 'EVIDENCE_URL_INVALID' });
+  assert.deepEqual(validateApproval({ approval_type: 'qa', evidence_url: 'http://insecure.example.com' }), { ok: false, error: 'EVIDENCE_URL_INVALID' });
 });
 
 test('creates and decides approvals and creates and updates QA checks with audit logs', async () => {
@@ -446,6 +459,150 @@ test('successful update still appends exactly one accurate audit entry with old 
     // Exactly 2 audit records exist
     const totalAudits = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
     assert.equal(totalAudits, 2);
+  } finally {
+    db.close();
+  }
+});
+
+test('decideApproval and updateQaCheck reject mutations on archived parent projects with 404 PROJECT_NOT_FOUND', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c-arch', 'Archived Client', identity.uid);
+    // Create an archived project
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by, archived_at, archived_by) VALUES (?, ?, ?, ?, '2026-11-01T00:00:00Z', ?)")
+      .run('p-arch', 'c-arch', 'Archived Project', identity.uid, identity.uid);
+
+    // Seed approval and qa_check belonging to the archived project
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, 'qa', 'pending', ?)")
+      .run('appr-on-arch', 'p-arch', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result) VALUES (?, ?, 'security', 'Archived QA Check', 'not-run')")
+      .run('qa-on-arch', 'p-arch');
+
+    // 1. Attempting to decide approval on archived project returns 404 PROJECT_NOT_FOUND
+    const apprRes = await call(db, request('/api/hq/approvals/appr-on-arch', 'PATCH', {
+      status: 'approved', decision_note: 'Should fail'
+    }), ['approvals', 'appr-on-arch']);
+    assert.equal(apprRes.status, 404);
+    assert.equal((await apprRes.json()).error, 'PROJECT_NOT_FOUND');
+
+    // 2. Attempting to update QA check on archived project returns 404 PROJECT_NOT_FOUND
+    const qaRes = await call(db, request('/api/hq/qa/qa-on-arch', 'PATCH', {
+      result: 'pass', notes: 'Should fail'
+    }), ['qa', 'qa-on-arch']);
+    assert.equal(qaRes.status, 404);
+    assert.equal((await qaRes.json()).error, 'PROJECT_NOT_FOUND');
+
+    // Verify 0 audit logs and records unchanged
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+    assert.equal(db.sqlite.prepare('SELECT status FROM approvals WHERE id = ?').get('appr-on-arch').status, 'pending');
+    assert.equal(db.sqlite.prepare('SELECT result FROM qa_checks WHERE id = ?').get('qa-on-arch').result, 'not-run');
+  } finally {
+    db.close();
+  }
+});
+
+test('concurrent project archival race during decideApproval and updateQaCheck fails safely and creates no audit logs', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c-race', 'Race Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)")
+      .run('p-race', 'c-race', 'Race Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO approvals (id, project_id, approval_type, status, requested_by) VALUES (?, ?, 'qa', 'pending', ?)")
+      .run('appr-race-arch', 'p-race', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result) VALUES (?, ?, 'security', 'Race QA Check', 'not-run')")
+      .run('qa-race-arch', 'p-race');
+
+    // 1. Race in decideApproval: project gets archived right before batch runs
+    const origBatch1 = db.batch.bind(db);
+    db.batch = function(statements) {
+      db.sqlite.prepare("UPDATE projects SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), archived_by = ? WHERE id = 'p-race'").run(identity.uid);
+      return origBatch1(statements);
+    };
+
+    const apprRes = await call(db, request('/api/hq/approvals/appr-race-arch', 'PATCH', {
+      status: 'approved'
+    }), ['approvals', 'appr-race-arch']);
+    assert.equal(apprRes.status, 404);
+    assert.equal((await apprRes.json()).error, 'PROJECT_NOT_FOUND');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+
+    // Un-archive project for second race test
+    db.sqlite.prepare("UPDATE projects SET archived_at = NULL, archived_by = NULL WHERE id = 'p-race'").run();
+
+    // 2. Race in updateQaCheck: project gets archived right before batch runs
+    const origBatch2 = db.batch.bind(db);
+    db.batch = function(statements) {
+      db.sqlite.prepare("UPDATE projects SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), archived_by = ? WHERE id = 'p-race'").run(identity.uid);
+      return origBatch2(statements);
+    };
+
+    const qaRes = await call(db, request('/api/hq/qa/qa-race-arch', 'PATCH', {
+      result: 'pass'
+    }), ['qa', 'qa-race-arch']);
+    assert.equal(qaRes.status, 404);
+    assert.equal((await qaRes.json()).error, 'PROJECT_NOT_FOUND');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test('no-op QA updates return existing record without executing update or appending audit entries', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')").run(identity.uid, identity.email);
+    db.sqlite.prepare("INSERT INTO clients (id, name, created_by) VALUES (?, ?, ?)").run('c-noop', 'Noop Client', identity.uid);
+    db.sqlite.prepare("INSERT INTO projects (id, client_id, name, created_by) VALUES (?, ?, ?, ?)")
+      .run('p-noop', 'c-noop', 'Noop Project', identity.uid);
+    db.sqlite.prepare("INSERT INTO qa_checks (id, project_id, category, check_name, result, notes, evidence_url, checked_by, checked_at) VALUES (?, ?, 'accessibility', 'A11y focus check', 'pass', 'Focus order tested', 'https://example.com/a11y', ?, '2026-11-05T12:00:00Z')")
+      .run('qa-noop-1', 'p-noop', identity.uid);
+
+    const initialAuditCount = db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count;
+    assert.equal(initialAuditCount, 0);
+
+    // 1. Submit identical single field (result: 'pass')
+    const noopResult = await call(db, request('/api/hq/qa/qa-noop-1', 'PATCH', {
+      result: 'pass'
+    }), ['qa', 'qa-noop-1']);
+    assert.equal(noopResult.status, 200);
+    const noopBody1 = (await noopResult.json()).check;
+    assert.equal(noopBody1.result, 'pass');
+    assert.equal(noopBody1.checked_at, '2026-11-05T12:00:00Z');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+
+    // 2. Submit identical multiple fields
+    const noopMultiple = await call(db, request('/api/hq/qa/qa-noop-1', 'PATCH', {
+      category: 'accessibility',
+      check_name: 'A11y focus check',
+      result: 'pass',
+      notes: 'Focus order tested',
+      evidence_url: 'https://example.com/a11y'
+    }), ['qa', 'qa-noop-1']);
+    assert.equal(noopMultiple.status, 200);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 0);
+
+    // 3. Submit genuine change to individual field (notes only)
+    const changeNotes = await call(db, request('/api/hq/qa/qa-noop-1', 'PATCH', {
+      notes: 'Updated note: verified on Chrome and Safari'
+    }), ['qa', 'qa-noop-1']);
+    assert.equal(changeNotes.status, 200);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 1);
+    const auditRecord1 = db.sqlite.prepare('SELECT * FROM audit_logs').get();
+    assert.deepEqual(JSON.parse(auditRecord1.before_json), { notes: 'Focus order tested' });
+    assert.deepEqual(JSON.parse(auditRecord1.after_json), { notes: 'Updated note: verified on Chrome and Safari' });
+
+    // 4. Submit genuine change to multiple fields (category and check_name)
+    const changeMultiple = await call(db, request('/api/hq/qa/qa-noop-1', 'PATCH', {
+      category: 'browser',
+      check_name: 'Cross-browser rendering'
+    }), ['qa', 'qa-noop-1']);
+    assert.equal(changeMultiple.status, 200);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_logs').get().count, 2);
+    const auditRecord2 = db.sqlite.prepare('SELECT * FROM audit_logs ORDER BY rowid DESC').get();
+    assert.deepEqual(JSON.parse(auditRecord2.before_json), { category: 'accessibility', check_name: 'A11y focus check' });
+    assert.deepEqual(JSON.parse(auditRecord2.after_json), { category: 'browser', check_name: 'Cross-browser rendering' });
   } finally {
     db.close();
   }
