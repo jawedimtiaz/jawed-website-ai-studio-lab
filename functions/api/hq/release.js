@@ -4,8 +4,10 @@ import {
   readHqJson,
   requireHqDatabase,
   ownerAuthorizationGuardStatement,
-  auditStatement
+  auditStatement,
+  conditionalAuditStatement
 } from '../../lib/hqApi.js';
+import { checkHqRateLimit } from '../../lib/hqRateLimit.js';
 
 const APPROVAL_TYPES = new Set(['scope','design','content','qa','production-release','handover','other']);
 const APPROVAL_DECISIONS = new Set(['approved','rejected','withdrawn']);
@@ -109,23 +111,6 @@ async function createApproval(request, db, identity, projectId) {
   ]);
   const row = results?.[1]?.results?.[0] || null;
   return row ? hqJson({ ok: true, approval: row }, 201) : hqJson({ ok: false, error: 'APPROVAL_CREATE_FAILED' }, 500);
-}
-
-function conditionalAuditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
-  return db.prepare(`INSERT INTO audit_logs
-    (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-    WHERE changes() = 1`).bind(
-      crypto.randomUUID(),
-      identity.uid,
-      identity.email,
-      action,
-      entityType,
-      entityId,
-      requestId,
-      before ? JSON.stringify(before) : null,
-      after ? JSON.stringify(after) : null
-    );
 }
 
 async function decideApproval(request, db, identity, approvalId) {
@@ -277,18 +262,23 @@ export async function handleAuthorizedHqRelease({ request, env, segments, identi
   if (!dbResult.ok) return dbResult.response;
   const db = dbResult.db;
   try {
+    if (['POST', 'PATCH'].includes(request.method)) {
+      const rateLimit = await checkHqRateLimit(request, env, { type: 'write', uid: identity.uid });
+      if (!rateLimit.ok) return rateLimit.response;
+    }
+
     if (segments[0] === 'projects' && segments.length === 3) {
       const [, projectId, resource] = segments;
       if (!projectId || projectId.length > 80) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
       if (resource === 'approvals') {
         if (request.method === 'GET') return await listApprovals(request, db, projectId);
         if (request.method === 'POST') return await createApproval(request, db, identity, projectId);
-        return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, POST' });
       }
       if (resource === 'qa') {
         if (request.method === 'GET') return await listQaChecks(request, db, projectId);
         if (request.method === 'POST') return await createQaCheck(request, db, identity, projectId);
-        return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, POST' });
       }
     }
     if (segments[0] === 'approvals' && segments.length === 2) {
@@ -297,7 +287,7 @@ export async function handleAuthorizedHqRelease({ request, env, segments, identi
       if (request.method === 'PATCH') {
         return await decideApproval(request, db, identity, approvalId);
       }
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'PATCH' });
     }
     if (segments[0] === 'qa' && segments.length === 2) {
       const checkId = segments[1];
@@ -305,7 +295,7 @@ export async function handleAuthorizedHqRelease({ request, env, segments, identi
       if (request.method === 'PATCH') {
         return await updateQaCheck(request, db, identity, checkId);
       }
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'PATCH' });
     }
     return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
   } catch (error) {
