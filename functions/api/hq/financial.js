@@ -21,12 +21,14 @@ function validDate(value, optional = true) {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0,10) !== value ? undefined : value;
 }
 function safeAmount(v) { return Number.isSafeInteger(v) && v >= 0 && v <= MAX_MINOR; }
-function financialYear(date = new Date()) {
-  const y = date.getUTCFullYear();
-  const start = date.getUTCMonth() >= 3 ? y : y - 1;
+export function financialYear(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit' }).formatToParts(date);
+  const y = Number(parts.find(p => p.type === 'year').value);
+  const month = Number(parts.find(p => p.type === 'month').value);
+  const start = month >= 4 ? y : y - 1;
   return String(start) + '-' + String((start + 1) % 100).padStart(2, '0');
 }
-function calculateItems(items) {
+export function calculateItems(items) {
   if (!Array.isArray(items) || items.length < 1 || items.length > 100) return { ok:false, error:'ITEMS_INVALID' };
   const output = [];
   let subtotal = 0, tax = 0, total = 0;
@@ -145,6 +147,7 @@ async function updateQuotation(request, db, identity, id) {
   if (typeof clientId !== 'string' || !await validClientProject(db,clientId,projectId)) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
   const date = x.valid_until === undefined ? existing.valid_until : validDate(x.valid_until);
   if (date === undefined) return error('VALID_UNTIL_INVALID');
+  if (projectId !== null && (typeof projectId !== 'string' || projectId.length > 80)) return error('PROJECT_ID_INVALID');
   const terms = x.terms_markdown === undefined ? existing.terms_markdown : validText(x.terms_markdown,4000);
   if (x.terms_markdown !== undefined && x.terms_markdown !== null && terms === null) return error('TERMS_INVALID');
   const oldItems = await db.prepare('SELECT description,quantity_milli,unit_price_minor,discount_minor,tax_rate_bps FROM quotation_items WHERE quotation_id = ? ORDER BY sort_order,id').bind(id).all();
@@ -163,6 +166,7 @@ async function updateQuotation(request, db, identity, id) {
 }
 async function setQuotationStatus(request, db, identity, id) {
   const parsed = await readHqJson(request); if (!parsed.ok) return parsed.response;
+  if (Object.keys(parsed.value).some(k => k !== 'status')) return error('FIELD_NOT_ALLOWED');
   const status = parsed.value.status;
   if (!STATUSES.has(status)) return error('QUOTATION_STATUS_INVALID');
   const existing = await db.prepare('SELECT status FROM quotations WHERE id=? AND archived_at IS NULL').bind(id).first();
@@ -217,7 +221,7 @@ async function addPayment(request, db, identity, invoiceId) {
   if (!paidAt) return error('PAID_AT_INVALID');
   const key = request.headers.get('idempotency-key') || '';
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(key)) return error('IDEMPOTENCY_KEY_REQUIRED');
-  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,paid_at:paidAt,notes})));
+  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,notes})));
   const hash = [...new Uint8Array(fingerprint)].map(b=>b.toString(16).padStart(2,'0')).join('');
   const prior = await db.prepare('SELECT invoice_id,payment_id,request_fingerprint FROM payment_idempotency_keys WHERE idempotency_key=?').bind(key).first();
   if (prior) return prior.invoice_id === invoiceId && prior.request_fingerprint === hash
