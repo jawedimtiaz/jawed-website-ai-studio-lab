@@ -21,6 +21,7 @@ function validDate(value, optional = true) {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0,10) !== value ? undefined : value;
 }
 function safeAmount(v) { return Number.isSafeInteger(v) && v >= 0 && v <= MAX_MINOR; }
+function roundedBigIntDivision(numerator, denominator) { return (numerator + denominator / 2n) / denominator; }
 export function financialYear(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit' }).formatToParts(date);
   const y = Number(parts.find(p => p.type === 'year').value);
@@ -44,12 +45,16 @@ export function calculateItems(items) {
         !Number.isInteger(x.tax_rate_bps ?? 0) || (x.tax_rate_bps ?? 0) < 0 || (x.tax_rate_bps ?? 0) > 10000) {
       return { ok:false, error:'ITEM_VALUE_INVALID' };
     }
-    const base = Math.round((x.quantity_milli * x.unit_price_minor) / 1000);
+    const baseBig = roundedBigIntDivision(BigInt(x.quantity_milli) * BigInt(x.unit_price_minor), 1000n);
+    if (baseBig > BigInt(Number.MAX_SAFE_INTEGER)) return { ok:false, error:'AMOUNT_OUT_OF_RANGE' };
+    const base = Number(baseBig);
     const discount = x.discount_minor ?? 0;
     if (!Number.isSafeInteger(base) || discount > base) return { ok:false, error:'ITEM_AMOUNT_INVALID' };
     const taxable = base - discount;
     const rate = x.tax_rate_bps ?? 0;
-    const lineTax = Math.round((taxable * rate) / 10000);
+    const lineTaxBig = roundedBigIntDivision(BigInt(taxable) * BigInt(rate), 10000n);
+    if (lineTaxBig > BigInt(Number.MAX_SAFE_INTEGER)) return { ok:false, error:'AMOUNT_OUT_OF_RANGE' };
+    const lineTax = Number(lineTaxBig);
     const lineTotal = taxable + lineTax;
     if (![lineTax,lineTotal].every(Number.isSafeInteger) || lineTotal > MAX_MINOR) return { ok:false, error:'AMOUNT_OUT_OF_RANGE' };
     subtotal += taxable; tax += lineTax; total += lineTotal;
@@ -66,15 +71,19 @@ async function validClientProject(db, clientId, projectId) {
   if (!projectId) return true;
   return !!(await db.prepare('SELECT id FROM projects WHERE id = ? AND client_id = ? AND archived_at IS NULL').bind(projectId,clientId).first());
 }
-async function allocateNumber(db, type) {
+async function allocateNumber(db, type, identity) {
   const fy = financialYear();
   const prefix = type === 'quotation' ? 'QUO' : 'INV';
   const id = type + ':' + fy;
-  await db.prepare(`INSERT INTO financial_sequences (id,document_type,prefix,financial_year,next_number)
-    VALUES (?,?,?,?,1) ON CONFLICT(document_type,financial_year) DO NOTHING`).bind(id,type,prefix,fy).run();
-  const row = await db.prepare(`UPDATE financial_sequences SET next_number = next_number + 1,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    WHERE document_type = ? AND financial_year = ? RETURNING prefix, financial_year, next_number - 1 AS allocated`).bind(type,fy).first();
+  const results = await db.batch([
+    ownerAuthorizationGuardStatement(db, identity),
+    db.prepare(`INSERT INTO financial_sequences (id,document_type,prefix,financial_year,next_number)
+      VALUES (?,?,?,?,1) ON CONFLICT(document_type,financial_year) DO NOTHING`).bind(id,type,prefix,fy),
+    db.prepare(`UPDATE financial_sequences SET next_number = next_number + 1,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE document_type = ? AND financial_year = ? RETURNING prefix, financial_year, next_number - 1 AS allocated`).bind(type,fy)
+  ]);
+  const row = results?.[2]?.results?.[0];
   if (!row || !Number.isSafeInteger(row.allocated)) throw new Error('SEQUENCE_ALLOCATION_FAILED');
   return row.prefix + '/' + row.financial_year + '/' + String(row.allocated).padStart(4,'0');
 }
@@ -115,7 +124,7 @@ async function createDocument(request, db, identity, type) {
   if (date === undefined) return error(dateField.toUpperCase() + '_INVALID');
   const note = validText(type === 'quotation' ? x.terms_markdown : x.notes,4000);
   if ((type === 'quotation' ? x.terms_markdown : x.notes) != null && note === null) return error('TEXT_INVALID');
-  const number = await allocateNumber(db,type);
+  const number = await allocateNumber(db,type,identity);
   const id = crypto.randomUUID();
   const table = type === 'quotation' ? 'quotations' : 'invoices';
   const insert = type === 'quotation'
@@ -184,7 +193,7 @@ async function convertQuotation(db, identity, id) {
   if (existing) return error('QUOTATION_ALREADY_CONVERTED',409);
   const items = await db.prepare('SELECT * FROM quotation_items WHERE quotation_id=? ORDER BY sort_order,id').bind(id).all();
   if (!items.results?.length) return error('QUOTATION_ITEMS_MISSING',409);
-  const number = await allocateNumber(db,'invoice'), invoiceId = crypto.randomUUID();
+  const number = await allocateNumber(db,'invoice',identity), invoiceId = crypto.randomUUID();
   const insert = db.prepare(`INSERT INTO invoices (id,invoice_number,client_id,project_id,quotation_id,status,currency,subtotal_minor,tax_minor,total_minor,amount_paid_minor,notes,created_by)
     VALUES (?,?,?,?,?,'draft','INR',?,?,?,0,?,?) RETURNING *`)
     .bind(invoiceId,number,quote.client_id,quote.project_id,id,quote.subtotal_minor,quote.tax_minor,quote.total_minor,quote.terms_markdown,identity.uid);
