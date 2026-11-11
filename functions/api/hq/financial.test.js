@@ -143,3 +143,36 @@ test('Worker routes financial endpoints through Studio HQ authorization and secu
     assert.equal(response.headers.get('x-frame-options'),'DENY');
   }
 });
+
+
+test('past-due invoices remain overdue in detail, filtered lists, and payment/refund transitions',async()=>{
+  const db=new TestD1();
+  try {
+    seed(db);
+    const created=await call(db,request('/api/hq/invoices','POST',{
+      client_id:'client-1',project_id:'project-1',due_on:'2020-01-01',
+      items:[{...line,tax_rate_bps:0,unit_price_minor:20000}]
+    }),['invoices']);
+    assert.equal(created.status,201);
+    const invoice=(await created.json()).invoice;
+    const issued=await call(db,request('/api/hq/invoices/'+invoice.id+'/issue','POST',{}),['invoices',invoice.id,'issue']);
+    assert.equal(issued.status,200);
+    assert.equal((await issued.json()).invoice.status,'overdue');
+    const listed=await call(db,request('/api/hq/invoices?status=overdue'),['invoices']);
+    assert.equal(listed.status,200);
+    assert.equal((await listed.json()).invoices.length,1);
+    const detail=await call(db,request('/api/hq/invoices/'+invoice.id),['invoices',invoice.id]);
+    assert.equal((await detail.json()).invoice.status,'overdue');
+    const payment=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:5000,payment_method:'upi'
+    },{'idempotency-key':'overdue-payment-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(payment.status,201);
+    assert.equal(db.sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id).status,'overdue');
+    const paid=(await payment.json()).payment;
+    const refund=await call(db,request('/api/hq/payments/'+paid.id+'/refunds','POST',{
+      amount_minor:1000,reason:'Adjustment'
+    },{'idempotency-key':'overdue-refund-key-0001'}),['payments',paid.id,'refunds']);
+    assert.equal(refund.status,201);
+    assert.equal(db.sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id).status,'overdue');
+  } finally {db.close();}
+});
