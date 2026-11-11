@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { calculateItems, financialYear, handleAuthorizedHqFinancial } from './financial.js';
+import worker from '../../../worker.js';
 
 class TestD1 {
   constructor() {
@@ -121,4 +122,13 @@ test('financial APIs reject unsupported currency and unknown fields',async()=>{
     const badItem=await call(db,request('/api/hq/invoices','POST',{client_id:'client-1',items:[{...line,unit_price_minor:1,admin:true}]}),['invoices']);
     assert.equal(badItem.status,400);
   } finally {db.close();}
+});
+
+test('Worker routes financial endpoints through Studio HQ authorization and security headers',async()=>{
+  for(const path of ['/api/hq/quotations','/api/hq/invoices','/api/hq/payments']) {
+    const response=await worker.fetch(new Request('https://lab.jawed.co.in'+path),{}, {});
+    assert.equal(response.status,401);
+    assert.equal(response.headers.get('cache-control'),'no-store, private, max-age=0');
+    assert.equal(response.headers.get('x-frame-options'),'DENY');
+  }
 });
