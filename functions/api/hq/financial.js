@@ -256,7 +256,7 @@ async function addPayment(request, db, identity, invoiceId) {
   if (!paidAt) return error('PAID_AT_INVALID');
   const key = request.headers.get('idempotency-key') || '';
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(key)) return error('IDEMPOTENCY_KEY_REQUIRED');
-  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,paid_at:paidAt,notes})));
+  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,paid_at:x.paid_at == null ? null : paidAt,notes})));
   const hash = [...new Uint8Array(fingerprint)].map(b=>b.toString(16).padStart(2,'0')).join('');
   const prior = await db.prepare('SELECT invoice_id,payment_id,request_fingerprint FROM payment_idempotency_keys WHERE idempotency_key=?').bind(key).first();
   if (prior) return prior.invoice_id === invoiceId && prior.request_fingerprint === hash
