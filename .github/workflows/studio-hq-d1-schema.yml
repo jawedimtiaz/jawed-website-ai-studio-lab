@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - feat/studio-hq-firebase-auth
+      - fix/studio-hq-bounded-json-body
     paths:
       - 'migrations/hq/**'
       - 'scripts/test-hq-migration.mjs'
