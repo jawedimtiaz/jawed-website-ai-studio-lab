@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { getHqClientIp, hqRateLimitResponse, checkHqRateLimit } from './hqRateLimit.js';
+import { getHqClientIp, hqRateLimitResponse, hqRateLimitUnavailableResponse, checkHqRateLimit } from './hqRateLimit.js';
 import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from '../api/hq/session.js';
 import { handleAuthorizedHqClients } from '../api/hq/clients.js';
 import { handleAuthorizedHqProjects } from '../api/hq/projects.js';
@@ -90,10 +90,70 @@ test('hqRateLimitResponse builds RFC-compliant HTTP 429 response', async () => {
   });
 });
 
+test('hqRateLimitUnavailableResponse builds RFC-compliant HTTP 503 response', async () => {
+  const res = hqRateLimitUnavailableResponse();
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get('cache-control'), 'no-store, private, max-age=0');
+  assert.equal(res.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.deepEqual(await res.json(), {
+    ok: false,
+    error: 'RATE_LIMIT_UNAVAILABLE'
+  });
+});
+
 test('checkHqRateLimit passes through safely when no binding is present', async () => {
   const req = new Request('https://lab.jawed.co.in/api/hq/session');
   const result = await checkHqRateLimit(req, {}, { type: 'session' });
   assert.equal(result.ok, true);
+
+  const resultNull = await checkHqRateLimit(req, { HQ_SESSION_LIMITER: null }, { type: 'session' });
+  assert.equal(resultNull.ok, true);
+});
+
+test('checkHqRateLimit returns ok: true when limiter succeeds with success: true', async () => {
+  const limiter = makeLimiter(true);
+  const req = new Request('https://lab.jawed.co.in/api/hq/session');
+  const result = await checkHqRateLimit(req, { HQ_SESSION_LIMITER: limiter }, { type: 'session' });
+  assert.equal(result.ok, true);
+  assert.deepEqual(limiter.calls, ['session:ip:127.0.0.1']);
+});
+
+test('checkHqRateLimit returns 503 RATE_LIMIT_UNAVAILABLE when limiter throws an exception', async () => {
+  const throwingLimiter = {
+    limit: async () => {
+      throw new Error('Cloudflare internal RPC error: rate limiter unreachable');
+    }
+  };
+  const req = new Request('https://lab.jawed.co.in/api/hq/session');
+  const result = await checkHqRateLimit(req, { HQ_SESSION_LIMITER: throwingLimiter }, { type: 'session' });
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 503);
+  assert.equal(result.response.headers.get('cache-control'), 'no-store, private, max-age=0');
+  const body = await result.response.json();
+  assert.deepEqual(body, { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
+  // Verify internal error message/stack is not leaked
+  assert.equal('stack' in body, false);
+  assert.equal('message' in body, false);
+});
+
+test('checkHqRateLimit returns 503 RATE_LIMIT_UNAVAILABLE when limiter returns malformed results', async () => {
+  const malformedOutputs = [
+    null,
+    undefined,
+    {},
+    { success: 'true' },
+    { success: null },
+    { other: 123 }
+  ];
+
+  for (const badOutput of malformedOutputs) {
+    const badLimiter = { limit: async () => badOutput };
+    const req = new Request('https://lab.jawed.co.in/api/hq/session');
+    const result = await checkHqRateLimit(req, { HQ_SESSION_LIMITER: badLimiter }, { type: 'session' });
+    assert.equal(result.ok, false, `Expected failure for output: ${JSON.stringify(badOutput)}`);
+    assert.equal(result.response.status, 503);
+    assert.deepEqual(await result.response.json(), { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
+  }
 });
 
 test('checkHqRateLimit keys pre-auth session requests by IP and enforces limit', async () => {
@@ -134,6 +194,26 @@ test('session endpoint enforces rate limiting before authentication and database
   const body = await res.json();
   assert.equal(body.error, 'RATE_LIMIT_EXCEEDED');
   assert.deepEqual(limiter.calls, ['session:ip:203.0.113.88']);
+});
+
+test('session endpoint returns 503 when limiter throws an exception', async () => {
+  const throwingLimiter = {
+    limit: async () => {
+      throw new Error('RPC failure');
+    }
+  };
+  const req = new Request('https://lab.jawed.co.in/api/hq/session', {
+    method: 'POST',
+    headers: {
+      'authorization': 'Bearer some-token',
+      'cf-connecting-ip': '203.0.113.88'
+    }
+  });
+  const res = await hqSessionPost({ request: req, env: { HQ_SESSION_LIMITER: throwingLimiter } });
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get('cache-control'), 'no-store, private, max-age=0');
+  const body = await res.json();
+  assert.deepEqual(body, { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
 });
 
 test('session OPTIONS endpoint enforces same-origin and returns Allow header', async () => {
@@ -185,6 +265,28 @@ test('clients endpoint enforces UID rate limiting on mutations but permits reads
     assert.equal(postRes.status, 429);
     assert.equal(postRes.headers.get('retry-after'), '60');
     assert.deepEqual(limiter.calls, [`write:uid:${identity.uid}`]);
+
+    // Mutation should fail closed with 503 when write limiter throws
+    const failingEnv = {
+      HQ_DB: db,
+      HQ_WRITE_LIMITER: {
+        limit: async () => {
+          throw new Error('Limiter connection broken');
+        }
+      }
+    };
+    const failRes = await handleAuthorizedHqClients({
+      request: new Request('https://lab.jawed.co.in/api/hq/clients', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Failing Limiter Client' })
+      }),
+      env: failingEnv,
+      segments: [],
+      identity
+    });
+    assert.equal(failRes.status, 503);
+    assert.deepEqual(await failRes.json(), { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
   } finally {
     db.close();
   }

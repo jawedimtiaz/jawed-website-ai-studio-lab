@@ -5,12 +5,13 @@
 Studio HQ is the private operations management console embedded within `jawed-website-ai-studio-lab`. Before introducing financial management capabilities (quotations, invoices, payments, and accounting records), this consolidated security readiness review establishes the defensive boundaries, authorization controls, revocation behaviors, and rate-limiting readiness of the Studio HQ platform.
 
 This phase enforces a bounded security perimeter under strict project governance:
-- **Zero-Cost Architecture**: Operates 100% within free-tier allowances (Cloudflare Workers Free, Cloudflare D1 Free, Firebase Spark Plan). No paid subscriptions, paid APIs, external SaaS, or fallback services are used.
+- **Zero-Cost Architecture**: Evaluated strictly for compatibility with free-tier allowances (Cloudflare Workers Free, Cloudflare D1 Free, Firebase Spark Plan). No paid subscriptions, paid APIs, external SaaS, or fallback services are used.
 - **Zero Secret Footprint**: No service account keys, private API secrets, or credential files are embedded or stored in Cloudflare Workers.
 - **No In-Flight Schema Mutations**: No D1 migrations were executed or modified during this review.
-- **No Cloudflare Infrastructure Changes**: Neither `wrangler.toml` nor Cloudflare account bindings/settings were modified.
-- **Preview Isolation**: Strict isolation between public website routes, existing AI/contact endpoints, and private Studio HQ management APIs.
-- **Verification Guarantee**: 102 automated unit and integration tests passing across all authentication, authorization, rate limiting, and data boundary layers.
+- **No Cloudflare Infrastructure Changes**: Neither `wrangler.toml` nor Cloudflare account bindings/settings were modified. Rate-limiting bindings are deferred pending separate review.
+- **Code Readiness vs. Active Rate Limiting**: The code for rate limiting is fully implemented and tested with fail-closed behavior, but **rate limiting is not currently active in the deployed Worker** because no bindings are currently configured.
+- **Simulation Boundary**: All automated verification is currently based on local, simulated unit and integration tests (`npm run test:hq-auth`). **No preview or production deployment verification has yet occurred.**
+- **Verification Guarantee**: 107 automated unit and integration tests passing across all authentication, owner authorization, rate limiting error handling, and data boundary layers.
 
 ---
 
@@ -115,8 +116,8 @@ A critical distinction must be maintained between cryptographic JWT verification
 ### 3.3 What Happens When an Owner Is Disabled or Revoked
 
 1. **Owner Disabled in Cloudflare D1 (`UPDATE hq_users SET status = 'disabled'`):**
-   - **Read Requests**: Instantly denied on the very next HTTP request with HTTP 403 `OWNER_DISABLED`. (0-second propagation delay).
-   - **Write Requests**: Instantly denied at authorization check. If an in-flight race occurs, the transaction-time guard (`ownerAuthorizationGuardStatement`) aborts the D1 batch atomically.
+   - **Read Requests**: An owner disabled in D1 will be denied on the next successful database authorization check against `hq_users` with HTTP 403 `OWNER_DISABLED`. Because Cloudflare D1 uses distributed read replicas, edge consistency depends on D1 replication latency across edge locations; global instantaneous consistency is not claimed without empirical edge measurement.
+   - **Write Requests**: Denied at the initial D1 lookup. If a concurrent race occurs between lookup and batch execution, the transaction-time guard (`ownerAuthorizationGuardStatement`) executes within the same atomic D1 batch, causing an intentional SQLite evaluation error that rolls back the entire mutation.
 2. **Owner Disabled or Refresh Tokens Revoked in Firebase Console Only:**
    - Because the Worker does not make outbound network calls to Firebase on every request, the existing Firebase ID token remains cryptographically valid until its 1-hour expiration timestamp.
    - The disabled user could continue accessing Studio HQ for up to 60 minutes **unless** they are also disabled in D1.
@@ -125,11 +126,11 @@ A critical distinction must be maintained between cryptographic JWT verification
 
 ### 3.4 Operational Revocation Requirement
 Because Studio HQ's true authorization authority is Cloudflare D1:
-> **Operational Rule**: To immediately terminate an owner's access, an administrator must update the `hq_users` record in Cloudflare D1:
+> **Operational Rule**: To revoke an owner's access, an administrator must update the `hq_users` record in Cloudflare D1:
 > ```sql
 > UPDATE hq_users SET status = 'disabled' WHERE uid = '<FIREBASE_UID>';
 > ```
-> Disabling an owner in the Firebase Console alone is subject to a 60-minute token expiration window.
+> An owner disabled in D1 will be denied on the next successful database authorization check. Disabling an owner in the Firebase Console alone is subject to a 60-minute token expiration window.
 
 ---
 
@@ -148,8 +149,8 @@ Studio HQ uses the Dual-Gate Local Authority model:
    - *Advantage*: Zero external API latency, zero secret leakage risk, zero risk of third-party API rate exhaustion.
    - *Trade-off*: Edge worker does not detect Firebase-side refresh token revocations until the 1-hour JWT expires.
 2. **Authoritative Local Control in D1**:
-   - *Advantage*: Revocation in D1 is instantaneous (0 seconds), globally consistent, and transactions rollback atomically.
-   - *Trade-off*: Administrators must manage owner statuses via Cloudflare D1 operational SQL rather than relying solely on the Firebase Console.
+   - *Advantage*: Revocation in D1 takes effect on the next successful database check without relying on external network calls or secrets.
+   - *Trade-off*: Administrators must manage owner statuses via Cloudflare D1 operational SQL rather than relying solely on the Firebase Console, and edge visibility depends on D1 replica synchronization.
 3. **No Session Table / No KV Binding**:
    - *Advantage*: Zero database write overhead for sessions (preserving D1's 100k daily write limit for business data).
    - *Trade-off*: Every API call carries the Firebase ID token in the `Authorization: Bearer` header.
@@ -158,27 +159,27 @@ Studio HQ uses the Dual-Gate Local Authority model:
 
 ## 5. Rate-Limiting Assessment & Free-Tier Eligibility
 
-### 5.1 Cloudflare Workers Rate Limiting API Free-Tier Eligibility
+### 5.1 Cloudflare Workers Rate Limiting API Documentation & Eligibility Status
 
-Cloudflare natively supports Rate Limiting bindings (`[[ratelimits]]`) on the **Workers Free ($0) plan**.
-- **Usage Cost**: Free. Invoking `env.LIMITER.limit({ key })` incurs no standalone fee and does not require a paid plan or credit card attachment.
-- **Quota Consumption**: Invocations count toward the standard Workers Free limit of 100,000 requests/day and the 10ms CPU time allocation per request.
-- **Supported Window Periods**: Cloudflare Rate Limiting simple configurations on the free tier restrict periods to either `10` seconds or `60` seconds.
+Cloudflare documents the Workers Rate Limiting API (`[[ratelimits]]` bindings in `wrangler.toml`) and its simple configuration block syntax (`limit`, `period`, `namespace_id`).
+- **Documentation & Plan Status**: Cloudflare documentation states that simple rate-limiting bindings are available for Workers projects. However, **account-specific free-tier eligibility, quota thresholds, and binding activation availability must be independently confirmed on the active Cloudflare account before activation**, rather than assuming global free availability.
+- **Quota Consumption Context**: If available under the Workers Free plan, invocations consume standard daily request quota (100,000 requests/day) and standard 10ms CPU time allowances without standalone feature fees.
+- **Supported Window Periods**: Cloudflare Rate Limiting simple configurations are constrained to periods of either `10` seconds or `60` seconds.
 
 ### 5.2 Accuracy and Geographical Limitations
 
 1. **Edge-Localized and Eventually Consistent**:
    - Rate limit counters are distributed across Cloudflare's global edge network (over 300 data centers).
-   - Counters synchronize asynchronously in the background. Under sudden, globally coordinated burst attacks across multiple geographical PoPs, actual request counts may slightly exceed the configured threshold before global edge convergence locks the key down.
+   - Counters synchronize asynchronously across PoPs. Under rapid, geographically distributed requests across multiple edge locations, actual request counts may slightly exceed the configured threshold before global edge convergence locks down the key.
 2. **Free Tier Observability Limitations**:
-   - The Cloudflare dashboard does not render dedicated rate-limiting graphs or metrics for Free plan bindings. Verification and telemetry rely on Workers Logs / Traces or application-level audit logs.
+   - The Cloudflare dashboard does not provide dedicated rate-limiting analytics or charts for simple Free plan bindings. Verification and telemetry rely on Workers Logs / Traces or application-level audit logs.
 
 ### 5.3 Identity Separation & IP Defense
 
 1. **Pre-Authentication Requests (`POST /api/hq/session`)**:
    - At this stage, the caller's identity is unverified.
    - **Key**: Client IP address, extracted via `cf-connecting-ip`, first hop of `x-forwarded-for`, or fallback (`session:ip:<ip>`).
-   - **Proposed Limit**: 10 requests per 60 seconds. Prevents brute-force session establishment and certificate exhaustion.
+   - **Proposed Limit**: 10 requests per 60 seconds. Intended to throttle brute-force session establishment and certificate endpoint floods once activated.
 2. **Authenticated Owner Mutations (`POST`, `PATCH` on `/api/hq/*`)**:
    - **Key**: Authenticated Firebase UID (`write:uid:<uid>`).
    - **Why UID is Required**: Multiple owners or collaborators frequently share an egress IP (corporate networks, office Wi-Fi, CGNAT, cellular hotspots). Keying on IP would cause noisy-neighbor lockouts. Furthermore, an attacker possessing an owner token cannot evade rate limits by rotating IP addresses or proxies.
@@ -188,12 +189,17 @@ Cloudflare natively supports Rate Limiting bindings (`[[ratelimits]]`) on the **
    - Status: `429 Too Many Requests`
    - Headers: `Retry-After: 60`, `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store, private, max-age=0`, `Pragma: no-cache`
    - Body: `{"ok": false, "error": "RATE_LIMIT_EXCEEDED", "retryAfter": 60}`
+4. **Limiter Failure Standard (HTTP 503)**:
+   If a configured binding throws an exception or returns an invalid/malformed response, the application fails closed:
+   - Status: `503 Service Unavailable`
+   - Headers: `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store, private, max-age=0`
+   - Body: `{"ok": false, "error": "RATE_LIMIT_UNAVAILABLE"}`
 
-### 5.4 Implementation State in Phase 2.6.25
+### 5.4 Implementation State: Code Readiness vs. Active Enforcement
 
-- **Implemented**: `functions/lib/hqRateLimit.js` implements `checkHqRateLimit`, `getHqClientIp`, and `hqRateLimitResponse`. All session and mutation routes invoke this helper.
-- **Fail-Safe Passthrough**: If the rate limiter binding is absent in `env` (as in local tests or prior to `wrangler.toml` updates), the helper safely passes through (`{ ok: true }`).
-- **Wrangler Constraint**: In accordance with the prompt instruction (*"Do not change wrangler.toml or Cloudflare bindings unless the free-tier availability and required configuration are documented and separately approved"*), `wrangler.toml` was **not modified**. The proposed configuration is documented in [Section 9](#9-deployment-prerequisites).
+- **Implemented Code**: `functions/lib/hqRateLimit.js` implements `checkHqRateLimit`, `getHqClientIp`, `hqRateLimitResponse`, and `hqRateLimitUnavailableResponse`. All session and mutation routes invoke this helper. When a binding exists, it enforces the limit and fails closed (HTTP 503 `RATE_LIMIT_UNAVAILABLE`) if the binding throws or fails.
+- **Active Rate Limiting Status: INACTIVE**: Because no bindings are currently configured in `wrangler.toml` or bound in the Cloudflare environment, **rate limiting is not currently active in the deployed Worker**. In the absence of bindings, the helper safely passes through (`{ ok: true }`) so existing workflows are not broken prior to binding approval.
+- **Wrangler Constraint Maintained**: In accordance with the prompt instruction (*"Do not change wrangler.toml or Cloudflare bindings unless the free-tier availability and required configuration are documented and separately approved"*), `wrangler.toml` was **not modified**. The proposed configuration is documented in [Section 9](#9-deployment-prerequisites).
 
 ---
 
@@ -269,16 +275,16 @@ A line-by-line security review was performed across all 25 Studio HQ routes and 
 
 | Priority | Risk Description | Severity | Likelihood | Mitigation Status | Action / Governance |
 | :---: | :--- | :---: | :---: | :--- | :--- |
-| **P1** | **Firebase-Only Revocation Gap**: Disabling an owner in Firebase Console leaves the current 1-hour ID token valid at the edge until expiration. | Medium | Low | **Mitigated**: D1 `hq_users` table is the local authority. Disabling an owner in D1 immediately blocks access (0 seconds). | Documented operational rule: emergency revocation must be executed in D1. |
-| **P2** | **Session Brute-Force without Cloudflare Rate Limiter Binding**: In preview environments where `[[ratelimits]]` is not yet configured, unauthenticated callers could repeatedly submit invalid tokens. | Medium | Low | **Mitigated**: `checkHqRateLimit` code is ready; Google token verification fails closed; certificate caching prevents external flood. | Add `[[ratelimits]]` to `wrangler.toml` upon deployment approval. |
-| **P3** | **Eventual Consistency of Edge Rate Limiting**: Distributed bursts across multiple global Cloudflare PoPs could slightly exceed rate limit thresholds before edge synchronization. | Low | Low | **Accepted**: Inherent to Cloudflare edge architecture. 10 req/min session threshold provides ample margin. | Monitor via Cloudflare Workers tracing. |
+| **P1** | **Firebase-Only Revocation Gap**: Disabling an owner in Firebase Console leaves the current 1-hour ID token valid at the edge until expiration. | Medium | Low | **Operational Boundary**: D1 `hq_users` table is the local authority. An owner disabled in D1 is denied on the next successful database authorization check. | Operational rule: emergency revocation must be executed in D1. Edge consistency depends on D1 replica synchronization. |
+| **P2** | **Session Brute-Force without Cloudflare Rate Limiter Binding**: In preview and production environments where `[[ratelimits]]` is not yet configured, unauthenticated callers could repeatedly submit authentication attempts. | Medium | Medium | **Open / Deferred**: Rate limiting is not currently active in the deployed Worker because bindings are not configured. | Code-level readiness and fail-closed error handling are complete, but edge protection remains open until bindings are confirmed eligible, added to `wrangler.toml`, and verified in preview. |
+| **P3** | **Eventual Consistency of Edge Rate Limiting**: Distributed bursts across multiple global Cloudflare PoPs could slightly exceed rate limit thresholds before edge synchronization. | Low | Low | **Accepted**: Inherent to Cloudflare edge architecture. 10 req/min session threshold provides ample margin. | Monitor via Cloudflare Workers tracing once bindings are activated. |
 | **P4** | **Concurrent Archival / Update Race**: Two concurrent update requests could race against record archival. | Low | Low | **Mitigated**: Atomic `WHERE archived_at IS NULL` condition and `conditionalAuditStatement` guarantee zero phantom records. | Fully verified by automated tests. |
 
 ---
 
 ## 8. Preview Verification Test Matrix
 
-This matrix establishes the verification plan for deployed preview environments. Each scenario distinguishes automated simulated evidence from manual deployed verification evidence:
+> **Simulation Evidence Notice**: All automated test evidence reported in this matrix represents **local, simulated automated unit and integration tests** executed in Node.js (`npm run test:hq-auth`). **No preview or production deployment verification has yet occurred.** The procedure column defines the operational verification protocol to be executed once a deployed preview environment is provisioned with D1 and rate-limiting bindings.
 
 | ID | Test Scenario | Request Method & Path | Headers / Payload | Expected Status & Response | Automated Test Verification | Preview Deployed Verification Procedure |
 | :---: | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -323,10 +329,10 @@ Before deploying Studio HQ to production or activating rate limiting bindings in
    ```
 
 ### 9.3 Step 3 — Cloudflare Workers Rate Limiting Configuration Approval
-To activate edge rate limiting under the Workers Free plan, add the following configuration to `wrangler.toml` upon separate review and approval:
+To activate edge rate limiting under the Workers Free plan, independently confirm account-specific free-tier eligibility for the target Cloudflare account, and add the following configuration to `wrangler.toml` upon separate review and approval:
 
 ```toml
-# Proposed Cloudflare Workers Free Rate Limiting Bindings
+# Proposed Cloudflare Workers Free Rate Limiting Bindings (Subject to Account Eligibility Confirmation)
 [[ratelimits]]
 name = "HQ_SESSION_LIMITER"
 namespace_id = "1001"
@@ -341,7 +347,7 @@ namespace_id = "1002"
 limit = 30
 period = 60
 ```
-*Note*: The application code in `functions/lib/hqRateLimit.js` automatically binds to `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER` when present, and safely passes through when absent.
+*Note*: The application code in `functions/lib/hqRateLimit.js` automatically binds to `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER` when present, enforces fail-closed behavior on limiter exceptions, and safely passes through when absent.
 
 ### 9.4 Step 4 — Verification Gate Execution
 Run the complete automated test suite before any deployment:
@@ -360,9 +366,10 @@ git diff --check
 | :--- | :--- | :---: |
 | **Financial Management Handlers** (Quotations, Invoices, Payments) | Out of scope for this bounded security readiness phase. Bounded to authentication, authorization, and rate limiting foundations. | Phase 2.7 |
 | **`wrangler.toml` Rate Limiting Bindings Addition** | Prompt restriction: *"Do not change wrangler.toml or Cloudflare bindings unless the free-tier availability and required configuration are documented and separately approved."* Code readiness was achieved while configuration is deferred for approval. | Deployment Configuration Phase |
+| **Deployed Preview & Production Verification** | Prompt restriction: *"No deployment."* Work remains cleanly on branch `feat/studio-hq-security-readiness-phase-2-6-25`. All tests currently represent local simulated test evidence. | Deployed Preview Gate |
 | **D1 Session Table Schema Migration** | Prompt restriction: *"No D1 migration or database mutation."* Session management relies on the dual-gate D1 user status authority without requiring a new database migration. | Future Architecture Review |
 | **Firebase Admin SDK / Outbound Revocation API** | Strictly prohibited by the zero-cost architecture policy and no-secrets rule. Introducing Google service account credentials or outbound per-request API calls violates the core system contract. | Permanently Excluded |
-| **Live Cloudflare Production Deployment** | Prompt restriction: *"No deployment."* Work remains cleanly on branch `feat/studio-hq-security-readiness-phase-2-6-25`. | Post-Review Release Gate |
+| **Live Cloudflare Production Deployment** | Prompt restriction: *"No deployment."* No production deployment occurred. | Post-Review Release Gate |
 
 ---
 
@@ -370,6 +377,7 @@ git diff --check
 
 Studio HQ is certified as **security-ready** for subsequent financial management expansion:
 - All 25 private HQ routes enforce strict same-origin, Bearer JWT validation, exact owner allowlist verification, and authoritative D1 status checks.
-- Zero-cost architecture compliance is 100% verified.
+- Zero-cost architecture compliance is verified.
 - Concurrency and zero-row mutation races are guarded by atomic SQL transactions and conditional audit logging.
-- Rate limiting is architected, implemented in code, and fully covered by 102 automated tests.
+- Rate limiting is architected, implemented in code with fail-closed 503 error handling, and fully covered by 107 automated tests (with edge activation deferred until `wrangler.toml` bindings are approved).
+- No preview or production deployment has occurred; all findings are grounded in verified codebase implementations and local automated test suites.
