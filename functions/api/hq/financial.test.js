@@ -99,10 +99,20 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     const replay=await call(db,payReq(),['invoices',invoice.id,'payments']);
     assert.equal(replay.status,200);
     assert.equal((await replay.json()).replayed,true);
+    const changedPaidAt=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:60000,payment_method:'upi',reference_number:'UPI-TEST',paid_at:'2026-11-10T10:00:00.000Z'
+    },{'idempotency-key':'payment-test-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(changedPaidAt.status,409);
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payments').get().n,1);
 
-    const refund=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:10000,reason:'Partial refund'}),['payments',payment.id,'refunds']);
+    const refundReq=()=>request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:10000,reason:'Partial refund',refunded_at:'2026-11-11T09:00:00.000Z'},{'idempotency-key':'refund-test-key-0001'});
+    const refund=await call(db,refundReq(),['payments',payment.id,'refunds']);
     assert.equal(refund.status,201);
+    const refundReplay=await call(db,refundReq(),['payments',payment.id,'refunds']);
+    assert.equal(refundReplay.status,200);
+    assert.equal((await refundReplay.json()).replayed,true);
+    const shortReason=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:1000,reason:'x'},{'idempotency-key':'refund-test-key-0002'}),['payments',payment.id,'refunds']);
+    assert.equal(shortReason.status,400);
 
     const excessive=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:60000,reason:'Too much'}),['payments',payment.id,'refunds']);
     assert.equal(excessive.status,409);
@@ -110,6 +120,7 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     const finalInvoice=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
     assert.equal(finalInvoice.amount_paid_minor,50000);
     assert.equal(finalInvoice.status,'partially-paid');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_refunds').get().n,1);
     assert.ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('quotation','invoice','payment','payment_refund')").get().n>=5);
   } finally {db.close();}
 });
