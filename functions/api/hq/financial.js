@@ -22,7 +22,8 @@ function validDate(value, optional = true) {
 }
 function safeAmount(v) { return Number.isSafeInteger(v) && v >= 0 && v <= MAX_MINOR; }
 function roundedBigIntDivision(numerator, denominator) { return (numerator + denominator / 2n) / denominator; }
-export function financialYear(date = new Date()) {
+export function indiaDate(date = new Date()) { return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit' }).format(date); }
+function financialYear(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit' }).formatToParts(date);
   const y = Number(parts.find(p => p.type === 'year').value);
   const month = Number(parts.find(p => p.type === 'month').value);
@@ -111,7 +112,7 @@ async function listDocuments(db, table, request) {
 async function createDocument(request, db, identity, type) {
   const parsed = await readHqJson(request); if (!parsed.ok) return parsed.response;
   const x = parsed.value;
-  const allowed = new Set(['client_id','project_id','items','valid_until','terms_markdown','due_on','notes']);
+  const allowed = new Set(type === 'quotation' ? ['client_id','project_id','items','valid_until','terms_markdown'] : ['client_id','project_id','items','due_on','notes']);
   if (Object.keys(x).some(k => !allowed.has(k))) return error('FIELD_NOT_ALLOWED');
   const clientId = validText(x.client_id,80,true), projectId = x.project_id ? validText(x.project_id,80,true) : null;
   if (!clientId) return error('CLIENT_ID_REQUIRED');
@@ -153,7 +154,8 @@ async function updateQuotation(request, db, identity, id) {
   const x = parsed.value;
   if (Object.keys(x).some(k => !['client_id','project_id','items','valid_until','terms_markdown'].includes(k))) return error('FIELD_NOT_ALLOWED');
   const clientId = x.client_id ?? existing.client_id, projectId = x.project_id === undefined ? existing.project_id : x.project_id;
-  if (typeof clientId !== 'string' || !await validClientProject(db,clientId,projectId)) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
+  if (typeof clientId !== 'string' || (projectId !== null && (typeof projectId !== 'string' || projectId.length > 80))) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
+  if (!await validClientProject(db,clientId,projectId)) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
   const date = x.valid_until === undefined ? existing.valid_until : validDate(x.valid_until);
   if (date === undefined) return error('VALID_UNTIL_INVALID');
   if (projectId !== null && (typeof projectId !== 'string' || projectId.length > 80)) return error('PROJECT_ID_INVALID');
@@ -213,7 +215,7 @@ async function issueInvoice(db, identity, id) {
   const existing = await db.prepare('SELECT * FROM invoices WHERE id=? AND archived_at IS NULL').bind(id).first();
   if (!existing) return error('INVOICE_NOT_FOUND',404);
   const result = await db.batch([ownerAuthorizationGuardStatement(db,identity),
-    db.prepare("UPDATE invoices SET status='issued',issued_on=date('now'),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft' AND total_minor>0").bind(id),
+    db.prepare("UPDATE invoices SET status='issued',issued_on=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft' AND total_minor>0").bind(indiaDate(),id),
     conditionalAuditStatement(db,identity,'invoice.issue','invoice',id,crypto.randomUUID(),{status:'draft'},{status:'issued'})]);
   if ((result?.[1]?.meta?.changes ?? 0) !== 1) return error('INVOICE_NOT_ISSUABLE',409);
   return hqJson({ok:true,invoice:await getDocument(db,'invoice',id)});
