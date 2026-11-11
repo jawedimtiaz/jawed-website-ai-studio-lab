@@ -314,7 +314,7 @@ async function addRefund(request, db, identity, paymentId) {
     SELECT ?,?,?,?,? WHERE changes()=1`).bind(crypto.randomUUID(),key,paymentId,id,fingerprint);
   const results=await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,idem,
     db.prepare(`UPDATE invoices SET amount_paid_minor =
-      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id)
+      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
       - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id),
       status=CASE
         WHEN total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
