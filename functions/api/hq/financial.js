@@ -23,7 +23,7 @@ function validDate(value, optional = true) {
 function safeAmount(v) { return Number.isSafeInteger(v) && v >= 0 && v <= MAX_MINOR; }
 function roundedBigIntDivision(numerator, denominator) { return (numerator + denominator / 2n) / denominator; }
 export function indiaDate(date = new Date()) { return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit' }).format(date); }
-function financialYear(date = new Date()) {
+export function financialYear(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit' }).formatToParts(date);
   const y = Number(parts.find(p => p.type === 'year').value);
   const month = Number(parts.find(p => p.type === 'month').value);
