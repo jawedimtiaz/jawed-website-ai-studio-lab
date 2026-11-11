@@ -176,3 +176,47 @@ test('past-due invoices remain overdue in detail, filtered lists, and payment/re
     assert.equal(db.sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id).status,'overdue');
   } finally {db.close();}
 });
+
+
+test('refund balance recalculation excludes archived payments',async()=>{
+  const db=new TestD1();
+  try {
+    seed(db);
+    const created=await call(db,request('/api/hq/invoices','POST',{
+      client_id:'client-1',project_id:'project-1',due_on:'2027-01-01',
+      items:[{...line,tax_rate_bps:0,unit_price_minor:20000}]
+    }),['invoices']);
+    assert.equal(created.status,201);
+    const invoice=(await created.json()).invoice;
+    const issued=await call(db,request('/api/hq/invoices/'+invoice.id+'/issue','POST',{}),['invoices',invoice.id,'issue']);
+    assert.equal(issued.status,200);
+
+    const first=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:3000,payment_method:'upi'
+    },{'idempotency-key':'archived-payment-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(first.status,201);
+    const archivedPayment=(await first.json()).payment;
+
+    const second=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:5000,payment_method:'upi'
+    },{'idempotency-key':'active-payment-key-00001'}),['invoices',invoice.id,'payments']);
+    assert.equal(second.status,201);
+    const activePayment=(await second.json()).payment;
+
+    db.sqlite.prepare('UPDATE payments SET archived_at=? WHERE id=?').run('2026-11-11T10:00:00.000Z',archivedPayment.id);
+
+    const refund=await call(db,request('/api/hq/payments/'+activePayment.id+'/refunds','POST',{
+      amount_minor:1000,reason:'Partial adjustment'
+    },{'idempotency-key':'active-refund-key-00001'}),['payments',activePayment.id,'refunds']);
+    assert.equal(refund.status,201);
+
+    const stored=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
+    assert.equal(stored.amount_paid_minor,4000);
+    assert.equal(stored.status,'partially-paid');
+
+    const detail=await call(db,request('/api/hq/invoices/'+invoice.id),['invoices',invoice.id]);
+    const result=(await detail.json()).invoice;
+    assert.equal(result.amount_paid_minor,4000);
+    assert.equal(result.status,'partially-paid');
+  } finally {db.close();}
+});
