@@ -4,6 +4,7 @@ import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } 
 import { handleHqClients } from './functions/api/hq/clients.js';
 import { handleHqProjects } from './functions/api/hq/projects.js';
 import { handleHqRelease } from './functions/api/hq/release.js';
+import { handleHqFinancial } from './functions/api/hq/financial.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -104,7 +105,14 @@ export default {
       return addSecurityHeaders(response);
     }
 
-    // 6. Handle /api/ai endpoints
+    // 6. Private Studio HQ financial endpoints.
+    if (['/api/hq/quotations','/api/hq/invoices','/api/hq/payments'].some(base => pathname === base || pathname === base + '/' || pathname.startsWith(base + '/'))) {
+      const segments = pathname.replace(/\/$/, '').split('/').slice(3);
+      const response = await handleHqFinancial({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 7. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -122,7 +130,7 @@ export default {
       });
     }
 
-    // 7. Handle /api/contact endpoints
+    // 8. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -140,7 +148,7 @@ export default {
       });
     }
 
-    // 8. Handle /api/contact/log endpoint
+    // 9. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
@@ -180,7 +188,7 @@ export default {
       });
     }
 
-    // 9. Reject other /api/* with standard 404 JSON
+    // 10. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
@@ -188,7 +196,7 @@ export default {
       }));
     }
 
-    // 10. Serve static assets via Cloudflare Workers Assets binding if present
+    // 11. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
