@@ -152,26 +152,16 @@ async function updateQuotation(request, db, identity, id) {
   if (existing.status !== 'draft') return error('ONLY_DRAFT_QUOTATIONS_EDITABLE',409);
   const parsed = await readHqJson(request); if (!parsed.ok) return parsed.response;
   const x = parsed.value;
-  if (Object.keys(x).some(k => !['client_id','project_id','items','valid_until','terms_markdown'].includes(k))) return error('FIELD_NOT_ALLOWED');
-  const clientId = x.client_id ?? existing.client_id, projectId = x.project_id === undefined ? existing.project_id : x.project_id;
-  if (typeof clientId !== 'string' || (projectId !== null && (typeof projectId !== 'string' || projectId.length > 80))) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
-  if (!await validClientProject(db,clientId,projectId)) return error('CLIENT_OR_PROJECT_NOT_FOUND',404);
+  if (Object.keys(x).some(k => !['valid_until','terms_markdown'].includes(k))) return error('FIELD_NOT_ALLOWED');
   const date = x.valid_until === undefined ? existing.valid_until : validDate(x.valid_until);
   if (date === undefined) return error('VALID_UNTIL_INVALID');
-  if (projectId !== null && (typeof projectId !== 'string' || projectId.length > 80)) return error('PROJECT_ID_INVALID');
   const terms = x.terms_markdown === undefined ? existing.terms_markdown : validText(x.terms_markdown,4000);
   if (x.terms_markdown !== undefined && x.terms_markdown !== null && terms === null) return error('TERMS_INVALID');
-  const oldItems = await db.prepare('SELECT description,quantity_milli,unit_price_minor,discount_minor,tax_rate_bps FROM quotation_items WHERE quotation_id = ? ORDER BY sort_order,id').bind(id).all();
-  const calculated = calculateItems(x.items === undefined ? oldItems.results : x.items);
-  if (!calculated.ok) return error(calculated.error);
-  const update = db.prepare(`UPDATE quotations SET client_id=?,project_id=?,subtotal_minor=?,tax_minor=?,total_minor=?,valid_until=?,terms_markdown=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft'`)
-    .bind(clientId,projectId,calculated.subtotal_minor,calculated.tax_minor,calculated.total_minor,date,terms,id);
-  const statements = [ownerAuthorizationGuardStatement(db,identity),update,
-    db.prepare('DELETE FROM quotation_items WHERE quotation_id=?').bind(id),
-    ...itemInsert(db,'quotation_items','quotation_id',id,calculated.items),
+  const update = db.prepare(`UPDATE quotations SET valid_until=?,terms_markdown=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE id=? AND status='draft' AND archived_at IS NULL`).bind(date,terms,id);
+  const results = await db.batch([ownerAuthorizationGuardStatement(db,identity),update,
     conditionalAuditStatement(db,identity,'quotation.update','quotation',id,crypto.randomUUID(),
-      {total_minor:existing.total_minor},{total_minor:calculated.total_minor})];
-  const results = await db.batch(statements);
+      {valid_until:existing.valid_until,terms_markdown:existing.terms_markdown},{valid_until:date,terms_markdown:terms})]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return error('QUOTATION_NOT_EDITABLE',409);
   return hqJson({ok:true,quotation:await getDocument(db,'quotation',id)});
 }
