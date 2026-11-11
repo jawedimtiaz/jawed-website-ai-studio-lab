@@ -11,7 +11,7 @@ This phase enforces a bounded security perimeter under strict project governance
 - **No Cloudflare Infrastructure Changes**: Neither `wrangler.toml` nor Cloudflare account bindings/settings were modified. Rate-limiting bindings are deferred pending separate review.
 - **Code Readiness vs. Active Rate Limiting**: The code for rate limiting is fully implemented and tested with fail-closed behavior, but **rate limiting is not currently active in the deployed Worker** because no bindings are currently configured.
 - **Simulation Boundary**: All automated verification is currently based on local, simulated unit and integration tests (`npm run test:hq-auth`). **No preview or production deployment verification has yet occurred.**
-- **Verification Guarantee**: 107 automated unit and integration tests passing across all authentication, owner authorization, rate limiting error handling, and data boundary layers.
+- **Verification Guarantee**: 111 automated unit and integration tests passing across all authentication, owner authorization, rate limiting error handling, and data boundary layers.
 
 ---
 
@@ -190,15 +190,15 @@ Cloudflare documents the Workers Rate Limiting API (`[[ratelimits]]` bindings in
    - Headers: `Retry-After: 60`, `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store, private, max-age=0`, `Pragma: no-cache`
    - Body: `{"ok": false, "error": "RATE_LIMIT_EXCEEDED", "retryAfter": 60}`
 4. **Limiter Failure Standard (HTTP 503)**:
-   If a configured binding throws an exception or returns an invalid/malformed response, the application fails closed:
+   If a supported rate-limiter binding is present in `env` but null, malformed, non-callable (e.g. an empty object or primitive), throws an exception, or returns an invalid/malformed response, the application fails closed:
    - Status: `503 Service Unavailable`
    - Headers: `Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store, private, max-age=0`
    - Body: `{"ok": false, "error": "RATE_LIMIT_UNAVAILABLE"}`
 
 ### 5.4 Implementation State: Code Readiness vs. Active Enforcement
 
-- **Implemented Code**: `functions/lib/hqRateLimit.js` implements `checkHqRateLimit`, `getHqClientIp`, `hqRateLimitResponse`, and `hqRateLimitUnavailableResponse`. All session and mutation routes invoke this helper. When a binding exists, it enforces the limit and fails closed (HTTP 503 `RATE_LIMIT_UNAVAILABLE`) if the binding throws or fails.
-- **Active Rate Limiting Status: INACTIVE**: Because no bindings are currently configured in `wrangler.toml` or bound in the Cloudflare environment, **rate limiting is not currently active in the deployed Worker**. In the absence of bindings, the helper safely passes through (`{ ok: true }`) so existing workflows are not broken prior to binding approval.
+- **Implemented Code**: `functions/lib/hqRateLimit.js` implements `checkHqRateLimit`, `getHqClientIp`, `hqRateLimitResponse`, and `hqRateLimitUnavailableResponse`. All session and mutation routes invoke this helper. When a supported binding is present in `env`, it enforces the limit and fails closed (HTTP 503 `RATE_LIMIT_UNAVAILABLE`) if the binding is null, malformed, non-callable, throws, or returns invalid results.
+- **Active Rate Limiting Status: INACTIVE**: Because no bindings are currently configured in `wrangler.toml` or bound in the Cloudflare environment, **rate limiting is not currently active in the deployed Worker**. Only when no supported rate-limiter binding is configured in `env` does the helper safely pass through (`{ ok: true }`) so existing workflows are not broken prior to binding approval.
 - **Wrangler Constraint Maintained**: In accordance with the prompt instruction (*"Do not change wrangler.toml or Cloudflare bindings unless the free-tier availability and required configuration are documented and separately approved"*), `wrangler.toml` was **not modified**. The proposed configuration is documented in [Section 9](#9-deployment-prerequisites).
 
 ---
@@ -347,7 +347,7 @@ namespace_id = "1002"
 limit = 30
 period = 60
 ```
-*Note*: The application code in `functions/lib/hqRateLimit.js` automatically binds to `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER` when present, enforces fail-closed behavior on limiter exceptions, and safely passes through when absent.
+*Note*: The application code in `functions/lib/hqRateLimit.js` automatically binds to `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER` when present, enforces fail-closed behavior on limiter exceptions or malformed/null bindings, and safely passes through only when unconfigured.
 
 ### 9.4 Step 4 — Verification Gate Execution
 Run the complete automated test suite before any deployment:
@@ -379,5 +379,5 @@ Studio HQ is certified as **security-ready** for subsequent financial management
 - All 25 private HQ routes enforce strict same-origin, Bearer JWT validation, exact owner allowlist verification, and authoritative D1 status checks.
 - Zero-cost architecture compliance is verified.
 - Concurrency and zero-row mutation races are guarded by atomic SQL transactions and conditional audit logging.
-- Rate limiting is architected, implemented in code with fail-closed 503 error handling, and fully covered by 107 automated tests (with edge activation deferred until `wrangler.toml` bindings are approved).
+- Rate limiting is architected, implemented in code with fail-closed 503 error handling, and fully covered by 111 automated tests (with edge activation deferred until `wrangler.toml` bindings are approved).
 - No preview or production deployment has occurred; all findings are grounded in verified codebase implementations and local automated test suites.

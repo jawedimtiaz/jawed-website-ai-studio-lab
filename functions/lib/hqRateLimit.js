@@ -26,25 +26,59 @@ export function hqRateLimitUnavailableResponse() {
   );
 }
 
+const SUPPORTED_LIMITER_BINDINGS = {
+  session: ['HQ_SESSION_LIMITER', 'HQ_RATE_LIMITER', 'RATE_LIMITER'],
+  write: ['HQ_WRITE_LIMITER', 'HQ_RATE_LIMITER', 'RATE_LIMITER'],
+  general: ['HQ_RATE_LIMITER', 'RATE_LIMITER']
+};
+
+function resolveLimiterBinding(env, type) {
+  if (!env || typeof env !== 'object') {
+    return { configured: false, binding: null };
+  }
+  const candidateNames = SUPPORTED_LIMITER_BINDINGS[type] || SUPPORTED_LIMITER_BINDINGS.general;
+  for (const name of candidateNames) {
+    if (Object.prototype.hasOwnProperty.call(env, name) || (name in env)) {
+      return { configured: true, binding: env[name] };
+    }
+  }
+  return { configured: false, binding: null };
+}
+
 /**
  * Checks rate limits using Cloudflare Workers Rate Limiting API bindings if configured.
- * If no binding is present in `env`, the check gracefully passes through ({ ok: true })
- * because binding activation is intentionally deferred.
- * If a binding is configured but fails or throws, it fails closed with HTTP 503.
+ * If no supported rate-limiter binding is configured in `env`, the check gracefully passes
+ * through ({ ok: true }) because binding activation is intentionally deferred.
+ * If a supported binding is present in `env` but null, malformed, or lacks a callable
+ * `.limit()` method, or if `.limit()` throws or returns a malformed response, it fails
+ * closed with HTTP 503 RATE_LIMIT_UNAVAILABLE.
  */
 export async function checkHqRateLimit(request, env, options = {}) {
   const type = options.type || 'general';
-  let limiter = null;
-  let key = options.key;
+  const { configured, binding } = resolveLimiterBinding(env, type);
 
+  // Preserve pass-through only when no supported rate-limiter binding is configured in the environment.
+  if (!configured) {
+    return { ok: true };
+  }
+
+  // If a supported binding is present but null, malformed, or does not expose a callable .limit() method,
+  // fail closed with HTTP 503 RATE_LIMIT_UNAVAILABLE.
+  if (
+    !binding ||
+    (typeof binding !== 'object' && typeof binding !== 'function') ||
+    typeof binding.limit !== 'function'
+  ) {
+    return { ok: false, response: hqRateLimitUnavailableResponse() };
+  }
+
+  let key = options.key;
   if (type === 'session') {
-    limiter = env?.HQ_SESSION_LIMITER || env?.HQ_RATE_LIMITER || env?.RATE_LIMITER;
     if (!key) {
       const ip = getHqClientIp(request);
       key = `session:ip:${ip}`;
     }
   } else if (type === 'write') {
-    limiter = env?.HQ_WRITE_LIMITER || env?.HQ_RATE_LIMITER || env?.RATE_LIMITER;
     if (!key) {
       if (options.uid) {
         key = `write:uid:${options.uid}`;
@@ -54,20 +88,14 @@ export async function checkHqRateLimit(request, env, options = {}) {
       }
     }
   } else {
-    limiter = env?.HQ_RATE_LIMITER || env?.RATE_LIMITER;
     if (!key) {
       const id = options.uid ? `uid:${options.uid}` : `ip:${getHqClientIp(request)}`;
       key = `${type}:${id}`;
     }
   }
 
-  // Preserve pass-through when no rate-limit binding is configured (deferred activation).
-  if (!limiter || typeof limiter.limit !== 'function') {
-    return { ok: true };
-  }
-
   try {
-    const result = await limiter.limit({ key });
+    const result = await binding.limit({ key });
     if (!result || typeof result !== 'object' || typeof result.success !== 'boolean') {
       return { ok: false, response: hqRateLimitUnavailableResponse() };
     }
