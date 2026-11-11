@@ -114,7 +114,7 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     const shortReason=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:1000,reason:'x'},{'idempotency-key':'refund-test-key-0002'}),['payments',payment.id,'refunds']);
     assert.equal(shortReason.status,400);
 
-    const excessive=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:60000,reason:'Too much'}),['payments',payment.id,'refunds']);
+    const excessive=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:60000,reason:'Too much'},{'idempotency-key':'refund-test-key-0003'}),['payments',payment.id,'refunds']);
     assert.equal(excessive.status,409);
 
     const finalInvoice=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
