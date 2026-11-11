@@ -9,6 +9,7 @@ on:
       - main
       - feat/studio-hq-projects-api
       - fix/studio-hq-owner-status-enforcement
+      - fix/studio-hq-bounded-json-body
     paths:
       - 'functions/lib/hqAuth.js'
       - 'functions/lib/hqAuth.test.js'
@@ -18,6 +19,10 @@ on:
       - 'functions/api/hq/clients.js'
       - 'functions/api/hq/clients.test.js'
       - 'functions/api/hq/clients.api.test.js'
+      - 'functions/api/hq/financial.js'
+      - 'functions/api/hq/financial.test.js'
+      - 'migrations/hq/**'
+      - 'scripts/test-hq-migration.mjs'
       - 'functions/api/hq/projects.js'
       - 'functions/api/hq/projects.test.js'
       - 'worker.js'

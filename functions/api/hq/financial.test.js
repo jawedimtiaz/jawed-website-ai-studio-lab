@@ -99,17 +99,28 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     const replay=await call(db,payReq(),['invoices',invoice.id,'payments']);
     assert.equal(replay.status,200);
     assert.equal((await replay.json()).replayed,true);
+    const changedPaidAt=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:60000,payment_method:'upi',reference_number:'UPI-TEST',paid_at:'2026-11-10T10:00:00.000Z'
+    },{'idempotency-key':'payment-test-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(changedPaidAt.status,409);
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payments').get().n,1);
 
-    const refund=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:10000,reason:'Partial refund'}),['payments',payment.id,'refunds']);
+    const refundReq=()=>request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:10000,reason:'Partial refund',refunded_at:'2026-11-11T09:00:00.000Z'},{'idempotency-key':'refund-test-key-0001'});
+    const refund=await call(db,refundReq(),['payments',payment.id,'refunds']);
     assert.equal(refund.status,201);
+    const refundReplay=await call(db,refundReq(),['payments',payment.id,'refunds']);
+    assert.equal(refundReplay.status,200);
+    assert.equal((await refundReplay.json()).replayed,true);
+    const shortReason=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:1000,reason:'x'},{'idempotency-key':'refund-test-key-0002'}),['payments',payment.id,'refunds']);
+    assert.equal(shortReason.status,400);
 
-    const excessive=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:60000,reason:'Too much'}),['payments',payment.id,'refunds']);
+    const excessive=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:60000,reason:'Too much'},{'idempotency-key':'refund-test-key-0003'}),['payments',payment.id,'refunds']);
     assert.equal(excessive.status,409);
 
     const finalInvoice=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
     assert.equal(finalInvoice.amount_paid_minor,50000);
     assert.equal(finalInvoice.status,'partially-paid');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_refunds').get().n,1);
     assert.ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('quotation','invoice','payment','payment_refund')").get().n>=5);
   } finally {db.close();}
 });
@@ -131,4 +142,81 @@ test('Worker routes financial endpoints through Studio HQ authorization and secu
     assert.equal(response.headers.get('cache-control'),'no-store, private, max-age=0');
     assert.equal(response.headers.get('x-frame-options'),'DENY');
   }
+});
+
+
+test('past-due invoices remain overdue in detail, filtered lists, and payment/refund transitions',async()=>{
+  const db=new TestD1();
+  try {
+    seed(db);
+    const created=await call(db,request('/api/hq/invoices','POST',{
+      client_id:'client-1',project_id:'project-1',due_on:'2020-01-01',
+      items:[{...line,tax_rate_bps:0,unit_price_minor:20000}]
+    }),['invoices']);
+    assert.equal(created.status,201);
+    const invoice=(await created.json()).invoice;
+    const issued=await call(db,request('/api/hq/invoices/'+invoice.id+'/issue','POST',{}),['invoices',invoice.id,'issue']);
+    assert.equal(issued.status,200);
+    assert.equal((await issued.json()).invoice.status,'overdue');
+    const listed=await call(db,request('/api/hq/invoices?status=overdue'),['invoices']);
+    assert.equal(listed.status,200);
+    assert.equal((await listed.json()).invoices.length,1);
+    const detail=await call(db,request('/api/hq/invoices/'+invoice.id),['invoices',invoice.id]);
+    assert.equal((await detail.json()).invoice.status,'overdue');
+    const payment=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:5000,payment_method:'upi'
+    },{'idempotency-key':'overdue-payment-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(payment.status,201);
+    assert.equal(db.sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id).status,'overdue');
+    const paid=(await payment.json()).payment;
+    const refund=await call(db,request('/api/hq/payments/'+paid.id+'/refunds','POST',{
+      amount_minor:1000,reason:'Adjustment'
+    },{'idempotency-key':'overdue-refund-key-0001'}),['payments',paid.id,'refunds']);
+    assert.equal(refund.status,201);
+    assert.equal(db.sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id).status,'overdue');
+  } finally {db.close();}
+});
+
+
+test('refund balance recalculation excludes archived payments',async()=>{
+  const db=new TestD1();
+  try {
+    seed(db);
+    const created=await call(db,request('/api/hq/invoices','POST',{
+      client_id:'client-1',project_id:'project-1',due_on:'2027-01-01',
+      items:[{...line,tax_rate_bps:0,unit_price_minor:20000}]
+    }),['invoices']);
+    assert.equal(created.status,201);
+    const invoice=(await created.json()).invoice;
+    const issued=await call(db,request('/api/hq/invoices/'+invoice.id+'/issue','POST',{}),['invoices',invoice.id,'issue']);
+    assert.equal(issued.status,200);
+
+    const first=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:3000,payment_method:'upi'
+    },{'idempotency-key':'archived-payment-key-0001'}),['invoices',invoice.id,'payments']);
+    assert.equal(first.status,201);
+    const archivedPayment=(await first.json()).payment;
+
+    const second=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:5000,payment_method:'upi'
+    },{'idempotency-key':'active-payment-key-00001'}),['invoices',invoice.id,'payments']);
+    assert.equal(second.status,201);
+    const activePayment=(await second.json()).payment;
+
+    db.sqlite.prepare('UPDATE payments SET archived_at=? WHERE id=?').run('2026-11-11T10:00:00.000Z',archivedPayment.id);
+
+    const refund=await call(db,request('/api/hq/payments/'+activePayment.id+'/refunds','POST',{
+      amount_minor:1000,reason:'Partial adjustment'
+    },{'idempotency-key':'active-refund-key-00001'}),['payments',activePayment.id,'refunds']);
+    assert.equal(refund.status,201);
+
+    const stored=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
+    assert.equal(stored.amount_paid_minor,4000);
+    assert.equal(stored.status,'partially-paid');
+
+    const detail=await call(db,request('/api/hq/invoices/'+invoice.id),['invoices',invoice.id]);
+    const result=(await detail.json()).invoice;
+    assert.equal(result.amount_paid_minor,4000);
+    assert.equal(result.status,'partially-paid');
+  } finally {db.close();}
 });

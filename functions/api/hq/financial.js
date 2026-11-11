@@ -102,6 +102,22 @@ async function listDocuments(db, table, request) {
   const clientId = url.searchParams.get('clientId');
   const allowed = table === 'quotations' ? ['draft',...STATUSES] : ['draft','issued','partially-paid','paid','overdue','void'];
   if (status && !allowed.includes(status)) return error('STATUS_INVALID');
+  if (table === 'invoices') {
+    const netPaid = `((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
+      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id))`;
+    const effective = `CASE WHEN i.status IN ('draft','void') THEN i.status
+      WHEN i.total_minor <= ${netPaid} THEN 'paid'
+      WHEN i.due_on IS NOT NULL AND i.due_on < ? THEN 'overdue'
+      WHEN ${netPaid} > 0 THEN 'partially-paid' ELSE 'issued' END`;
+    const clauses = ['i.archived_at IS NULL'], params = [indiaDate()];
+    if (status) { clauses.push(`(${effective}) = ?`); params.push(indiaDate(),status); }
+    if (clientId) { clauses.push('i.client_id = ?'); params.push(clientId); }
+    const result = await db.prepare(`SELECT i.*, (${netPaid}) AS calculated_amount_paid_minor, ${effective} AS effective_status
+      FROM invoices i WHERE ${clauses.join(' AND ')} ORDER BY i.created_at DESC,i.id LIMIT ? OFFSET ?`)
+      .bind(...params,limit,offset).all();
+    const invoices=(result.results || []).map(row=>({...row,amount_paid_minor:row.calculated_amount_paid_minor,status:row.effective_status}));
+    return hqJson({ok:true,[table]:invoices,limit,offset});
+  }
   const clauses = ['archived_at IS NULL'], params = [];
   if (status) { clauses.push('status = ?'); params.push(status); }
   if (clientId) { clauses.push('client_id = ?'); params.push(clientId); }
@@ -141,9 +157,27 @@ async function createDocument(request, db, identity, type) {
 }
 async function getDocument(db, type, id) {
   const table = type === 'quotation' ? 'quotations' : 'invoices';
-  const row = await db.prepare(`SELECT * FROM ${table} WHERE id = ? AND archived_at IS NULL`).bind(id).first();
+  const row = type === 'invoice'
+    ? await db.prepare(`SELECT i.*,
+        ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
+        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) AS calculated_amount_paid_minor,
+        CASE WHEN i.status IN ('draft','void') THEN i.status
+          WHEN i.total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
+            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) THEN 'paid'
+          WHEN i.due_on IS NOT NULL AND i.due_on < ? THEN 'overdue'
+          WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
+            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) > 0 THEN 'partially-paid'
+          ELSE 'issued' END AS effective_status
+        FROM invoices i WHERE i.id=? AND i.archived_at IS NULL`).bind(indiaDate(),id).first()
+    : await db.prepare(`SELECT * FROM quotations WHERE id = ? AND archived_at IS NULL`).bind(id).first();
   if (!row) return null;
   const items = await db.prepare(`SELECT * FROM ${type === 'quotation' ? 'quotation_items' : 'invoice_items'} WHERE ${type === 'quotation' ? 'quotation_id' : 'invoice_id'} = ? ORDER BY sort_order,id`).bind(id).all();
+  if(type==='invoice') {
+    row.amount_paid_minor=row.calculated_amount_paid_minor;
+    row.status=row.effective_status;
+    delete row.calculated_amount_paid_minor;
+    delete row.effective_status;
+  }
   return { ...row, items:items.results || [] };
 }
 async function updateQuotation(request, db, identity, id) {
@@ -205,7 +239,7 @@ async function issueInvoice(db, identity, id) {
   const existing = await db.prepare('SELECT * FROM invoices WHERE id=? AND archived_at IS NULL').bind(id).first();
   if (!existing) return error('INVOICE_NOT_FOUND',404);
   const result = await db.batch([ownerAuthorizationGuardStatement(db,identity),
-    db.prepare("UPDATE invoices SET status='issued',issued_on=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft' AND total_minor>0").bind(indiaDate(),id),
+    db.prepare("UPDATE invoices SET status=CASE WHEN due_on IS NOT NULL AND due_on < ? THEN 'overdue' ELSE 'issued' END,issued_on=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft' AND total_minor>0").bind(indiaDate(),indiaDate(),id),
     conditionalAuditStatement(db,identity,'invoice.issue','invoice',id,crypto.randomUUID(),{status:'draft'},{status:'issued'})]);
   if ((result?.[1]?.meta?.changes ?? 0) !== 1) return error('INVOICE_NOT_ISSUABLE',409);
   return hqJson({ok:true,invoice:await getDocument(db,'invoice',id)});
@@ -222,7 +256,7 @@ async function addPayment(request, db, identity, invoiceId) {
   if (!paidAt) return error('PAID_AT_INVALID');
   const key = request.headers.get('idempotency-key') || '';
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(key)) return error('IDEMPOTENCY_KEY_REQUIRED');
-  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,notes})));
+  const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({invoiceId,amount_minor:x.amount_minor,payment_method:x.payment_method ?? null,reference_number:ref,paid_at:x.paid_at == null ? null : paidAt,notes})));
   const hash = [...new Uint8Array(fingerprint)].map(b=>b.toString(16).padStart(2,'0')).join('');
   const prior = await db.prepare('SELECT invoice_id,payment_id,request_fingerprint FROM payment_idempotency_keys WHERE idempotency_key=?').bind(key).first();
   if (prior) return prior.invoice_id === invoiceId && prior.request_fingerprint === hash
@@ -239,12 +273,17 @@ async function addPayment(request, db, identity, invoiceId) {
     SELECT ?,?,?,?,? WHERE changes()=1`).bind(crypto.randomUUID(),key,invoiceId,paymentId,hash);
   const results = await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,idem,
     db.prepare(`UPDATE invoices SET amount_paid_minor =
-      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=?)
+      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
       - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?),
-      status=CASE WHEN total_minor <= (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=?)
-        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?) THEN 'paid' ELSE 'partially-paid' END,
+      status=CASE
+        WHEN total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?)) THEN 'paid'
+        WHEN due_on IS NOT NULL AND due_on < ? THEN 'overdue'
+        WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?)) > 0 THEN 'partially-paid'
+        ELSE 'issued' END,
       updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      WHERE id=? AND changes()=1`).bind(invoiceId,invoiceId,invoiceId,invoiceId,invoiceId),
+      WHERE id=? AND changes()=1`).bind(invoiceId,invoiceId,invoiceId,invoiceId,indiaDate(),invoiceId,invoiceId,invoiceId),
     conditionalAuditStatement(db,identity,'payment.record','payment',paymentId,crypto.randomUUID(),null,{invoice_id:invoiceId,amount_minor:x.amount_minor,currency:'INR'})]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return error('PAYMENT_NOT_ALLOWED_OR_EXCEEDS_BALANCE',409);
   return hqJson({ok:true,payment:await db.prepare('SELECT * FROM payments WHERE id=?').bind(paymentId).first()},201);
@@ -254,22 +293,38 @@ async function addRefund(request, db, identity, paymentId) {
   const x=parsed.value;
   if(Object.keys(x).some(k=>!['amount_minor','reason','refunded_at'].includes(k)))return error('FIELD_NOT_ALLOWED');
   if(!Number.isSafeInteger(x.amount_minor)||x.amount_minor<=0||x.amount_minor>MAX_MINOR)return error('REFUND_AMOUNT_INVALID');
-  const reason=validText(x.reason,1000,true); if(!reason)return error('REFUND_REASON_REQUIRED');
+  const reason=validText(x.reason,1000,true); if(!reason || reason.length<2)return error('REFUND_REASON_INVALID');
   const refundedAt=x.refunded_at==null?new Date().toISOString():(typeof x.refunded_at==='string'&&!Number.isNaN(Date.parse(x.refunded_at))?new Date(x.refunded_at).toISOString():null);
   if(!refundedAt)return error('REFUNDED_AT_INVALID');
+  const key=request.headers.get('idempotency-key')||'';
+  if(!/^[A-Za-z0-9._:-]{16,128}$/.test(key))return error('IDEMPOTENCY_KEY_REQUIRED');
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({paymentId,amount_minor:x.amount_minor,reason,refunded_at:refundedAt})));
+  const fingerprint=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  const prior=await db.prepare('SELECT payment_id,refund_id,request_fingerprint FROM refund_idempotency_keys WHERE idempotency_key=?').bind(key).first();
+  if(prior) return prior.payment_id===paymentId && prior.request_fingerprint===fingerprint
+    ? hqJson({ok:true,replayed:true,refund:await db.prepare('SELECT * FROM payment_refunds WHERE id=?').bind(prior.refund_id).first()})
+    : error('IDEMPOTENCY_KEY_REUSED',409);
   const id=crypto.randomUUID();
   const insert=db.prepare(`INSERT INTO payment_refunds (id,payment_id,amount_minor,reason,refunded_at,recorded_by)
     SELECT ?,p.id,?,?,?,? FROM payments p JOIN invoices i ON i.id=p.invoice_id
     WHERE p.id=? AND p.archived_at IS NULL AND i.status <> 'void'
       AND p.amount_minor - (SELECT COALESCE(SUM(amount_minor),0) FROM payment_refunds WHERE payment_id=p.id) >= ?`)
     .bind(id,x.amount_minor,reason,refundedAt,identity.uid,paymentId,x.amount_minor);
-  const results=await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,
+  const idem=db.prepare(`INSERT INTO refund_idempotency_keys (id,idempotency_key,payment_id,refund_id,request_fingerprint)
+    SELECT ?,?,?,?,? WHERE changes()=1`).bind(crypto.randomUUID(),key,paymentId,id,fingerprint);
+  const results=await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,idem,
     db.prepare(`UPDATE invoices SET amount_paid_minor =
-      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id)
+      (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
       - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id),
-      status=CASE WHEN amount_paid_minor - ? <= 0 THEN 'issued' ELSE 'partially-paid' END,
+      status=CASE
+        WHEN total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id)) THEN 'paid'
+        WHEN due_on IS NOT NULL AND due_on < ? THEN 'overdue'
+        WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id)) > 0 THEN 'partially-paid'
+        ELSE 'issued' END,
       updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      WHERE id=(SELECT invoice_id FROM payments WHERE id=?) AND changes()=1`).bind(x.amount_minor,paymentId),
+      WHERE id=(SELECT invoice_id FROM payments WHERE id=?) AND changes()=1`).bind(indiaDate(),paymentId),
     conditionalAuditStatement(db,identity,'payment.refund','payment_refund',id,crypto.randomUUID(),null,{payment_id:paymentId,amount_minor:x.amount_minor,reason})]);
   if((results?.[1]?.meta?.changes ?? 0)!==1)return error('REFUND_EXCEEDS_REMAINING_PAYMENT',409);
   return hqJson({ok:true,refund:await db.prepare('SELECT * FROM payment_refunds WHERE id=?').bind(id).first()},201);
