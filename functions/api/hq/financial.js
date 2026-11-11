@@ -112,10 +112,11 @@ async function listDocuments(db, table, request) {
     const clauses = ['i.archived_at IS NULL'], params = [indiaDate()];
     if (status) { clauses.push(`(${effective}) = ?`); params.push(indiaDate(),status); }
     if (clientId) { clauses.push('i.client_id = ?'); params.push(clientId); }
-    const result = await db.prepare(`SELECT i.*, (${netPaid}) AS amount_paid_minor, ${effective} AS status
+    const result = await db.prepare(`SELECT i.*, (${netPaid}) AS calculated_amount_paid_minor, ${effective} AS effective_status
       FROM invoices i WHERE ${clauses.join(' AND ')} ORDER BY i.created_at DESC,i.id LIMIT ? OFFSET ?`)
       .bind(...params,limit,offset).all();
-    return hqJson({ok:true,[table]:result.results || [],limit,offset});
+    const invoices=(result.results || []).map(row=>({...row,amount_paid_minor:row.calculated_amount_paid_minor,status:row.effective_status}));
+    return hqJson({ok:true,[table]:invoices,limit,offset});
   }
   const clauses = ['archived_at IS NULL'], params = [];
   if (status) { clauses.push('status = ?'); params.push(status); }
@@ -159,18 +160,24 @@ async function getDocument(db, type, id) {
   const row = type === 'invoice'
     ? await db.prepare(`SELECT i.*,
         ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) AS amount_paid_minor,
+        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) AS calculated_amount_paid_minor,
         CASE WHEN i.status IN ('draft','void') THEN i.status
           WHEN i.total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
             - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) THEN 'paid'
           WHEN i.due_on IS NOT NULL AND i.due_on < ? THEN 'overdue'
           WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
             - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) > 0 THEN 'partially-paid'
-          ELSE 'issued' END AS status
+          ELSE 'issued' END AS effective_status
         FROM invoices i WHERE i.id=? AND i.archived_at IS NULL`).bind(indiaDate(),id).first()
     : await db.prepare(`SELECT * FROM quotations WHERE id = ? AND archived_at IS NULL`).bind(id).first();
   if (!row) return null;
   const items = await db.prepare(`SELECT * FROM ${type === 'quotation' ? 'quotation_items' : 'invoice_items'} WHERE ${type === 'quotation' ? 'quotation_id' : 'invoice_id'} = ? ORDER BY sort_order,id`).bind(id).all();
+  if(type==='invoice') {
+    row.amount_paid_minor=row.calculated_amount_paid_minor;
+    row.status=row.effective_status;
+    delete row.calculated_amount_paid_minor;
+    delete row.effective_status;
+  }
   return { ...row, items:items.results || [] };
 }
 async function updateQuotation(request, db, identity, id) {
