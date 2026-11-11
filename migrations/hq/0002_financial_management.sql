@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS payment_refunds (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+CREATE TABLE IF NOT EXISTS refund_idempotency_keys (
+  id TEXT PRIMARY KEY,
+  idempotency_key TEXT NOT NULL UNIQUE CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+  payment_id TEXT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
+  refund_id TEXT NOT NULL UNIQUE REFERENCES payment_refunds(id) ON DELETE RESTRICT,
+  request_fingerprint TEXT NOT NULL CHECK (length(request_fingerprint) = 64),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_one_per_quotation
   ON invoices(quotation_id) WHERE quotation_id IS NOT NULL;
 
@@ -72,3 +81,5 @@ CREATE INDEX IF NOT EXISTS idx_payment_refunds_payment
   ON payment_refunds(payment_id, refunded_at, id);
 CREATE INDEX IF NOT EXISTS idx_payment_idempotency_invoice
   ON payment_idempotency_keys(invoice_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_refund_idempotency_payment
+  ON refund_idempotency_keys(payment_id, created_at);
