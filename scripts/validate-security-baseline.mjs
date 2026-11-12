@@ -24,7 +24,7 @@ const requiredHeaders=[
 for(const contract of requiredHeaders)assert.equal(headers.includes(contract),true,"Security header contract missing: "+contract);
 
 const csp=headers.match(/Content-Security-Policy:\s*([^\n]+)/)?.[1]||"";
-for(const directive of ["default-src 'self'","base-uri 'self'","frame-ancestors 'none'","frame-src 'none'","form-action 'self' mailto:","object-src 'none'","script-src ","worker-src ","connect-src ","img-src ","style-src ","font-src "]){
+for(const directive of ["default-src 'self'","base-uri 'self'","frame-ancestors 'none'","frame-src 'self' https://refined-actor-skhlb.firebaseapp.com","form-action 'self' mailto:","object-src 'none'","script-src ","worker-src ","connect-src ","img-src ","style-src ","font-src "]){
   assert.equal(csp.includes(directive),true,"CSP directive missing: "+directive);
 }
 assert.equal(csp.includes("https://www.googletagmanager.com"),true,"CSP must retain the deferred analytics tag-manager origin");
