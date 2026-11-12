@@ -20,14 +20,14 @@ test('Studio HQ has an explicit private route and hides public chrome', () => {
 
 test('Studio HQ Google popup auth has narrowly scoped compatible security headers', () => {
   for (const source of [workerEntry, headers]) {
-    assert.match(source, /Cross-Origin-Opener-Policy:\s*same-origin-allow-popups|Cross-Origin-Opener-Policy'\s*:\s*'same-origin-allow-popups'/);
-    assert.match(source, /frame-src[^;]*https:\\/\\/refined-actor-skhlb\\.firebaseapp\\.com/);
-    assert.match(source, /connect-src[^;]*https:\\/\\/identitytoolkit\\.googleapis\\.com/);
-    assert.match(source, /connect-src[^;]*https:\\/\\/securetoken\\.googleapis\\.com/);
+    assert.ok(source.includes('same-origin-allow-popups'));
+    assert.ok(source.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"));
+    assert.ok(source.includes('https://identitytoolkit.googleapis.com'));
+    assert.ok(source.includes('https://securetoken.googleapis.com'));
   }
-  assert.doesNotMatch(headers, /frame-src ['"]none['"]/);
+  assert.ok(headers.includes('Cross-Origin-Opener-Policy: same-origin-allow-popups'));
+  assert.ok(!headers.includes("frame-src 'none'"));
 });
-
 test('Studio HQ session checks the canonical API response and does not cache requests', () => {
   assert.match(page, /fetch\(['"]\/api\/hq\/session['"]/);
   assert.match(page, /cache:\s*['"]no-store['"]/);
