@@ -24,6 +24,7 @@ test('Studio HQ Google popup auth has narrowly scoped compatible security header
     assert.ok(source.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"));
     assert.ok(source.includes('https://identitytoolkit.googleapis.com'));
     assert.ok(source.includes('https://securetoken.googleapis.com'));
+    assert.ok(source.includes('https://firestore.googleapis.com'));
   }
   assert.ok(headers.includes('Cross-Origin-Opener-Policy: same-origin-allow-popups'));
   assert.ok(!headers.includes("frame-src 'none'"));
