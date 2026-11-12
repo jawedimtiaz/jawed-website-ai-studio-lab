@@ -7,6 +7,8 @@ const app = fs.readFileSync('src/App.tsx', 'utf8');
 const page = fs.readFileSync('src/pages/StudioHqPage.tsx', 'utf8');
 const head = fs.readFileSync('src/components/common/DocumentHead.tsx', 'utf8');
 const worker = fs.readFileSync('service-worker.js', 'utf8');
+const workerEntry = fs.readFileSync('worker.js', 'utf8');
+const headers = fs.readFileSync('_headers', 'utf8');
 
 test('Studio HQ has an explicit private route and hides public chrome', () => {
   assert.match(app, /path=["']\/studio-hq["']/);
@@ -16,6 +18,16 @@ test('Studio HQ has an explicit private route and hides public chrome', () => {
   assert.match(app, /!isStudioHq\s*&&\s*<PwaInstallPrompt\s*\/>/);
 });
 
+test('Studio HQ Google popup auth has narrowly scoped compatible security headers', () => {
+  for (const source of [workerEntry, headers]) {
+    assert.ok(source.includes('same-origin-allow-popups'));
+    assert.ok(source.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"));
+    assert.ok(source.includes('https://identitytoolkit.googleapis.com'));
+    assert.ok(source.includes('https://securetoken.googleapis.com'));
+  }
+  assert.ok(headers.includes('Cross-Origin-Opener-Policy: same-origin-allow-popups'));
+  assert.ok(!headers.includes("frame-src 'none'"));
+});
 test('Studio HQ session checks the canonical API response and does not cache requests', () => {
   assert.match(page, /fetch\(['"]\/api\/hq\/session['"]/);
   assert.match(page, /cache:\s*['"]no-store['"]/);
