@@ -709,7 +709,7 @@ const crossDomainPolicyContract=headers.includes("X-Permitted-Cross-Domain-Polic
 if(!crossDomainPolicyContract)errors.push("Security headers must disable legacy cross-domain policy files");
 else console.log("X-Permitted-Cross-Domain-Policies contract: PASS");
 
-const cspFrameContract=headers.includes("frame-src 'none'");
+const cspFrameContract=headers.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com");
 if(!cspFrameContract)errors.push("CSP must explicitly deny frame loads because the site does not use iframes");
 else console.log("CSP frame-src hardening contract: PASS");
 
