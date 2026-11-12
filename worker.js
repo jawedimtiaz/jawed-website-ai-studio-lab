@@ -34,7 +34,7 @@ const LEGACY_REDIRECTS = {
 
 const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
-  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
   'X-Content-Type-Options': 'nosniff',
   'X-Permitted-Cross-Domain-Policies': 'none',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
