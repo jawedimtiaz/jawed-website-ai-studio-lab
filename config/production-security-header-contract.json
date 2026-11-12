@@ -55,7 +55,8 @@
           "name": "x-content-type-options",
           "includes": "nosniff"
         }
-      ]
+      ],
+      "expected_status": 404
     },
     {
       "path": "/missing-phase-39f-security-header-test",
