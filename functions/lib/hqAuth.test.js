@@ -129,3 +129,43 @@ test('normalizes the allowlisted owner email', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.identity.email, 'jawed@jawed.co.in');
 });
+
+
+test('returns a safe certificate-fetch diagnostic without exposing the underlying exception', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: async () => { throw new Error('sensitive transport detail'); }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_CERTIFICATE_FETCH_FAILED');
+  assert.equal(JSON.stringify(result).includes('sensitive transport detail'), false);
+});
+
+test('returns a safe certificate-key-import diagnostic', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: async () => { throw new Error('private certificate parsing detail'); }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED');
+  assert.equal(JSON.stringify(result).includes('private certificate parsing detail'), false);
+});
+
+test('returns a safe JWT-verification diagnostic', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: ctx.importCertificate,
+    verify: async () => { throw new Error('sensitive token verification detail'); }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_JWT_VERIFICATION_FAILED');
+  assert.equal(JSON.stringify(result).includes('sensitive token verification detail'), false);
+});
