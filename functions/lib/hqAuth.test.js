@@ -7,7 +7,7 @@ import { verifyHqFirebaseToken, resetHqCertificateCacheForTests } from './hqAuth
 const now = Date.now();
 const seconds = Math.floor(now / 1000);
 const project = 'refined-actor-skhlb';
-const testCertificate = readFileSync(new URL('./fixtures/hq-auth-test-certificate.pem', import.meta.url), 'utf8');
+const testCertificate = readFileSync(new URL('./fixtures/hq-auth-test-certificate.txt', import.meta.url), 'utf8');
 
 async function setup() {
   resetHqCertificateCacheForTests();
