@@ -177,11 +177,11 @@ test('logs only a safe JWT-verification diagnostic and returns a generic public 
     now,
     fetchImpl: ctx.fetchImpl,
     importCertificate: ctx.importCertificate,
-    verify: async () => { throw new Error('sensitive token verification detail'); },
-    logDiagnostic: (stage, code) => { diagnostic = { stage, code }; }
+    verify: async () => { const error = new Error('sensitive token verification detail'); error.name = 'JWTClaimValidationFailed'; error.code = 'ERR_JWT_CLAIM_VALIDATION_FAILED'; throw error; },
+    logDiagnostic: (stage, code, error) => { diagnostic = { stage, code, errorName: error.name, errorCode: error.code }; }
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'AUTH_TOKEN_VERIFICATION_FAILED');
-  assert.deepEqual(diagnostic, { stage: 'jwt-signature-and-claims', code: 'AUTH_JWT_VERIFICATION_FAILED' });
+  assert.deepEqual(diagnostic, { stage: 'jwt-signature-and-claims', code: 'AUTH_JWT_VERIFICATION_FAILED', errorName: 'JWTClaimValidationFailed', errorCode: 'ERR_JWT_CLAIM_VALIDATION_FAILED' });
   assert.equal(JSON.stringify({ result, diagnostic }).includes('sensitive token verification detail'), false);
 });
