@@ -43,6 +43,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     return denied(401, 'AUTH_TOKEN_MISSING_OR_MALFORMED');
   }
 
+  let verificationStage = 'token-header';
   try {
     const encodedHeader = token.split('.')[0];
     if (!encodedHeader) return denied(401, 'AUTH_TOKEN_INVALID');
@@ -58,6 +59,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
       return denied(401, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
     }
 
+    verificationStage = 'certificate-fetch';
     let certificates = await loadCertificates(fetchImpl, now);
     let certificate = certificates[header.kid];
     if (!certificate) {
@@ -67,7 +69,9 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     }
     if (!certificate) return denied(401, 'AUTH_SIGNING_KEY_NOT_FOUND');
 
+    verificationStage = 'certificate-key-import';
     const key = await importCertificate(certificate, 'RS256');
+    verificationStage = 'jwt-signature-and-claims';
     const result = await verify(token, key, {
       algorithms: ['RS256'],
       audience: PROJECT_ID,
@@ -89,7 +93,11 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     if (!OWNERS.has(email)) return denied(403, 'HQ_OWNER_ACCESS_DENIED');
     return { ok: true, identity: { uid: claims.sub, email } };
   } catch {
-    return denied(401, 'AUTH_TOKEN_VERIFICATION_FAILED');
+    const diagnosticCode = verificationStage === 'certificate-fetch' ? 'AUTH_CERTIFICATE_FETCH_FAILED'
+      : verificationStage === 'certificate-key-import' ? 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED'
+        : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
+          : 'AUTH_TOKEN_VERIFICATION_FAILED';
+    return denied(401, diagnosticCode);
   }
 }
 
