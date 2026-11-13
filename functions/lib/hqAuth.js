@@ -36,10 +36,14 @@ async function loadCertificates(fetchImpl, now) {
   return cache.certificates;
 }
 
-function logSafeVerificationFailure(stage, code) {
-  // Never log the token, claims, owner identity, certificate, or raw exception.
+function logSafeVerificationFailure(stage, code, error) {
+  // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
+  const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
+    ? error.name : 'Error';
+  const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
+    ? error.code : null;
   try {
-    console.warn('Studio HQ Firebase token verification failed', { stage, code });
+    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode });
   } catch {
     // Logging must never change the fail-closed authentication result.
   }
@@ -105,13 +109,13 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     const email = claims.email.trim().toLowerCase();
     if (!OWNERS.has(email)) return denied(403, 'HQ_OWNER_ACCESS_DENIED');
     return { ok: true, identity: { uid: claims.sub, email } };
-  } catch {
+  } catch (error) {
     const diagnosticCode = verificationStage === 'certificate-fetch' ? 'AUTH_CERTIFICATE_FETCH_FAILED'
       : verificationStage === 'certificate-key-import' ? 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED'
         : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
           : 'AUTH_TOKEN_VERIFICATION_FAILED';
     try {
-      logDiagnostic(verificationStage, diagnosticCode);
+      logDiagnostic(verificationStage, diagnosticCode, error);
     } catch {
       // A diagnostic callback must not interrupt authentication failure handling.
     }
