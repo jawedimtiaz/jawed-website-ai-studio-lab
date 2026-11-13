@@ -20,3 +20,11 @@ binding = "HQ_DB"
 database_name = "jawed-studio-hq"
 database_id = "d9ec83ea-7114-4179-af8e-a22ba5494508"
 migrations_dir = "migrations/hq"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
