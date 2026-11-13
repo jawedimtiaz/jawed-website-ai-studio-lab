@@ -169,6 +169,29 @@ test('logs only a safe certificate-key-import diagnostic and returns a generic p
   assert.equal(JSON.stringify({ result, diagnostic }).includes('private certificate parsing detail'), false);
 });
 
+test('records only allowlisted hints for an unclassified WebCrypto TypeError', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  let diagnostic;
+  const sensitiveMessage = "Cannot read properties of undefined (reading 'subtle'): private runtime detail";
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: ctx.importCertificate,
+    verify: async () => { throw new TypeError(sensitiveMessage); },
+    logDiagnostic: (stage, code, error, errorCategory, errorHints) => {
+      diagnostic = { stage, code, errorCategory, errorHints };
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_TOKEN_VERIFICATION_FAILED');
+  assert.equal(diagnostic.errorCategory, 'TYPEERROR_UNCLASSIFIED');
+  assert.equal(diagnostic.errorHints.mentionsUndefined, true);
+  assert.equal(diagnostic.errorHints.mentionsSubtleCrypto, true);
+  assert.equal(JSON.stringify({ result, diagnostic }).includes(sensitiveMessage), false);
+  assert.equal(Object.hasOwn(diagnostic, 'errorMessage'), false);
+});
+
 test('logs only a safe JWT-verification diagnostic and returns a generic public error', async () => {
   const ctx = await setup();
   const token = await tokenFor(ctx.privateKey);

@@ -59,14 +59,36 @@ function classifyVerificationError(error) {
   return 'VERIFICATION_ERROR_OTHER';
 }
 
-function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error)) {
+function safeVerificationErrorHints(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const has = (pattern) => pattern.test(message);
+  return {
+    messageLength: Math.min(message.length, 500),
+    mentionsCryptoKey: has(/CryptoKey/i),
+    mentionsKeyObject: has(/KeyObject/i),
+    mentionsPublicKey: has(/public key|type ['"]public['"]/i),
+    mentionsSubtleCrypto: has(/SubtleCrypto|crypto\.subtle|subtle/i),
+    mentionsImportKey: has(/importKey/i),
+    mentionsVerify: has(/verify/i),
+    mentionsRsa: has(/RSA|RSASSA/i),
+    mentionsAlgorithm: has(/algorithm/i),
+    mentionsParameter: has(/parameter/i),
+    mentionsUndefined: has(/undefined/i),
+    mentionsNull: has(/null/i),
+    mentionsInstance: has(/instance/i),
+    mentionsType: has(/type/i),
+    mentionsNotSupported: has(/not supported|unsupported/i)
+  };
+}
+
+function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error), errorHints = safeVerificationErrorHints(error)) {
   // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
   const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
     ? error.name : 'Error';
   const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
     ? error.code : null;
   try {
-    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory });
+    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory, errorHints });
   } catch {
     // Logging must never change the fail-closed authentication result.
   }
@@ -138,7 +160,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
         : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
           : 'AUTH_TOKEN_VERIFICATION_FAILED';
     try {
-      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error));
+      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error), safeVerificationErrorHints(error));
     } catch {
       // A diagnostic callback must not interrupt authentication failure handling.
     }
