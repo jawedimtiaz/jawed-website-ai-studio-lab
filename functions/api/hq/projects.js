@@ -436,7 +436,7 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
     if (request.method === 'PATCH') return await updateProject(request, db, identity, id);
     return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, PATCH' });
   } catch (error) {
-    console.error('[Studio HQ] Project API operation failed:', error);
+    console.error('[Studio HQ] Project API operation failed');
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
 }
