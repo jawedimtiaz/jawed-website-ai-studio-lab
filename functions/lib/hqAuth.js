@@ -36,14 +36,37 @@ async function loadCertificates(fetchImpl, now) {
   return cache.certificates;
 }
 
-function logSafeVerificationFailure(stage, code, error) {
+function classifyVerificationError(error) {
+  // Prefer stable JOSE error identifiers; inspect text only to classify generic runtime TypeErrors.
+  if (error?.name === 'JWTClaimValidationFailed' || error?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return 'JWT_CLAIM_VALIDATION';
+  if (error?.name === 'JWSSignatureVerificationFailed' || error?.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') return 'JWT_SIGNATURE_VALIDATION';
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (/CryptoKey instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY';
+  }
+  if (/KeyObject instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY_OBJECT';
+  }
+  if (/must be a CryptoKey|invalid keyData|key data must be/i.test(message)) {
+    return 'WEBCRYPTO_KEY_TYPE_OR_DATA';
+  }
+  if (/crypto\.subtle\.(verify|importKey)|subtle\.(verify|importKey)/i.test(message)) {
+    return 'WEBCRYPTO_API_REJECTED_INPUT';
+  }
+  if (/audience|issuer|claim/i.test(message)) return 'JWT_CLAIM_VALIDATION';
+  if (/signature|verification failed/i.test(message)) return 'JWT_SIGNATURE_VALIDATION';
+  if (error?.name === 'TypeError') return 'TYPEERROR_UNCLASSIFIED';
+  return 'VERIFICATION_ERROR_OTHER';
+}
+
+function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error)) {
   // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
   const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
     ? error.name : 'Error';
   const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
     ? error.code : null;
   try {
-    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode });
+    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory });
   } catch {
     // Logging must never change the fail-closed authentication result.
   }
@@ -115,7 +138,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
         : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
           : 'AUTH_TOKEN_VERIFICATION_FAILED';
     try {
-      logDiagnostic(verificationStage, diagnosticCode, error);
+      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error));
     } catch {
       // A diagnostic callback must not interrupt authentication failure handling.
     }
