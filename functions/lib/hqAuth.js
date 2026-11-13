@@ -37,7 +37,9 @@ async function loadCertificates(fetchImpl, now) {
 }
 
 function classifyVerificationError(error) {
-  // Convert exception text into a fixed allowlisted category; never log the text itself.
+  // Prefer stable JOSE error identifiers; inspect text only to classify generic runtime TypeErrors.
+  if (error?.name === 'JWTClaimValidationFailed' || error?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return 'JWT_CLAIM_VALIDATION';
+  if (error?.name === 'JWSSignatureVerificationFailed' || error?.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') return 'JWT_SIGNATURE_VALIDATION';
   const message = typeof error?.message === 'string' ? error.message : '';
   if (/CryptoKey instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
     return 'JOSE_EXPECTED_PUBLIC_KEY';
