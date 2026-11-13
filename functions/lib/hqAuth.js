@@ -57,13 +57,12 @@ function classifyVerificationError(error) {
   return 'VERIFICATION_ERROR_OTHER';
 }
 
-function logSafeVerificationFailure(stage, code, error) {
+function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error)) {
   // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
   const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
     ? error.name : 'Error';
   const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
     ? error.code : null;
-  const errorCategory = classifyVerificationError(error);
   try {
     console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory });
   } catch {
@@ -137,7 +136,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
         : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
           : 'AUTH_TOKEN_VERIFICATION_FAILED';
     try {
-      logDiagnostic(verificationStage, diagnosticCode, error);
+      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error));
     } catch {
       // A diagnostic callback must not interrupt authentication failure handling.
     }
