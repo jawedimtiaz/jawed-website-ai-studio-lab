@@ -12,7 +12,7 @@ const testCertificate = readFileSync(new URL('./fixtures/hq-auth-test-certificat
 async function setup() {
   resetHqCertificateCacheForTests();
   const { publicKey, privateKey } = await generateKeyPair('RS256');
-  const fetchImpl = async () => new Response(JSON.stringify({ 'unit-test-key': '-----BEGIN CERTIFICATE-----\\nTEST\\n-----END CERTIFICATE-----' }), {
+  const fetchImpl = async () => new Response(JSON.stringify({ 'unit-test-key': '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----' }), {
     status: 200, headers: { 'cache-control': 'public, max-age=300' }
   });
   const importCertificate = async () => publicKey;
