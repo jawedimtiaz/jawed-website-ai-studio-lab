@@ -212,7 +212,7 @@ export default {
         }
         return addSecurityHeaders(assetResponse);
       } catch (err) {
-        console.error('Static asset fetch failed:', err);
+        console.error('Static asset fetch failed');
       }
     }
 

@@ -373,7 +373,7 @@ export async function handleAuthorizedHqFinancial({request,env,segments,identity
     if(resource==='payments'&&id&&action==='refunds'&&request.method==='POST')return addRefund(request,db,identity,id);
     return error('NOT_FOUND',404);
   } catch(e) {
-    console.error('[Studio HQ] Financial API operation failed:',e?.message||e);
+    console.error('[Studio HQ] Financial API operation failed');
     return error('HQ_REQUEST_FAILED',500);
   }
 }

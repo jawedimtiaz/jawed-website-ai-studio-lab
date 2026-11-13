@@ -104,7 +104,7 @@ export async function checkHqRateLimit(request, env, options = {}) {
     }
     return { ok: true };
   } catch (error) {
-    console.error('[Studio HQ] Rate limiter error:', error?.message || error);
+    console.error('[Studio HQ] Rate limiter error');
     return { ok: false, response: hqRateLimitUnavailableResponse() };
   }
 }

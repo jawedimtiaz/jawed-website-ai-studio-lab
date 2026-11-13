@@ -65,7 +65,7 @@ async function sendNotificationEmail({ env, submission }) {
       });
       return { sent: true, provider: 'resend' };
     } catch (err) {
-      console.error('Resend delivery failed:', err);
+      console.error('Resend delivery failed');
     }
   }
 
@@ -99,7 +99,7 @@ async function sendNotificationEmail({ env, submission }) {
     });
     return { sent: res.ok, provider: 'mailchannels', status: res.status };
   } catch (err) {
-    console.warn('MailChannels delivery attempt finished:', err?.message);
+    console.warn('MailChannels delivery failed');
     return { sent: false, provider: 'mailchannels', error: err?.message };
   }
 }
@@ -189,8 +189,6 @@ export async function onRequestPost({ request, env }) {
 
   console.info('Contact enquiry stored and notification processed:', {
     id,
-    email: submission.email,
-    reason: submission.reason,
     emailSent: emailResult.sent
   });
 

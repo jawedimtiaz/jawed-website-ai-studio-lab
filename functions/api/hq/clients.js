@@ -203,7 +203,7 @@ export async function handleAuthorizedHqClients({ request, env, segments, identi
     if (request.method === 'PATCH') return await updateClient(request, db, identity, id);
     return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, PATCH' });
   } catch (error) {
-    console.error('[Studio HQ] Client API operation failed:', error);
+    console.error('[Studio HQ] Client API operation failed');
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
 }

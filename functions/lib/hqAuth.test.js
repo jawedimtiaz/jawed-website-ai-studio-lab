@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPair, SignJWT } from 'jose';
+import { readFileSync } from 'node:fs';
+import { generateKeyPair, SignJWT, importX509 } from 'jose';
 import { verifyHqFirebaseToken, resetHqCertificateCacheForTests } from './hqAuth.js';
 
 const now = Date.now();
 const seconds = Math.floor(now / 1000);
 const project = 'refined-actor-skhlb';
+const testCertificate = readFileSync(new URL('./fixtures/hq-auth-test-certificate.txt', import.meta.url), 'utf8');
 
 async function setup() {
   resetHqCertificateCacheForTests();
@@ -39,6 +41,12 @@ async function verify(token, ctx) {
     now
   });
 }
+
+test('imports a real X.509 certificate through the production jose importer', async () => {
+  const key = await importX509(testCertificate, 'RS256');
+  assert.equal(key.type, 'public');
+  assert.equal(key.algorithm.name, 'RSASSA-PKCS1-v1_5');
+});
 
 test('allows the first owner', async () => {
   const ctx = await setup();
@@ -128,4 +136,52 @@ test('normalizes the allowlisted owner email', async () => {
   const result = await verify(await tokenFor(ctx.privateKey, { email: '  JAWED@JAWED.CO.IN  ' }), ctx);
   assert.equal(result.ok, true);
   assert.equal(result.identity.email, 'jawed@jawed.co.in');
+});
+
+test('logs only a safe certificate-fetch diagnostic and returns a generic public error', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  let diagnostic;
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: async () => { throw new Error('sensitive transport detail'); },
+    logDiagnostic: (stage, code) => { diagnostic = { stage, code }; }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_TOKEN_VERIFICATION_FAILED');
+  assert.deepEqual(diagnostic, { stage: 'certificate-fetch', code: 'AUTH_CERTIFICATE_FETCH_FAILED' });
+  assert.equal(JSON.stringify({ result, diagnostic }).includes('sensitive transport detail'), false);
+});
+
+test('logs only a safe certificate-key-import diagnostic and returns a generic public error', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  let diagnostic;
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: async () => { throw new Error('private certificate parsing detail'); },
+    logDiagnostic: (stage, code) => { diagnostic = { stage, code }; }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_TOKEN_VERIFICATION_FAILED');
+  assert.deepEqual(diagnostic, { stage: 'certificate-key-import', code: 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED' });
+  assert.equal(JSON.stringify({ result, diagnostic }).includes('private certificate parsing detail'), false);
+});
+
+test('logs only a safe JWT-verification diagnostic and returns a generic public error', async () => {
+  const ctx = await setup();
+  const token = await tokenFor(ctx.privateKey);
+  let diagnostic;
+  const result = await verifyHqFirebaseToken(token, {
+    now,
+    fetchImpl: ctx.fetchImpl,
+    importCertificate: ctx.importCertificate,
+    verify: async () => { throw new Error('sensitive token verification detail'); },
+    logDiagnostic: (stage, code) => { diagnostic = { stage, code }; }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'AUTH_TOKEN_VERIFICATION_FAILED');
+  assert.deepEqual(diagnostic, { stage: 'jwt-signature-and-claims', code: 'AUTH_JWT_VERIFICATION_FAILED' });
+  assert.equal(JSON.stringify({ result, diagnostic }).includes('sensitive token verification detail'), false);
 });
