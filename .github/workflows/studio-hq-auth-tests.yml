@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/studio-hq-firebase-auth
+      - fix/phase-2-7j-hq-auth-d1-alignment
   pull_request:
     branches:
       - main
