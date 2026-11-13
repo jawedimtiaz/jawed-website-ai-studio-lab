@@ -67,7 +67,7 @@ function safeVerificationErrorHints(error) {
     mentionsCryptoKey: has(/CryptoKey/i),
     mentionsKeyObject: has(/KeyObject/i),
     mentionsPublicKey: has(/public key|type ['"]public['"]/i),
-    mentionsSubtleCrypto: has(/SubtleCrypto|crypto\.subtle|subtle\./i),
+    mentionsSubtleCrypto: has(/SubtleCrypto|crypto\.subtle|subtle/i),
     mentionsImportKey: has(/importKey/i),
     mentionsVerify: has(/verify/i),
     mentionsRsa: has(/RSA|RSASSA/i),
