@@ -299,7 +299,7 @@ export async function handleAuthorizedHqRelease({ request, env, segments, identi
     }
     return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
   } catch (error) {
-    console.error('[Studio HQ] Approval/QA API operation failed:', error);
+    console.error('[Studio HQ] Approval/QA API operation failed');
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
 }
