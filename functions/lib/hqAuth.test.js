@@ -52,7 +52,7 @@ test('allows the first owner', async () => {
   const ctx = await setup();
   const result = await verify(await tokenFor(ctx.privateKey), ctx);
   assert.equal(result.ok, true);
-  assert.equal(result.identity.email, 'jawed@gmail.com');
+  assert.equal(result.identity.email, 'jawedimtiaz@gmail.com');
 });
 
 test('allows the second owner', async () => {
