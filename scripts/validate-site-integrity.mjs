@@ -15,7 +15,7 @@ const sourcePaths=tree.filter(file=>file!=="404.html"&&file!=="offline.html"&&!f
 const toolData=fs.readFileSync("src/data/toolsData.ts","utf8");
 const dynamicToolSlugs=new Set([...toolData.matchAll(/slug:\s*'([^']+)'/g)].map(match=>match[1]));
 const isRegisteredReactToolRoute=path=>{
-  const match=path.match(/^\\/tools\\/([^/]+)\\/$/);
+  const match=path.match(/^\/tools\/([^/]+)\/$/);
   return Boolean(match&&dynamicToolSlugs.has(match[1]));
 };
 const missingSources=sitemapPaths.filter(path=>!fs.existsSync(sourcePath(path))&&!isRegisteredReactToolRoute(path));
