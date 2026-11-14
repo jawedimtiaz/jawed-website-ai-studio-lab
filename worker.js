@@ -98,7 +98,30 @@ export default {
       }
     }
 
-    // 5. Private Studio HQ project endpoints.
+    // 5. Compatibility aliases for task and milestone collections.
+    // These reuse the same project-scoped canonical handlers and D1 authorization guards.
+    if (pathname === '/api/hq/tasks' || pathname === '/api/hq/tasks/') {
+      const projectId = url.searchParams.get('projectId');
+      if (!projectId) {
+        return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'PROJECT_ID_REQUIRED' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+        }));
+      }
+      return addSecurityHeaders(await handleHqProjects({ request, env, segments: [projectId, 'tasks'] }));
+    }
+    if (pathname === '/api/hq/milestones' || pathname === '/api/hq/milestones/') {
+      const projectId = url.searchParams.get('projectId');
+      if (!projectId) {
+        return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'PROJECT_ID_REQUIRED' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+        }));
+      }
+      return addSecurityHeaders(await handleHqProjects({ request, env, segments: [projectId, 'milestones'] }));
+    }
+
+    // 6. Private Studio HQ project endpoints.
     if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
       const segments = pathname.replace(/\/$/, '').split('/').slice(4);
       const response = await handleHqProjects({ request, env, segments });
