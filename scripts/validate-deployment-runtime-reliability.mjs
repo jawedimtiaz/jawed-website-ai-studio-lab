@@ -34,7 +34,7 @@ for(const file of contract.required_runtime_files||[]){
 if(!exists("package.json")||!exists("bun.lock"))fail("Bun dependency manifest and lockfile are required");
 else{
   const pkg=JSON.parse(read("package.json"));
-  if(pkg.scripts?.build!==contract.build_command)fail("package.json build script differs from deployment contract");
+  if(pkg.scripts?.build!==contract.build_script)fail("package.json build script differs from deployment contract");
 }
 
 const wrangler=JSON.parse(read(contract.wrangler_config));
