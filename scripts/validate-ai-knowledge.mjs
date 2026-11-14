@@ -15,7 +15,13 @@ const sitemapPaths=allSitemapLocs.filter(url=>url.startsWith("https://jawed.co.i
 const workflow=fs.readFileSync(".github/workflows/ai-regression.yml","utf8");
 const indexPaths=knowledge.entries.map(entry=>entry.url);
 const sourcePath=(url)=>url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
-const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!fs.existsSync(sourcePath(path)));
+const toolData=fs.readFileSync("src/data/toolsData.ts","utf8");
+const dynamicToolSlugs=new Set([...toolData.matchAll(/slug:\s*'([^']+)'/g)].map(match=>match[1]));
+const isRegisteredReactToolRoute=path=>{
+  const match=path.match(/^\/tools\/([^/]+)\/$/);
+  return Boolean(match&&dynamicToolSlugs.has(match[1]));
+};
+const missingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).filter(path=>!isRegisteredReactToolRoute(path)&&!fs.existsSync(sourcePath(path)));
 const duplicates=indexPaths.filter((path,index)=>indexPaths.indexOf(path)!==index);
 const missing=sitemapPaths.filter(path=>!excluded.has(path)&&!indexPaths.includes(path));
 const unexpected=indexPaths.filter(path=>!sitemapPaths.includes(path));
@@ -61,7 +67,7 @@ assert.equal(kbGuide?.keywords.includes("incident sanitization")&&kbGuide?.keywo
 
 const reviewDate=knowledge.reviewed_against_sitemap_on;
 const reviewDateMs=typeof reviewDate==="string"&&!Number.isNaN(Date.parse(reviewDate+"T23:59:59Z"))?Date.parse(reviewDate+"T23:59:59Z"):NaN;
-const groundingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).map(sourcePath);
+const groundingSourceFiles=sitemapPaths.filter(path=>!excluded.has(path)).map(path=>isRegisteredReactToolRoute(path)?"src/data/toolsData.ts":sourcePath(path));
 const sourceFreshnessErrors=[];
 const changedSourceFiles=Number.isNaN(reviewDateMs)?[]:groundingSourceFiles.filter(file=>{
   try{return Boolean(execFileSync("git",["log","--since="+reviewDate+"T23:59:59Z","--format=%H","--",file],{encoding:"utf8"}).trim());}
