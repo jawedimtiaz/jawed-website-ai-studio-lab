@@ -13,10 +13,15 @@ const publishedRoutes=publishedSitemap.split("<loc>").slice(1).map(entry=>{
   return slashIndex<0?"/":withoutProtocol.slice(slashIndex);
 });
 const citationPlaceholderPattern=new RegExp("turn0search[0-9]+|cite|");
+const toolData=fs.readFileSync("src/data/toolsData.ts","utf8");
+const registeredToolSlugs=new Set([...toolData.matchAll(/slug:\s*'([^']+)'/g)].map(match=>match[1]));
 for(const routePath of publishedRoutes){
+  const toolRoute=routePath.match(/^\/tools\/([^/]+)\/$/);
+  if(toolRoute&&registeredToolSlugs.has(toolRoute[1]))continue;
   const routeWithoutLeadingSlash=routePath.startsWith("/")?routePath.slice(1):routePath;
   const normalizedRoute=routeWithoutLeadingSlash.endsWith("/")?routeWithoutLeadingSlash.slice(0,-1):routeWithoutLeadingSlash;
   const sourcePath=routePath==="/"?"index.html":normalizedRoute+"/index.html";
+  assert.equal(fs.existsSync(sourcePath),true,"Published route has no static source or registered React tool route: "+routePath);
   const publishedHtml=fs.readFileSync(sourcePath,"utf8");
   assert.equal(citationPlaceholderPattern.test(publishedHtml),false,"Published page exposes internal citation placeholders: "+sourcePath);
 }

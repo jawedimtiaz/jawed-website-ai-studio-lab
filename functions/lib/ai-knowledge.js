@@ -56,6 +56,7 @@ const MIN_PRIMARY_SOURCES=3;
 const MAX_KNOWLEDGE_RESULTS=10;
 const IDENTITY_QUERY=/\b(?:who(?:\s+is|\s+was)?|about)\s+(?:is\s+)?(?:jawed|jawed\s+imtiaz)\b/i;
 const CURRENT_WORK_QUERY=/\b(?:where|what)\b[\s\S]*\b(?:work(?:ing)?|job|employ(?:ed|er|ment)|company|client)\b/i;
+const JAMF_EXPLANATION_QUERY=/\b(?:what\s+is|explain|describe|understand)\s+(?:the\s+)?jamf(?:\s+pro)?\b/i;
 const CONVERSATIONAL_CLOSING=/^\s*(?:ok|okay)?\s*(?:bye|goodbye|good night|see you|see ya|talk to you later|thanks|thank you|thx)\s*[!.]*\s*$/i;
 const CONVERSATIONAL_GREETING=/^\s*(?:hi|hello|hey|good morning|good afternoon|good evening)\s*[!.]*\s*$/i;
 const VAGUE_FOLLOW_UP_TERMS=new Set(["tell","show","describe","explain","more","another","again","detail","details","clarify","clarification","elaborate","expand","continue","difference","second","first","option","options","that"]);
@@ -87,7 +88,8 @@ export function findRelevantKnowledge(query,limit=5,options={}){
   if(!ranked.length)return [];
 
   const primaryQuery=typeof safeOptions.primaryQuery==="string"?safeOptions.primaryQuery.trim():"";
-  const intentUrls=IDENTITY_QUERY.test(intentQuery)?new Set(["/about/","/"]):CURRENT_WORK_QUERY.test(intentQuery)?new Set(["/work/experience/","/work/"]):null;
+  const jamfExplanation=JAMF_EXPLANATION_QUERY.test(intentQuery);
+  const intentUrls=IDENTITY_QUERY.test(intentQuery)?new Set(["/about/","/"]):CURRENT_WORK_QUERY.test(intentQuery)?new Set(["/work/experience/","/work/"]):jamfExplanation?new Set(["/notes/apple-device-management-enrollment-models/"]):null;
   if(!primaryQuery){
     return ranked.filter(entry=>entry.score>=2).sort((a,b)=>b.score-a.score||a.title.localeCompare(b.title)).slice(0,safeLimit).map(({score,...entry})=>entry);
   }
@@ -101,7 +103,7 @@ export function findRelevantKnowledge(query,limit=5,options={}){
   const contextSourceUrls=(safeQuery.match(SOURCE_CONTEXT_QUERY)?.[1]||"").split(/,\s*/).filter(Boolean);
 
   if(intentUrls){
-    const intentPriority=IDENTITY_QUERY.test(intentQuery)?["/about/","/"]:[ "/work/experience/","/work/" ];
+    const intentPriority=IDENTITY_QUERY.test(intentQuery)?["/about/","/"]:CURRENT_WORK_QUERY.test(intentQuery)?["/work/experience/","/work/"]:["/notes/apple-device-management-enrollment-models/"];
     const intentPrimary=effectivePrimary.filter(entry=>intentUrls.has(entry.url));
     const intentContext=ranked.filter(entry=>intentUrls.has(entry.url));
     const preferred=[];

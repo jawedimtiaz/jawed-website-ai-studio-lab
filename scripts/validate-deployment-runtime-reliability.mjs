@@ -3,69 +3,72 @@ import path from "node:path";
 
 const root=process.cwd();
 const read=p=>fs.readFileSync(path.join(root,p),"utf8");
-const contract=JSON.parse(read("config/deployment-runtime-contract.json"));
-const smokeContract=JSON.parse(read("config/production-smoke-contract.json"));
-const fail=[];
-if(contract.production_origin!==smokeContract.production_origin) fail.push("deployment and production smoke production_origin values drifted");
-if(contract.alternate_origin!==smokeContract.alternate_origin) fail.push("deployment and production smoke alternate_origin values drifted");
-const isHttpsOrigin=value=>{if(typeof value!=="string"||!/^https:\/\//.test(value))return false;try{const url=new URL(value);return url.protocol==="https:"&&url.origin===value&&url.username===""&&url.password===""&&url.pathname==="/"&&url.search===""&&url.hash==="";}catch{return false;}};
-if(!isHttpsOrigin(contract.production_origin)) fail.push("production_origin must be an origin-only HTTPS URL");
-if(!isHttpsOrigin(contract.alternate_origin)) fail.push("alternate_origin must be an origin-only HTTPS URL");
-if(typeof contract.functions_directory!=="string"||!contract.functions_directory.trim()) fail.push("functions_directory must be non-empty");
-if(!Array.isArray(contract.required_runtime_files)||contract.required_runtime_files.length<1||contract.required_runtime_files.some(file=>typeof file!=="string"||!file.trim()||path.isAbsolute(file)||file.split("/").includes(".."))) fail.push("required_runtime_files must contain safe relative file paths");
-if(!Array.isArray(contract.api_routes)||contract.api_routes.some(route=>typeof route!=="string"||!route.startsWith("/"))) fail.push("api_routes must contain absolute paths");
-if(!Array.isArray(contract.required_security_headers)||contract.required_security_headers.length<1||contract.required_security_headers.some(header=>typeof header!=="string"||!header.trim())) fail.push("required_security_headers must contain non-empty strings");
-if(typeof contract.required_route_configuration!=="object"||contract.required_route_configuration===null) fail.push("required_route_configuration must be declared");
-
-
 const exists=p=>fs.existsSync(path.join(root,p));
-for(const p of contract.required_runtime_files){
-  if(!exists(p)) fail.push(`missing required runtime file: ${p}`);
-  else if(!fs.statSync(path.join(root,p)).isFile()) fail.push(`required runtime path is not a file: ${p}`);
+const contract=JSON.parse(read("config/deployment-runtime-contract.json"));
+const failures=[];
+const fail=message=>failures.push(message);
+const isHttpsOrigin=value=>{
+  if(typeof value!=="string"||!/^https:\/\//.test(value))return false;
+  try{
+    const url=new URL(value);
+    return url.protocol==="https:"&&url.origin===value&&url.username===""&&url.password===""&&url.pathname==="/"&&url.search===""&&url.hash==="";
+  }catch{return false;}
+};
+
+if(contract.deployment_model!=="cloudflare-worker")fail("deployment_model must identify Cloudflare Workers");
+if(typeof contract.worker_name!=="string"||!contract.worker_name.trim())fail("worker_name must be declared");
+if(contract.entrypoint!=="worker.js")fail("entrypoint must match the Worker entrypoint");
+if(contract.wrangler_config!=="wrangler.jsonc")fail("wrangler_config must identify the active Wrangler config");
+if(contract.build_command!=="bun run build")fail("build_command must match the repository build script");
+if(!isHttpsOrigin(contract.lab_origin))fail("lab_origin must be an origin-only HTTPS URL");
+if(!isHttpsOrigin(contract.content_canonical_origin))fail("content_canonical_origin must be an origin-only HTTPS URL");
+if(contract.assets_binding!=="ASSETS")fail("assets_binding must be ASSETS");
+if(contract.assets_directory!=="./dist")fail("assets_directory must be ./dist");
+if(!Array.isArray(contract.required_runtime_files)||contract.required_runtime_files.length<1)fail("required_runtime_files must be declared");
+if(!Array.isArray(contract.api_routes)||contract.api_routes.length<1)fail("api_routes must be declared");
+
+for(const file of contract.required_runtime_files||[]){
+  if(typeof file!=="string"||!file.trim()||path.isAbsolute(file)||file.split("/").includes(".."))fail("required_runtime_files contains an unsafe path");
+  else if(!exists(file)||!fs.statSync(path.join(root,file)).isFile())fail("missing required Worker runtime file: "+file);
 }
-if(!exists(contract.functions_directory)) fail.push(`missing functions directory: ${contract.functions_directory}`);
-else if(!fs.statSync(path.join(root,contract.functions_directory)).isDirectory()) fail.push(`functions_directory is not a directory: ${contract.functions_directory}`);
-
-const headers=read("_headers");
-for(const required of (contract.required_security_headers||[])) if(!headers.includes(required)) fail.push(`production headers missing required baseline: ${required}`);
-
-const routes=JSON.parse(read("_routes.json"));
-const routeContract=contract.required_route_configuration||{};
-if(routes.version!==routeContract.version) fail.push("_routes.json version drifted from deployment contract");
-if(JSON.stringify(routes.include)!==JSON.stringify(routeContract.include)) fail.push("_routes.json include rules drifted from deployment contract");
-if(JSON.stringify(routes.exclude||[])!==JSON.stringify(routeContract.exclude||[])) fail.push("_routes.json exclude rules drifted from deployment contract");
-for(const apiRoute of (contract.api_routes||[])) if(!(routes.include||[]).some(rule=>rule==="/*"||rule===apiRoute||rule===apiRoute+"/*"||rule.endsWith("*")&&apiRoute.startsWith(rule.slice(0,-1)))) fail.push(`declared API route is not covered by _routes.json include rules: ${apiRoute}`);
-
-if(!Array.isArray(contract.allowed_redirect_statuses)||contract.allowed_redirect_statuses.length<1||!contract.allowed_redirect_statuses.every(status=>Number.isInteger(status)&&status>=100&&status<=599)) fail.push("deployment redirect status policy must be a non-empty valid HTTP status array");
-const redirects=read("_redirects");
-for(const line of redirects.split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith("#"))){
-  const parts=line.trim().split(/\s+/);
-  if(parts.length>=3 && !contract.allowed_redirect_statuses.includes(Number(parts.at(-1)))) fail.push(`unexpected redirect status: ${line}`);
+if(!exists("package.json")||!exists("bun.lock"))fail("Bun dependency manifest and lockfile are required");
+else{
+  const pkg=JSON.parse(read("package.json"));
+  if(pkg.scripts?.build!==contract.build_script)fail("package.json build script differs from deployment contract");
 }
 
+const wrangler=JSON.parse(read(contract.wrangler_config));
+if(wrangler.name!==contract.worker_name)fail("Wrangler Worker name differs from deployment contract");
+if(wrangler.main!==contract.entrypoint)fail("Wrangler entrypoint differs from deployment contract");
+if(wrangler.assets?.directory!==contract.assets_directory)fail("Wrangler assets directory differs from deployment contract");
+if(wrangler.assets?.binding!==contract.assets_binding)fail("Wrangler assets binding differs from deployment contract");
+
+const worker=read(contract.entrypoint);
+if(!worker.includes("env?.ASSETS?.fetch"))fail("Worker must serve static assets through the declared Assets binding");
+if(!worker.includes("const SECURITY_HEADERS"))fail("Worker security header policy is missing");
+for(const route of contract.api_routes||[]){
+  if(!worker.includes("'"+route+"'")&&!worker.includes('"'+route+'"')&&!worker.includes("startsWith('"+route+"/'")&&!worker.includes('startsWith("'+route+'/"'))fail("Worker route dispatcher does not reference declared API route: "+route);
+}
+const headers=worker.slice(worker.indexOf("const SECURITY_HEADERS"),worker.indexOf("};",worker.indexOf("const SECURITY_HEADERS"))+2);
+for(const required of contract.required_worker_security_headers||[]){
+  const [name,value]=required.split(/:\s*/,2);
+  if(!headers.includes("'"+name+"'")&&!headers.includes('"'+name+'"'))fail("Worker security header is missing: "+name);
+  if(value&&!headers.includes(value))fail("Worker security header value is missing: "+name);
+}
 const index=read("index.html");
-if(contract.canonical_origin_must_be_exact && !index.includes(`<link rel="canonical" href="${contract.production_origin}/"`)) fail.push("index canonical origin must match production origin");
-
-const sitemap=read("sitemap.xml");
-if(!sitemap.includes(contract.production_origin)) fail.push("sitemap must use the production origin");
-if(sitemap.includes(contract.alternate_origin)) fail.push("sitemap must not contain the alternate origin");
-
+if(contract.content_canonical_origin_must_be_exact&&!index.includes('<link rel="canonical" href="'+contract.content_canonical_origin+'/'))fail("content canonical origin must remain the declared personal-site canonical origin");
 const ai=read("functions/api/ai.js");
+if(contract.api_origin_policy==="jawed.co.in-and-subdomains"&&!ai.includes('host==="jawed.co.in"||host.endsWith(".jawed.co.in")'))fail("AI API origin policy must allow the jawed.co.in host and its subdomains");
+if(contract.deployment_scope!=="Studio HQ Lab Worker only; no personal-site or Kaushal deployment")fail("deployment scope must explicitly exclude personal-site and Kaushal deployments");
 
-if(!ai.includes(`origin==="${contract.production_origin}"`)) fail.push("AI API must allow the production origin");
-
-if(contract.no_package_manifest_required){
-  for(const p of ["package.json","package-lock.json","pnpm-lock.yaml","yarn.lock"]) if(exists(p)) fail.push(`unexpected package/dependency manifest: ${p}`);
-}
-if(!contract.build_command && !contract.external_deployment_provider) fail.push("deployment contract must identify external deployment provider");
-
-if(fail.length){
-  console.error("Deployment Runtime Reliability Gate FAILED");
-  for(const item of fail) console.error("- "+item);
+if(failures.length){
+  console.error("Studio HQ Cloudflare Worker Runtime Gate FAILED");
+  for(const item of failures)console.error("- "+item);
   process.exit(1);
 }
-console.log("Deployment Runtime Reliability Gate PASSED");
-console.log(`Production origin: ${contract.production_origin}`);
-console.log(`Deployment model: ${contract.deployment_model}`);
-console.log(`Functions directory: ${contract.functions_directory}`);
-console.log(`API boundary: ${routes.include.join(", ")}`);
+console.log("Studio HQ Cloudflare Worker Runtime Gate PASSED");
+console.log("Worker: "+contract.worker_name);
+console.log("Lab origin: "+contract.lab_origin);
+console.log("Entrypoint: "+contract.entrypoint);
+console.log("Assets: "+contract.assets_binding+" -> "+contract.assets_directory);
+console.log("Deployment scope: Studio HQ Lab only");

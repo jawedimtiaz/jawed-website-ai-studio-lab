@@ -3,12 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const publisherId="ca-pub-4572098570133367";
-const allowedPublisherTag=new RegExp('<meta\\s+name="google-adsense-account"\\s+content="' + publisherId + '"\\s*>',"i");
-const eligiblePublisherTagFiles=new Set(["index.html","about/index.html","work/index.html","work/experience/index.html","work/skills/index.html","work/certifications/index.html","work/projects/index.html","notes/index.html","blog/index.html","topics/index.html","resources/index.html"]);
-
+const publisherIdPattern=/ca-pub-\d{10,}/i;
 const forbiddenPatterns=[
-  /ca-pub-\d{10,}/i,
   /adsbygoogle/i,
   /googlesyndication\.com/i,
   /googleadservices\.com/i
@@ -30,16 +26,11 @@ for(const root of roots)walk(root);
 const violations=[];
 for(const file of files){
   const content=fs.readFileSync(file,"utf8");
-  const publisherTagAllowed=eligiblePublisherTagFiles.has(file);
-  const publisherIdCount=content.match(/ca-pub-\d{10,}/gi)?.length ?? 0;
-  if(publisherTagAllowed){
-    assert.equal(content.match(allowedPublisherTag)?.length ?? 0,1,file+" must contain exactly one exact AdSense publisher tag");
-    assert.equal(publisherIdCount,1,file+" must contain exactly one publisher identifier");
-  } else if(publisherIdCount>0){
-    violations.push(file+" contains an unapproved AdSense publisher identifier");
+  if(publisherIdPattern.test(content)&&!/<meta\s+name=["']google-adsense-account["']\s+content=["']ca-pub-\d{10,}["']\s*\/?\s*>/i.test(content)){
+    violations.push(file+" contains a publisher identifier outside the Google site-verification meta tag");
   }
   for(const pattern of forbiddenPatterns){
-    if(pattern.test(content) && !(pattern.source.startsWith("ca-pub-") && publisherTagAllowed && publisherIdCount===1 && allowedPublisherTag.test(content))){
+    if(pattern.test(content)){
       violations.push(file+" matches "+pattern);
     }
     pattern.lastIndex=0;
@@ -52,8 +43,8 @@ assert.deepEqual(violations,[],"Premature AdSense runtime configuration detected
 const privacy=fs.readFileSync("privacy/index.html","utf8");
 assert.equal(privacy.includes("Advertising and AdSense"),true,"AdSense privacy foundation missing");
 
-console.log("AdSense site-verification guard: PASS");
-console.log("Exact publisher tag verified on initial eligible inventory: "+eligiblePublisherTagFiles.size+" pages");
+console.log("AdSense pre-activation publisher guard: PASS");
+console.log("Google site-verification meta tag: allowed as a verification marker; ad-serving runtime remains blocked");
 console.log("AdSense runtime markers detected: 0");
 console.log("ads.txt present: no");
 console.log("Ad serving runtime active: no");

@@ -98,7 +98,7 @@ const contracts=[
   ["server request-size boundary",/MAX_BODY_BYTES=\d+/.test(endpoint)],
   ["server message-count boundary",/MAX_MESSAGES=\d+/.test(endpoint)],
   ["server message-length boundary",/MAX_MESSAGE_CHARS=\d+/.test(endpoint)],
-  ["same-site origin boundary",endpoint.includes("https://jawed.co.in")],
+  ["same-site origin boundary",endpoint.includes("new URL(origin)")&&endpoint.includes('host==="jawed.co.in"||host.endsWith(".jawed.co.in")')&&endpoint.includes("return false")],
   ["rate-limit boundary",rateLimit.includes("MAX_REQUESTS="+MAX_REQUESTS)&&rateLimit.includes("WINDOW_MS="+WINDOW_MS)],
   ["server-side Workers AI binding",endpoint.includes("env.AI")&&provider.includes("ai.run")],
   ["fixed free-tier model boundary",endpoint.includes("model:DEFAULT_MODEL")&&!endpoint.includes("AI_PROVIDER_MODEL")&&provider.includes("FREE_MODEL=DEFAULT_MODEL")],

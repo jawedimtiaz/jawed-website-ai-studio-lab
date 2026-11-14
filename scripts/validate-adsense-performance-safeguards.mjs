@@ -34,7 +34,7 @@ assert.equal(technical.includes("Do not enable ad scripts globally before consen
 for(const file of files){
   const text=fs.readFileSync(file,"utf8");
   assert.equal(/adsbygoogle|googlesyndication\.com/i.test(text),false,"Advertising runtime token found before activation in "+file);
-  assert.equal(/page\.reload\(|location\.reload\(/i.test(text),false,"Page reload dependency found in "+file);
+  if(file!=="./offline.html")assert.equal(/page\.reload\(|location\.reload\(/i.test(text),false,"Page reload dependency found outside the offline recovery page in "+file);
 }
 const headers=fs.readFileSync("_headers","utf8");
 assert.equal(/googlesyndication\.com|doubleclick\.net|googleadservices\.com/i.test(headers),false,"Speculative ad host found in CSP");

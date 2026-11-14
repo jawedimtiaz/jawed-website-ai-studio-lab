@@ -42,6 +42,6 @@ AdSense account → real publisher ID → CMP/consent configuration → privacy 
 
 ## Current state
 
-The exact publisher verification meta tag is present on the approved initial eligible inventory pages. No AdSense runtime ad tag, active ad slot, `ads.txt` publisher record, or repository-side CMP runtime is active.
+A Google AdSense site-verification meta tag may be present on eligible pages as a verification marker; it does not activate ad serving. Do not add ad-serving scripts, active ad slots, or an `ads.txt` publisher record until the external account and consent gates are satisfied. No AdSense runtime ad tag, active ad slot, `ads.txt` publisher record, or repository-side CMP runtime is active.
 
 This contract is an implementation safeguard, not a statement that Google has approved the site.
