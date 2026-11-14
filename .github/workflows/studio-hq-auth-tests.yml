@@ -26,10 +26,12 @@ on:
       - 'scripts/test-hq-migration.mjs'
       - 'functions/api/hq/projects.js'
       - 'functions/api/hq/projects.test.js'
+      - 'functions/api/hq/financial.test.js'
       - 'worker.js'
       - 'tests/hq-owner-authorization.test.js'
       - 'package.json'
       - 'wrangler.toml'
+      - 'wrangler.jsonc'
       - '.github/workflows/studio-hq-auth-tests.yml'
 
 permissions:
