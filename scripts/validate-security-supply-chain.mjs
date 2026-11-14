@@ -24,7 +24,9 @@ else{
     const allowedKeys=new Set(["projectId","appId","apiKey","authDomain","firestoreDatabaseId","storageBucket","messagingSenderId","measurementId","oAuthClientId","recaptchaSiteKey"]);
     const keys=Object.keys(firebase);
     if(keys.some(key=>!allowedKeys.has(key))||[...allowedKeys].some(key=>!(key in firebase)))fail("Firebase client configuration contains unexpected or missing fields");
-    for(const key of keys)if(typeof firebase[key]!=="string"||!firebase[key].trim())fail("Firebase client configuration field is invalid: "+key);
+    const requiredKeys=["projectId","appId","apiKey","authDomain","firestoreDatabaseId","storageBucket","messagingSenderId"];
+    for(const key of requiredKeys)if(typeof firebase[key]!=="string"||!firebase[key].trim())fail("Firebase client configuration field is invalid: "+key);
+    for(const key of ["measurementId","oAuthClientId","recaptchaSiteKey"])if(key in firebase&&typeof firebase[key]!=="string")fail("Firebase optional client configuration field is invalid: "+key);
     if(typeof firebase.apiKey!=="string"||!/^AIza[0-9A-Za-z_-]{30,}$/.test(firebase.apiKey))fail("Firebase client API key format is invalid");
   }catch{fail("Firebase client configuration is not valid JSON")}
 }
