@@ -57,17 +57,17 @@ test('service worker bypasses cache for Studio HQ and descendants', () => {
 });
 
 test('Worker marks both Studio HQ asset and SPA fallback HTML responses private and non-cacheable', () => {
-  assert.match(workerEntry, /function addPrivatePageHeaders\\(response\\)/);
-  assert.match(workerEntry, /headers\\.set\\('Cache-Control', 'no-store, private, max-age=0'\\)/);
-  assert.match(workerEntry, /headers\\.set\\('Pragma', 'no-cache'\\)/);
-  const privateRouteCondition = /pathname === ['"]\\/studio-hq['"] \\|\\| pathname\\.startsWith\\(['"]\\/studio-hq\\/['"]\\)/;
+  assert.match(workerEntry, /function addPrivatePageHeaders\(response\)/);
+  assert.match(workerEntry, /headers\.set\('Cache-Control', 'no-store, private, max-age=0'\)/);
+  assert.match(workerEntry, /headers\.set\('Pragma', 'no-cache'\)/);
+  const privateRouteCondition = /pathname === ['"]\/studio-hq['"] \|\| pathname\.startsWith\(['"]\/studio-hq\/['"]\)/;
   assert.match(workerEntry, privateRouteCondition);
 
-  const privateHeaderApplications = workerEntry.match(/\\? addPrivatePageHeaders\\(response\\)/g) || [];
+  const privateHeaderApplications = workerEntry.match(/\? addPrivatePageHeaders\(response\)/g) || [];
   assert.equal(privateHeaderApplications.length, 2, 'Both the direct asset response and SPA fallback must apply private headers');
 
-  assert.match(workerEntry, /if \\(assetResponse\\.status !== 404\\)[\\s\\S]*?\\? addPrivatePageHeaders\\(response\\)/);
-  assert.match(workerEntry, /indexResponse = await env\\.ASSETS\\.fetch\\(indexRequest\\)[\\s\\S]*?\\? addPrivatePageHeaders\\(response\\)/);
+  assert.match(workerEntry, /if \(assetResponse\.status !== 404\)[\s\S]*?\? addPrivatePageHeaders\(response\)/);
+  assert.match(workerEntry, /indexResponse = await env\.ASSETS\.fetch\(indexRequest\)[\s\S]*?\? addPrivatePageHeaders\(response\)/);
 });;
 
 test('Studio HQ Approvals interface uses authorized same-origin no-store endpoints', () => {
