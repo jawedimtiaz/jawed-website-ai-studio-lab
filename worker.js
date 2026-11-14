@@ -57,6 +57,17 @@ function addSecurityHeaders(response) {
   });
 }
 
+function addPrivatePageHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'no-store, private, max-age=0');
+  headers.set('Pragma', 'no-cache');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -224,14 +235,20 @@ export default {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
         if (assetResponse.status !== 404) {
-          return addSecurityHeaders(assetResponse);
+          const response = addSecurityHeaders(assetResponse);
+          return pathname === '/studio-hq' || pathname.startsWith('/studio-hq/')
+            ? addPrivatePageHeaders(response)
+            : response;
         }
         // If client requested HTML route that doesn't exist as static file, fallback to /index.html (SPA routing)
         const accept = request.headers.get('accept') || '';
         if (request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.')) {
           const indexRequest = new Request(new URL('/index.html', request.url), request);
           const indexResponse = await env.ASSETS.fetch(indexRequest);
-          return addSecurityHeaders(indexResponse);
+          const response = addSecurityHeaders(indexResponse);
+          return pathname === '/studio-hq' || pathname.startsWith('/studio-hq/')
+            ? addPrivatePageHeaders(response)
+            : response;
         }
         return addSecurityHeaders(assetResponse);
       } catch (err) {
