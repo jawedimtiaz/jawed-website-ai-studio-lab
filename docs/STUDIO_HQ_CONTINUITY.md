@@ -380,3 +380,14 @@ Required remediation before any deployment:
 ### Updated Phase 2.7M recommendation
 
 The preferred canonical-schema compatibility direction remains valid, but the implementation scope must include authentication and audit-log security before any API handler is considered deployable. Treat the authentication regression as a release-blocking security issue, not a routine migration task.
+
+
+### Authentication remediation implementation constraints
+
+Further review of current-main build/test configuration found:
+- `package.json` has no `jose` dependency and no `test` script.
+- `bun.lock` does not contain `jose`.
+- The repository's current `.github/workflows/` list contains no dedicated Studio HQ authorization test workflow.
+- The live Worker bundle contains a bundled JOSE implementation, but that does not make JOSE available to current-main source builds.
+
+Therefore, a code correction cannot safely assume that the current-main project can import JOSE without also adding and locking the dependency and ensuring the build/runtime supports it. The implementation must update the package manifest and lockfile through the project's actual package manager, then add a CI workflow that runs the authorization tests. Do not hand-edit a lockfile or claim tests are wired into CI merely because a test file exists.
