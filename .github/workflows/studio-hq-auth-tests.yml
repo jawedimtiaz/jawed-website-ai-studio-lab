@@ -1,0 +1,54 @@
+name: Studio HQ Firebase Auth Tests
+
+on:
+  push:
+    branches:
+      - feat/studio-hq-firebase-auth
+      - fix/phase-2-7j-hq-auth-d1-alignment
+  pull_request:
+    branches:
+      - main
+      - feat/studio-hq-projects-api
+      - fix/studio-hq-owner-status-enforcement
+      - fix/studio-hq-bounded-json-body
+    paths:
+      - 'functions/lib/hqAuth.js'
+      - 'functions/lib/hqAuth.test.js'
+      - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqApi.test.js'
+      - 'functions/api/hq/session.js'
+      - 'functions/api/hq/clients.js'
+      - 'functions/api/hq/clients.test.js'
+      - 'functions/api/hq/clients.api.test.js'
+      - 'functions/api/hq/financial.js'
+      - 'functions/api/hq/financial.test.js'
+      - 'migrations/hq/**'
+      - 'scripts/test-hq-migration.mjs'
+      - 'functions/api/hq/projects.js'
+      - 'functions/api/hq/projects.test.js'
+      - 'worker.js'
+      - 'tests/hq-owner-authorization.test.js'
+      - 'package.json'
+      - 'wrangler.toml'
+      - 'wrangler.jsonc'
+      - '.github/workflows/studio-hq-auth-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hq-auth-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.12.0
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Run HQ authentication tests
+        run: npm run test:hq-auth
+      - name: TypeScript and production build
+        run: npm run build
