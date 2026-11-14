@@ -681,9 +681,10 @@ const crossDomainPolicyContract=headers.includes("X-Permitted-Cross-Domain-Polic
 if(!crossDomainPolicyContract)errors.push("Security headers must disable legacy cross-domain policy files");
 else console.log("X-Permitted-Cross-Domain-Policies contract: PASS");
 
-const cspFrameContract=headers.includes("frame-src 'none'");
-if(!cspFrameContract)errors.push("CSP must explicitly deny frame loads because the site does not use iframes");
-else console.log("CSP frame-src hardening contract: PASS");
+const frameDirective=headers.match(/frame-src\\s+([^;]+)/)?.[1]?.trim()||"";
+const cspFrameContract=frameDirective==="'self' https://refined-actor-skhlb.firebaseapp.com";
+if(!cspFrameContract)errors.push("CSP must allow only same-origin and the Firebase Authentication frame origin");
+else console.log("CSP frame-src allowlist contract: PASS");
 
 const crossOriginOpenerPolicyContract=headers.includes("Cross-Origin-Opener-Policy: same-origin");
 if(!crossOriginOpenerPolicyContract)errors.push("Security headers must enforce same-origin cross-origin opener isolation");
