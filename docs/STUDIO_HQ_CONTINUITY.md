@@ -254,3 +254,15 @@ The four failed “Production” reliability jobs were inspected at the log and 
 - AI POST checks expected a JSON 403 rejection but received HTTP 405.
 
 These are failures in repository monitoring contracts against the personal website's current public behavior. They are **not direct tests of Studio HQ or the Lab Worker**. Do not change `jawed.co.in` to make these old contracts pass without explicit approval. Classify or update the monitoring contracts in the Lab repository only after a separate, approved read-only comparison with the personal site's intended current architecture; do not silently change the protected website.
+
+
+### Owner-authentication schema incompatibility confirmed
+
+A read-only `PRAGMA table_info(hq_users)` query on the live D1 database confirmed these columns:
+`uid`, `email`, `display_name`, `status`, `created_at`, `last_seen_at`.
+
+Current-main `functions/lib/hqApi.js` selects and updates `id`, `role`, `updated_at`, and `last_login_at`, and inserts those fields during first-owner bootstrap. The current-main owner-hardening migration defines a different `hq_users` schema with `id`, `role`, `updated_at`, and `last_login_at`.
+
+Because the existing live `hq_users` table already exists, `CREATE TABLE IF NOT EXISTS hq_users` in the un-applied migration will not transform its columns. Applying that migration as-is would not repair the mismatch. This is a confirmed schema incompatibility, not merely a missing Wrangler binding.
+
+**Approval gate:** do not run first-owner enrollment, deploy current-main auth code, or apply the owner-hardening migration until a reviewed forward-only migration is designed to preserve existing owner/user data and all existing CRM/project/QA/financial records. The current live owner bootstrap state was not changed or queried.
