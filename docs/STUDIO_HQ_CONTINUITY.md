@@ -271,3 +271,74 @@ Because the existing live `hq_users` table already exists, `CREATE TABLE IF NOT 
 ### Continuity PR #50 latest head update
 
 The continuity document was expanded on its branch with the Cloudflare inventory, live D1 migration/schema evidence, deployed Worker binding evidence, PR #49 source mismatch, current-main monitoring-check root causes and owner-authentication schema incompatibility. Latest branch head at this checkpoint: `8c20958a68f3f8ce0eadca39aa94cc098323bd75`. PR #50 remains open and unmerged. The first commit's supply-chain check passed, but no check runs had yet appeared for this latest head when it was queried. Recheck PR #50 checks before merge approval.
+
+
+## 11. Phase 2.7M — database compatibility and safe migration assessment (read-only)
+
+### Live schema verified against the applied migration lineage
+
+The live database's migration ledger records:
+- `0001_studio_hq_schema.sql`
+- `0002_financial_management.sql`
+
+These match the two files under `migrations/hq/` in the PR #46 deployment snapshot. The live database therefore follows the original canonical schema family, not the later root-level owner-hardening schema.
+
+The live table family includes:
+- CRM: `clients`, `client_contacts`
+- Delivery: `projects`, `project_milestones`, `project_tasks`, `repositories`, `deployments`
+- Governance: `approvals`, `qa_checks`, `audit_logs`, `activity_notes`
+- Finance: `quotations`, `quotation_items`, `invoices`, `invoice_items`, `payments`, `payment_idempotency_keys`, `payment_refunds`, `refund_idempotency_keys`, `financial_sequences`
+- Operations: `maintenance_plans`, `assets`
+- Identity: `hq_users`
+
+The current-main root migration `migrations/0002_hq_owner_authorization_hardening.sql` creates parallel tables `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`, and `hq_audit_logs`. Current-main route handlers use those parallel names. The live database's canonical records are in the original names. Do not create a second parallel business-data model or copy records into it without a specifically approved migration and reconciliation plan.
+
+### Confirmed column-level differences
+
+Read-only `PRAGMA table_info` checks confirmed:
+- Live `hq_users`: `uid`, `email`, `display_name`, `status`, `created_at`, `last_seen_at`; current-main auth code expects `id`, `role`, `updated_at`, `last_login_at`.
+- Live `clients`: includes `id`, `name`, `business_name`, `status`, `email`, `phone`, `created_by`, text `created_at`/`updated_at`, archive fields. Current-main client route expects `hq_clients.company` and integer timestamp-style fields.
+- Live `projects`: includes `id`, `client_id`, `name`, `project_type`, `status`, `priority`, `summary`, `scope_markdown`, `currency`, `quoted_amount_minor`, creator/updater and archive fields. Current-main project route expects `hq_projects.title`, `description`, and `budget`.
+- Live `project_tasks`: includes `project_id`, `milestone_id`, `title`, `description`, `status`, `priority`, `assigned_to`, `due_date`, sort order, creator/updater and archive fields. Current-main task route expects `hq_tasks`.
+- Live `project_milestones`: includes `project_id`, `name`, `description`, `status`, `due_date`, sort order and archive fields. Current-main milestone route expects `hq_milestones.title` and `target_date`.
+- Live `audit_logs`: records `actor_uid`, `actor_email`, `action`, `entity_type`, `entity_id`, request/IP metadata, before/after/metadata JSON and text `created_at`. Current-main helper inserts into `hq_audit_logs` with a different column model.
+
+The financial tables are already part of the live canonical schema lineage. Their records must not be recreated or overwritten by a second schema.
+
+### Recommended compatibility strategy (proposal only; not implemented)
+
+**Preferred direction: adapt the current-main application/API to the existing canonical D1 schema**, rather than apply the root-level owner-hardening migration and create parallel `hq_*` business tables.
+
+This is the least disruptive direction because:
+1. The live database already has the canonical schema and applied financial migrations.
+2. It avoids duplicating customer, project, task, milestone and audit records.
+3. It preserves existing IDs, foreign keys, archive fields, audit history and integer-minor-unit financial data.
+4. The API can provide a stable UI response contract by mapping canonical database fields to the existing UI names where necessary (for example `business_name` to UI `company`, `name` to UI `title`, and `quoted_amount_minor` to a formatted budget only with explicit currency/amount handling).
+
+Before implementation, a bounded code review must determine every consumer of the current API payloads and all write/update/delete paths. It must also inspect the complete canonical schema constraints, foreign keys, triggers and indexes. Then prepare an additive, forward-only migration only for genuinely missing fields/indexes, if any. No destructive table rename/drop or automatic data copy should be part of the first correction.
+
+### Owner authentication plan
+
+Adapt owner authorization to the live `hq_users.uid` identity and existing text timestamp fields, while preserving the existing Firebase UID/email matching and disabled-user checks. Do not infer or invent an owner record. Do not run first-owner bootstrap. Role handling must be explicitly designed against the current owner-only authorization model because the live table has no `role` column.
+
+Audit writes should target the existing `audit_logs` schema and preserve actor identity, action, entity, request metadata and before/after context. Do not create a parallel `hq_audit_logs` table as a shortcut.
+
+### Safe implementation and verification sequence (future; requires approval)
+
+1. Complete a read-only dependency review of all HQ API handlers, frontend consumers, tests, and the canonical schema.
+2. Produce a field-by-field API-to-D1 mapping for clients, projects, tasks, milestones, approvals, QA and financial modules.
+3. Implement the compatibility changes on a new feature branch, without changing the live database.
+4. Add automated tests against a disposable local/test D1 database initialized from the canonical migrations. Test CRUD, foreign keys, archived records, timestamps, money calculations, owner authorization and audit events.
+5. Verify build, static checks, security gates and browser/API regression tests against the branch.
+6. Review a generated forward-only migration only if the audit proves it is necessary. Do not run it on live D1 at this stage.
+7. Open one consolidated PR with the source/config correction and test evidence. Deployment remains a separate explicit approval.
+
+### Phase 2.7M decision
+
+**NO-GO for applying `migrations/0002_hq_owner_authorization_hardening.sql` to the live D1 database.** Its `CREATE TABLE IF NOT EXISTS` statements do not transform the existing `hq_users` schema and would create parallel business tables that the live database does not currently use.
+
+**NO-GO for deploying current-main HQ handlers against the current live D1 schema.** Column and table-name mismatches are confirmed.
+
+**Recommended next implementation target:** one consolidated compatibility PR that adapts current-main handlers/auth/audit logging to the already-applied canonical schema, with tests on disposable D1. No production migration should be needed unless the complete schema review identifies a specific missing requirement.
+
+No live D1 rows were read, inserted, updated or deleted. No migration, deployment, Worker setting change or secret change was performed during Phase 2.7M.
