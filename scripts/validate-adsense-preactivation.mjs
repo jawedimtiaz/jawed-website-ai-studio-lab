@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const publisherIdPattern=/ca-pub-\\d{10,}/i;
+const publisherIdPattern=/ca-pub-\d{10,}/i;
 const forbiddenPatterns=[
-  /ca-pub-\d{10,}/i,
   /adsbygoogle/i,
   /googlesyndication\.com/i,
   /googleadservices\.com/i
@@ -27,7 +26,7 @@ for(const root of roots)walk(root);
 const violations=[];
 for(const file of files){
   const content=fs.readFileSync(file,"utf8");
-  if(publisherIdPattern.test(content)&&!/<meta\\s+name=["']google-adsense-account["']\\s+content=["']ca-pub-\\d{10,}["']\\s*\\/?\\s*>/i.test(content)){
+  if(publisherIdPattern.test(content)&&!/<meta\s+name=["']google-adsense-account["']\s+content=["']ca-pub-\d{10,}["']\s*\\/?\s*>/i.test(content)){
     violations.push(file+" contains a publisher identifier outside the Google site-verification meta tag");
   }
   for(const pattern of forbiddenPatterns){
