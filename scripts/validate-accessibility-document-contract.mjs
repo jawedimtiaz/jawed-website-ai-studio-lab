@@ -31,7 +31,7 @@ for (const file of files) {
   if (path === "index.html" && /<div id="root"><\/div>/.test(html)) {
     const homeRoute = await readFile("src/pages/HomePage.tsx", "utf8");
     if (!/<main\b[^>]*>/i.test(homeRoute)) fail("React SPA home route must expose a <main> landmark");
-  } else if (!/<main\\b[^>]*>/i.test(html)) {
+  } else if (!/<main\b[^>]*>/i.test(html)) {
     fail("document must expose a <main> landmark");
   }
   for (const match of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button\s*>/gi)) {
