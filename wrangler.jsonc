@@ -25,5 +25,31 @@
       "database_id": "d9ec83ea-7114-4179-af8e-a22ba5494508",
       "migrations_dir": "migrations/hq"
     }
-  ]
+  ],
+  "ratelimits": [
+    {
+      "name": "HQ_SESSION_LIMITER",
+      "namespace_id": "8726111401",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "HQ_WRITE_LIMITER",
+      "namespace_id": "8726111402",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "head_sampling_rate": 1
+  }
 }
