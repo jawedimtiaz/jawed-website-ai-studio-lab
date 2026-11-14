@@ -149,3 +149,83 @@ At each material milestone, update this same file in a branch and PR. Include:
 - Decisions, approvals, blockers and exact next action.
 
 Do not create multiple competing “master” logs. Older exported logs may be retained as historical snapshots, but this file is the canonical Studio HQ handover once merged.
+
+
+## 10. Phase 2.7L read-only Cloudflare and deployment audit — 14 November 2026
+
+### Live Cloudflare inventory (read-only)
+
+Connected Cloudflare identity was confirmed as the Jawed account. The account contains the Lab Worker and a separate `kaushal-path-proxy`; only the Lab Worker and its dedicated HQ database were inspected. No writes, deployments, migrations or setting changes were performed.
+
+Live Worker `jawed-website-ai-studio-lab`:
+- Last modified timestamp returned by the Worker inventory: `2026-11-13T17:51:38Z`.
+- Live bindings returned by the Worker settings API: `AI`, `ASSETS`, `CANONICAL_ORIGIN`, `ENVIRONMENT`, and `HQ_DB`.
+- The live `HQ_DB` binding points to database `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`).
+- The live settings response did not list `HQ_SESSION_LIMITER` or `HQ_WRITE_LIMITER`. Treat those rate-limit bindings as **not verified/present in the live Worker**; the API response exposed five bindings and none were rate-limit bindings.
+- The Worker inventory also lists `kaushal-path-proxy`; it was not modified or inspected.
+
+Live D1 database `jawed-studio-hq`:
+- Database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- Read-only SQLite schema inspection found tables for clients, projects, project tasks/milestones, approvals, QA checks, users, audit logs and financial-management records, among others.
+- Read-only migration ledger query returned exactly `0001_studio_hq_schema.sql` and `0002_financial_management.sql`.
+- Do not use Cloudflare's deprecated `num_tables` field as evidence; inspect `sqlite_master` and the migration ledger instead.
+- No customer row values or financial records were read or changed.
+
+### Confirmed source/configuration mismatch — stronger evidence
+
+Both current-main config files were inspected:
+- `wrangler.jsonc` does not declare `d1_databases` or `ratelimits`.
+- `wrangler.toml` also does not declare a D1 binding or rate-limit bindings.
+- Current-main `worker.js` imports the Studio HQ API route handlers. Current-main `functions/lib/hqApi.js` explicitly checks `env.HQ_DB` and returns a database-unavailable response if it is missing.
+- Therefore, deploying current main with the present Wrangler config risks removing the live `HQ_DB` binding and breaking Studio HQ database operations.
+- The current-main `migrations/` directory contains `0002_hq_owner_authorization_hardening.sql`; its SQL defines tables named `hq_users`, `hq_audit_logs`, `hq_clients`, `hq_projects`, `hq_tasks`, and `hq_milestones`.
+- The pinned PR #46 snapshot instead has `migrations/hq/0001_studio_hq_schema.sql` and `migrations/hq/0002_financial_management.sql`. The live D1 migration ledger matches these two pinned migration names.
+- Current main's root-level migration is not present in the live database's migration ledger. Do not apply it without a schema/compatibility review; it is a different migration layout and has a different table naming scheme from the live schema.
+- The live Worker currently retains `HQ_DB` despite its absence from the current repository's Wrangler files. This indicates live deployed metadata and repository configuration are out of sync.
+
+### PR #49 and checks
+
+- PR #49 head branch: `chore/pr47-refresh-main-20261114`, head SHA `8ba814c23e51c6182309cff5d22184084f7a1745`; base is current main.
+- Its two retrieved check runs — Site integrity and Secrets and supply-chain baseline — completed successfully.
+- The workflow is manual-only, but it checks out the pinned PR #46 merge SHA `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, not current main.
+- The pinned commit and current main compare as divergent (33 commits ahead on the comparison's head side and 176 behind, with merge base `6603eb25e683ebe33a8a3e44271398475e9c0edf`). Do not treat the pinned source as a simple ancestor snapshot of current main.
+- The workflow's validation checks Worker name, assets directory, rate-limit binding names and build output, but it does not validate the D1 binding or migration-directory consistency.
+- No PR #49 deployment workflow was run and no deployment was triggered.
+
+### Current-main CI health at this checkpoint
+
+The current main commit `f432865d33e30d988f070ccf0b7b8b68e9442f7f` had several retrieved check runs completed with failures:
+- Production static asset reliability.
+- Production smoke reliability.
+- Production AI GET reliability.
+- Production AI POST reliability.
+
+Other retrieved checks on that commit included passing Site integrity, Secrets and supply-chain baseline, Deployment runtime reliability, AI production regression matrix, AdSense privacy readiness and Production availability monitoring contract. The failed job step names were retrieved, but their detailed logs/root causes were not inspected in this audit. Do not claim current main CI is fully green.
+
+### PR #50 continuity-document check
+
+- PR #50 remains open and unmerged at the last verification.
+- Its `Secrets and supply-chain baseline` check run completed successfully.
+- The commit status endpoint still reported a pending aggregate status with zero legacy statuses; therefore only the one successful check-run is claimed here, not full required-check completion.
+
+### Phase 2.7L decision
+
+**NO-GO for PR #49 merge/deployment in its current form.** Reasons:
+1. The deployment workflow pins a divergent older source revision rather than the current reviewed main revision.
+2. Current-main Wrangler files omit the live D1 binding and rate-limit configuration, while the running Worker still has D1.
+3. The migration layout and schema naming differ between current main and the live database's applied migration ledger.
+4. Current main has multiple failed production reliability check runs whose detailed causes remain to be investigated.
+5. The live rate-limit bindings were not present in the settings response and are not verified.
+
+### Required consolidated correction/review set
+
+Before any deployment PR is considered ready:
+1. Reconcile the intended source revision: deployment must use the reviewed current main commit, not silently deploy the older pinned PR #46 snapshot.
+2. Restore/declare the correct `HQ_DB` binding in the intended canonical Wrangler config, matching the live database ID, only after reviewing the correct migration directory and compatibility.
+3. Reconcile `wrangler.jsonc` and `wrangler.toml` so there is one unambiguous source of deployment configuration.
+4. Reconcile rate-limit configuration against the live Worker and the security design; do not claim live enforcement until independently verified.
+5. Preserve the existing D1 database and its applied migrations. Do not apply the root-level owner-hardening migration until its relationship to the live schema and migration ledger is resolved.
+6. Inspect the detailed logs for the four failed current-main production reliability checks and resolve or explicitly classify them before deployment approval.
+7. Re-run all relevant CI and build checks on the final deployment candidate.
+
+**Next action:** continue read-only investigation of the four failed current-main workflow runs and inspect the exact SQL/schema compatibility before proposing one bounded correction PR. No implementation, merge, deployment or migration is authorized by this audit.
