@@ -4,23 +4,33 @@ on:
   push:
     branches:
       - feat/studio-hq-firebase-auth
+      - fix/phase-2-7j-hq-auth-d1-alignment
   pull_request:
     branches:
       - main
       - feat/studio-hq-projects-api
+      - fix/studio-hq-owner-status-enforcement
+      - fix/studio-hq-bounded-json-body
     paths:
       - 'functions/lib/hqAuth.js'
       - 'functions/lib/hqAuth.test.js'
       - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqApi.test.js'
       - 'functions/api/hq/session.js'
       - 'functions/api/hq/clients.js'
       - 'functions/api/hq/clients.test.js'
       - 'functions/api/hq/clients.api.test.js'
+      - 'functions/api/hq/financial.js'
+      - 'functions/api/hq/financial.test.js'
+      - 'migrations/hq/**'
+      - 'scripts/test-hq-migration.mjs'
       - 'functions/api/hq/projects.js'
       - 'functions/api/hq/projects.test.js'
       - 'worker.js'
       - 'tests/hq-owner-authorization.test.js'
       - 'package.json'
+      - 'wrangler.toml'
+      - 'wrangler.jsonc'
       - '.github/workflows/studio-hq-auth-tests.yml'
 
 permissions:

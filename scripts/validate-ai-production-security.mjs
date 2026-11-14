@@ -7,7 +7,8 @@ const frontend=fs.readFileSync("ai/index.html","utf8");
 const rateLimit=fs.readFileSync("functions/lib/ai-rate-limit.js","utf8");
 const docs=fs.readFileSync("docs/ai-production-observability.md","utf8");
 
-const failureFactory=endpoint.slice(endpoint.indexOf("const failure="),endpoint.indexOf("\n\nfunction allowedOrigin"));
+const nextFnIndex = endpoint.indexOf("function isAllowedOrigin") !== -1 ? endpoint.indexOf("function isAllowedOrigin") : endpoint.indexOf("function allowedOrigin");
+const failureFactory = endpoint.slice(endpoint.indexOf("const failure="), nextFnIndex);
 assert.equal(failureFactory.includes("request_id:id"),true,"Failure responses must expose only a correlation ID, not request data");
 assert.equal(failureFactory.includes("messages"),false,"Failure responses must not include conversation messages");
 assert.equal(failureFactory.includes("apiKey"),false,"Failure responses must not include provider credentials");

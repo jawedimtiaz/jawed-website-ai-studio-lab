@@ -4,8 +4,10 @@ import {
   readHqJson,
   requireHqDatabase,
   ownerAuthorizationGuardStatement,
-  auditStatement
+  auditStatement,
+  conditionalAuditStatement
 } from '../../lib/hqApi.js';
+import { checkHqRateLimit } from '../../lib/hqRateLimit.js';
 
 const CLIENT_STATUSES = new Set(['lead','prospect','active','paused','completed','closed']);
 const FIELD_LIMITS = {
@@ -141,7 +143,7 @@ async function updateClient(request, db, identity, id) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'client.update', 'client', id, requestId,
+    conditionalAuditStatement(db, identity, 'client.update', 'client', id, requestId,
       { name: existing.name, business_name: existing.business_name, status: existing.status },
       { name: after.name, business_name: after.business_name, status: after.status })
   ]);
@@ -162,7 +164,7 @@ async function archiveClient(db, identity, id, restore = false) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, restore ? 'client.restore' : 'client.archive', 'client', id, requestId,
+    conditionalAuditStatement(db, identity, restore ? 'client.restore' : 'client.archive', 'client', id, requestId,
       { name: existing.name, archived: !!existing.archived_at },
       { name: existing.name, archived: !restore })
   ]);
@@ -175,24 +177,33 @@ export async function handleAuthorizedHqClients({ request, env, segments, identi
   if (!dbResult.ok) return dbResult.response;
   const db = dbResult.db;
   try {
+    if (['POST', 'PATCH'].includes(request.method)) {
+      const rateLimit = await checkHqRateLimit(request, env, { type: 'write', uid: identity.uid });
+      if (!rateLimit.ok) return rateLimit.response;
+    }
+
     if (segments.length === 0) {
       if (request.method === 'GET') return await listClients(request, db);
       if (request.method === 'POST') return await createClient(request, db, identity);
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, POST' });
     }
     const [id, action] = segments;
     if (!id || id.length > 80) return hqJson({ ok: false, error: 'CLIENT_NOT_FOUND' }, 404);
-    if (action === 'archive' && request.method === 'POST') return await archiveClient(db, identity, id, false);
-    if (action === 'restore' && request.method === 'POST') return await archiveClient(db, identity, id, true);
+    if (action === 'archive' || action === 'restore') {
+      if (request.method !== 'POST') {
+        return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'POST' });
+      }
+      return await archiveClient(db, identity, id, action === 'restore');
+    }
     if (action) return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
     if (request.method === 'GET') {
       const client = await getClient(db, id);
       return client ? hqJson({ ok: true, client: publicClient(client) }) : hqJson({ ok: false, error: 'CLIENT_NOT_FOUND' }, 404);
     }
     if (request.method === 'PATCH') return await updateClient(request, db, identity, id);
-    return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, PATCH' });
   } catch (error) {
-    console.error('[Studio HQ] Client API operation failed:', error);
+    console.error('[Studio HQ] Client API operation failed');
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
 }

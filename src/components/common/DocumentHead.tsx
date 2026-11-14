@@ -16,7 +16,14 @@ export const DocumentHead: React.FC = () => {
     // Normalize path by stripping trailing slash for matching
     const cleanPath = pathname.replace(/\/$/, '') || '/';
 
-    if (cleanPath === '/') {
+
+
+    const isPrivateHq = cleanPath === '/studio-hq' || cleanPath.startsWith('/studio-hq/');
+
+    if (isPrivateHq) {
+      title = 'Jawed Web Studio HQ | Private Workspace';
+      description = 'Private owner-only workspace for Jawed Web Studio operations.';
+    } else if (cleanPath === '/') {
       title = 'Jawed Imtiaz | IT Support & Workplace Technology';
       description =
         'IT Field Tech portfolio, practical troubleshooting guides, interactive browser-based IT & finance tools, and Jawed AI assistant.';
@@ -111,14 +118,32 @@ export const DocumentHead: React.FC = () => {
     }
     metaDesc.setAttribute('content', description);
 
-    // Update canonical link
+    // Private HQ must not advertise a public canonical URL.
     let canonicalTag = document.querySelector('link[rel="canonical"]');
-    if (!canonicalTag) {
-      canonicalTag = document.createElement('link');
-      canonicalTag.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonicalTag);
+    if (isPrivateHq) {
+      canonicalTag?.remove();
+    } else {
+      if (!canonicalTag) {
+        canonicalTag = document.createElement('link');
+        canonicalTag.setAttribute('rel', 'canonical');
+        document.head.appendChild(canonicalTag);
+      }
+      canonicalTag.setAttribute('href', canonicalUrl);
     }
-    canonicalTag.setAttribute('href', canonicalUrl);
+
+    // Keep the owner-only workspace out of search indexes.
+    let robotsTag = document.querySelector('meta[name="robots"]');
+    if (isPrivateHq) {
+      if (!robotsTag) {
+        robotsTag = document.createElement('meta');
+        robotsTag.setAttribute('name', 'robots');
+        document.head.appendChild(robotsTag);
+      }
+      robotsTag.setAttribute('content', 'noindex, nofollow, noarchive');
+      robotsTag.setAttribute('data-private-hq', 'true');
+    } else if (robotsTag?.getAttribute('data-private-hq') === 'true') {
+      robotsTag.remove();
+    }
 
     // Update OpenGraph Title & Description
     let ogTitle = document.querySelector('meta[property="og:title"]');
@@ -140,7 +165,9 @@ export const DocumentHead: React.FC = () => {
     // Generate and inject Schema.org JSON-LD Structured Data
     let jsonLdData: any = null;
 
-    if (cleanPath === '/') {
+    if (isPrivateHq) {
+      jsonLdData = null;
+    } else if (cleanPath === '/') {
       jsonLdData = {
         '@context': 'https://schema.org',
         '@graph': [
@@ -365,12 +392,16 @@ export const DocumentHead: React.FC = () => {
     }
 
     let scriptTag = document.querySelector('script[type="application/ld+json"]');
-    if (!scriptTag) {
-      scriptTag = document.createElement('script');
-      scriptTag.setAttribute('type', 'application/ld+json');
-      document.head.appendChild(scriptTag);
+    if (jsonLdData) {
+      if (!scriptTag) {
+        scriptTag = document.createElement('script');
+        scriptTag.setAttribute('type', 'application/ld+json');
+        document.head.appendChild(scriptTag);
+      }
+      scriptTag.textContent = JSON.stringify(jsonLdData);
+    } else {
+      scriptTag?.remove();
     }
-    scriptTag.textContent = JSON.stringify(jsonLdData);
   }, [pathname]);
 
   return null;

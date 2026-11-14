@@ -122,3 +122,27 @@ test('Worker routes CRM API paths to HQ authorization', async () => {
   assert.equal(response.status, 401);
   assert.equal((await response.json()).error, 'AUTH_REQUIRED');
 });
+
+
+test('Worker routes Approvals and QA API paths, including trailing slashes, to HQ authorization', async () => {
+  const releasePaths = [
+    '/api/hq/projects/project-1/approvals',
+    '/api/hq/projects/project-1/approvals/',
+    '/api/hq/approvals/approval-1',
+    '/api/hq/approvals/approval-1/',
+    '/api/hq/projects/project-1/qa',
+    '/api/hq/projects/project-1/qa/',
+    '/api/hq/qa/check-1',
+    '/api/hq/qa/check-1/'
+  ];
+  for (const path of releasePaths) {
+    const response = await worker.fetch(
+      new Request('https://lab.jawed.co.in' + path, { method: 'GET' }),
+      {},
+      {}
+    );
+    assert.equal(response.status, 401, path);
+    assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal((await response.json()).error, 'AUTH_REQUIRED', path);
+  }
+});

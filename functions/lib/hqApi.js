@@ -7,8 +7,11 @@ export const HQ_JSON_HEADERS = {
   'vary': 'Authorization, Origin'
 };
 
-export function hqJson(body, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: HQ_JSON_HEADERS });
+export function hqJson(body, status = 200, extraHeaders = {}) {
+  const headers = Object.keys(extraHeaders).length
+    ? { ...HQ_JSON_HEADERS, ...extraHeaders }
+    : HQ_JSON_HEADERS;
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 export function isHqSameOrigin(request) {
@@ -57,13 +60,47 @@ export async function authorizeHqOwner(request, env, options = {}) {
 }
 
 export async function readHqJson(request, maxBytes = 16384) {
-  const length = Number(request.headers.get('content-length') || 0);
-  if (length > maxBytes) return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) {
-    return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (Number.isFinite(length) && length > maxBytes) {
+      return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+    }
   }
+
+  const chunks = [];
+  let totalBytes = 0;
+  if (request.body) {
+    let reader;
+    try {
+      reader = request.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          try { await reader.cancel(); } catch {}
+          return { ok: false, response: hqJson({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413) };
+        }
+        chunks.push(value);
+      }
+    } catch {
+      try { await reader?.cancel(); } catch {}
+      return { ok: false, response: hqJson({ ok: false, error: 'REQUEST_BODY_UNREADABLE' }, 400) };
+    } finally {
+      try { reader?.releaseLock(); } catch {}
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   try {
+    const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     const value = JSON.parse(raw || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
     return { ok: true, value };
@@ -97,6 +134,23 @@ export function auditStatement(db, identity, action, entityType, entityId, reque
   return db.prepare(`INSERT INTO audit_logs
     (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      crypto.randomUUID(),
+      identity.uid,
+      identity.email,
+      action,
+      entityType,
+      entityId,
+      requestId,
+      before ? JSON.stringify(before) : null,
+      after ? JSON.stringify(after) : null
+    );
+}
+
+export function conditionalAuditStatement(db, identity, action, entityType, entityId, requestId, before, after) {
+  return db.prepare(`INSERT INTO audit_logs
+    (id, actor_uid, actor_email, action, entity_type, entity_id, request_id, before_json, after_json)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE changes() = 1`).bind(
       crypto.randomUUID(),
       identity.uid,
       identity.email,

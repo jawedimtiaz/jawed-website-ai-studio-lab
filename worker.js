@@ -3,6 +3,8 @@ import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOpti
 import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
 import { handleHqClients } from './functions/api/hq/clients.js';
 import { handleHqProjects } from './functions/api/hq/projects.js';
+import { handleHqRelease } from './functions/api/hq/release.js';
+import { handleHqFinancial } from './functions/api/hq/financial.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -32,13 +34,13 @@ const LEGACY_REDIRECTS = {
 
 const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
-  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
   'X-Content-Type-Options': 'nosniff',
   'X-Permitted-Cross-Domain-Policies': 'none',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
   'Strict-Transport-Security': 'max-age=31536000',
-  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'none'; form-action 'self' mailto:; object-src 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://lab.jawed.co.in https://jawed.co.in; img-src 'self' data: https://jawed.co.in https://lab.jawed.co.in; style-src 'self' 'unsafe-inline'; font-src 'self';"
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'self' https://refined-actor-skhlb.firebaseapp.com; form-action 'self' mailto:; object-src 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com https://apis.google.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://lab.jawed.co.in https://jawed.co.in https://refined-actor-skhlb.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://www.googleapis.com; img-src 'self' data: https://jawed.co.in https://lab.jawed.co.in; style-src 'self' 'unsafe-inline'; font-src 'self';"
 };
 
 function addSecurityHeaders(response) {
@@ -74,7 +76,7 @@ export default {
       if (request.method === 'POST') return addSecurityHeaders(await hqSessionPost(context));
       return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
         status: 405,
-        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0', 'allow': 'POST, OPTIONS' }
       }));
     }
 
@@ -85,14 +87,32 @@ export default {
       return addSecurityHeaders(response);
     }
 
-    // 4. Private Studio HQ project endpoints.
+    // 4. Private Studio HQ approvals and QA endpoints.
+    if (pathname.startsWith('/api/hq/projects/') || pathname === '/api/hq/approvals' || pathname.startsWith('/api/hq/approvals/') || pathname === '/api/hq/qa' || pathname.startsWith('/api/hq/qa/')) {
+      const hqParts = pathname.replace(/\/$/, '').split('/').slice(3);
+      const isReleaseRoute = (hqParts[0] === 'projects' && ['approvals', 'qa'].includes(hqParts[2])) ||
+        ['approvals', 'qa'].includes(hqParts[0]);
+      if (isReleaseRoute) {
+        const response = await handleHqRelease({ request, env, segments: hqParts });
+        return addSecurityHeaders(response);
+      }
+    }
+
+    // 5. Private Studio HQ project endpoints.
     if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
       const segments = pathname.replace(/\/$/, '').split('/').slice(4);
       const response = await handleHqProjects({ request, env, segments });
       return addSecurityHeaders(response);
     }
 
-    // 5. Handle /api/ai endpoints
+    // 6. Private Studio HQ financial endpoints.
+    if (['/api/hq/quotations','/api/hq/invoices','/api/hq/payments'].some(base => pathname === base || pathname === base + '/' || pathname.startsWith(base + '/'))) {
+      const segments = pathname.replace(/\/$/, '').split('/').slice(3);
+      const response = await handleHqFinancial({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 7. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -110,7 +130,7 @@ export default {
       });
     }
 
-    // 6. Handle /api/contact endpoints
+    // 8. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
@@ -128,7 +148,7 @@ export default {
       });
     }
 
-    // 7. Handle /api/contact/log endpoint
+    // 9. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
@@ -168,15 +188,15 @@ export default {
       });
     }
 
-    // 8. Reject other /api/* with standard 404 JSON
+    // 10. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
-      return new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
+      }));
     }
 
-    // 9. Serve static assets via Cloudflare Workers Assets binding if present
+    // 11. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
@@ -192,7 +212,7 @@ export default {
         }
         return addSecurityHeaders(assetResponse);
       } catch (err) {
-        console.error('Static asset fetch failed:', err);
+        console.error('Static asset fetch failed');
       }
     }
 

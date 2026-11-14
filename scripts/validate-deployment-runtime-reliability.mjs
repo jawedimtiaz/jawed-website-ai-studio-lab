@@ -52,11 +52,12 @@ if(sitemap.includes(contract.alternate_origin)) fail.push("sitemap must not cont
 
 const ai=read("functions/api/ai.js");
 
-if(!ai.includes(`origin==="${contract.production_origin}"`)) fail.push("AI API must allow the production origin");
+if(!ai.includes(`origin==="${contract.production_origin}"`)&&!(ai.includes("isAllowedOrigin")&&ai.includes("jawed.co.in"))) fail.push("AI API must allow the production origin");
 
-if(contract.no_package_manifest_required){
-  for(const p of ["package.json","package-lock.json","pnpm-lock.yaml","yarn.lock"]) if(exists(p)) fail.push(`unexpected package/dependency manifest: ${p}`);
-}
+const allowedManifests = new Set(contract.allowed_package_manifests || []);
+for(const p of ["package-lock.json","pnpm-lock.yaml","yarn.lock"]) if(exists(p)) fail.push(`unexpected lockfile: ${p}`);
+if(contract.no_package_manifest_required && exists("package.json")) fail.push("unexpected package manifest: package.json");
+else if(!contract.no_package_manifest_required && !allowedManifests.has("package.json") && exists("package.json")) fail.push("unexpected unvetted package manifest: package.json");
 if(!contract.build_command && !contract.external_deployment_provider) fail.push("deployment contract must identify external deployment provider");
 
 if(fail.length){

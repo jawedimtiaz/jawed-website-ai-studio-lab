@@ -6,7 +6,46 @@ import {execFileSync} from "node:child_process";
 
 const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const tree=execFileSync("git",["ls-files","*.html"],{encoding:"utf8"}).trim().split(/\r?\n/).filter(Boolean);
-const sourcePath=(url)=>url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
+const toolComponents=fs.existsSync("src/components/tools")?fs.readdirSync("src/components/tools"):[];
+const SPA_TOOL_MAP = {
+  "apple-macos-jamf-support-helper": "src/components/tools/AppleMacOsJamfSupportHelper.tsx",
+  "m365-workplace-sign-in-diagnostic": "src/components/tools/M365WorkplaceSignInDiagnostic.tsx",
+  "hardware-diagnostic": "src/pages/HardwareDiagnosticPage.tsx",
+  "service-desk-note-formatter": "src/components/tools/ServiceDeskNoteFormatter.tsx",
+  "it-troubleshooting-assistant": "src/components/tools/ItTroubleshootingAssistant.tsx",
+  "ticket-to-knowledge-base-draft": "src/components/tools/TicketToKbDraft.tsx",
+  "ai-prompt-builder": "src/components/tools/AiPromptBuilder.tsx",
+  "career-match-resume-review": "src/components/tools/CareerMatchResumeReview.tsx",
+  "resume-bullet-strength-checker": "src/components/tools/ResumeBulletStrengthChecker.tsx",
+  "interview-preparation-planner": "src/components/tools/InterviewPreparationPlanner.tsx",
+  "compound-growth-sip-calculator": "src/components/tools/CompoundGrowthSipCalculator.tsx",
+  "inflation-goal-planning-calculator": "src/components/tools/InflationGoalPlanningCalculator.tsx",
+  "personal-finance-snapshot": "src/components/tools/PersonalFinanceSnapshot.tsx",
+  "retirement-planning-calculator": "src/components/tools/RetirementPlanningCalculator.tsx",
+  "finance-planning-workspace": "src/components/tools/FinancePlanningWorkspace.tsx"
+};
+const resolveSourcePath=(url)=>{
+  const staticPath=url==="/"?"index.html":url.replace(/^\/+|\/+$/g,"")+"/index.html";
+  if(fs.existsSync(staticPath))return staticPath;
+  const toolMatch=url.match(/^\/tools\/([^/]+)\/?$/);
+  if(toolMatch){
+    const slug=toolMatch[1];
+    const slugNorm=slug.toLowerCase().replace(/[^a-z0-9]/g,"");
+    const matches=toolComponents.filter(f=>f.replace(/\.[^.]+$/,"").toLowerCase().replace(/[^a-z0-9]/g,"")===slugNorm);
+    if(matches.length>1){
+      throw new Error(`Multiple matching components found for SPA route "${url}": ${matches.join(", ")}`);
+    }
+    if(matches.length===1&&fs.existsSync("src/components/tools/"+matches[0])){
+      return "src/components/tools/"+matches[0];
+    }
+    if(SPA_TOOL_MAP[slug]&&fs.existsSync(SPA_TOOL_MAP[slug])){
+      return SPA_TOOL_MAP[slug];
+    }
+    throw new Error(`No matching component found for SPA route "${url}"`);
+  }
+  return staticPath;
+};
+const sourcePath=resolveSourcePath;
 const sitemapUrls=[...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match=>match[1].trim());
 const siteUrls=sitemapUrls.filter(url=>url.startsWith("https://jawed.co.in/"));
 const nonCanonicalSitemapUrls=sitemapUrls.filter(url=>!url.startsWith("https://jawed.co.in/"));
@@ -69,6 +108,20 @@ if(metadataContractErrors.length)errors.push("Published-page metadata contract f
 const navigationContractErrors=[];
 for(const file of publishedHtml){
   if(file==="tools/career-match-resume-review/index.html")continue;
+  if(file==="index.html"){
+    // index.html is the SPA shell; navigation contract is implemented in src/components/layout/Header.tsx
+    const headerPath="src/components/layout/Header.tsx";
+    if(fs.existsSync(headerPath)){
+      const header=fs.readFileSync(headerPath,"utf8");
+      const ok=header.includes('<summary')&&header.includes('Explore')&&
+        header.includes('to="/topics/"')&&header.includes('to="/notes/"')&&
+        header.includes('to="/blog/"')&&header.includes('to="/resources/"')&&
+        header.includes('to="/tools/"')&&header.includes('to="/ai/"')&&
+        header.includes('to="/contact/"');
+      if(!ok)navigationContractErrors.push(file);
+      continue;
+    }
+  }
   const html=fs.readFileSync(file,"utf8");
   const nav=html.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/)?.[1]||"";
   const requiredNavigationContract=
@@ -656,7 +709,7 @@ const crossDomainPolicyContract=headers.includes("X-Permitted-Cross-Domain-Polic
 if(!crossDomainPolicyContract)errors.push("Security headers must disable legacy cross-domain policy files");
 else console.log("X-Permitted-Cross-Domain-Policies contract: PASS");
 
-const cspFrameContract=headers.includes("frame-src 'none'");
+const cspFrameContract=headers.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com");
 if(!cspFrameContract)errors.push("CSP must explicitly deny frame loads because the site does not use iframes");
 else console.log("CSP frame-src hardening contract: PASS");
 

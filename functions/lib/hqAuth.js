@@ -19,7 +19,10 @@ function expiryFrom(response, now) {
 
 async function loadCertificates(fetchImpl, now) {
   if (cache.certificates && cache.expiresAt > now) return cache.certificates;
-  const response = await fetchImpl(CERT_URL, { headers: { accept: 'application/json' } });
+  const response = await fetchImpl(CERT_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(5000)
+  });
   if (!response.ok) throw new Error('CERTIFICATE_FETCH_FAILED');
   const data = await response.json();
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -27,10 +30,68 @@ async function loadCertificates(fetchImpl, now) {
   }
   const entries = Object.entries(data);
   if (!entries.length || entries.some(([kid, pem]) =>
-    !kid || typeof pem !== 'string' || !pem.includes('BEGIN CERTIFICATE')
+    !kid || typeof pem !== 'string' || !pem.startsWith('-----BEGIN CERTIFICATE-----')
   )) throw new Error('CERTIFICATE_RESPONSE_INVALID');
   cache = { certificates: Object.fromEntries(entries), expiresAt: expiryFrom(response, now) };
   return cache.certificates;
+}
+
+function classifyVerificationError(error) {
+  // Prefer stable JOSE error identifiers; inspect text only to classify generic runtime TypeErrors.
+  if (error?.name === 'JWTClaimValidationFailed' || error?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return 'JWT_CLAIM_VALIDATION';
+  if (error?.name === 'JWSSignatureVerificationFailed' || error?.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') return 'JWT_SIGNATURE_VALIDATION';
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (/CryptoKey instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY';
+  }
+  if (/KeyObject instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY_OBJECT';
+  }
+  if (/must be a CryptoKey|invalid keyData|key data must be/i.test(message)) {
+    return 'WEBCRYPTO_KEY_TYPE_OR_DATA';
+  }
+  if (/crypto\.subtle\.(verify|importKey)|subtle\.(verify|importKey)/i.test(message)) {
+    return 'WEBCRYPTO_API_REJECTED_INPUT';
+  }
+  if (/audience|issuer|claim/i.test(message)) return 'JWT_CLAIM_VALIDATION';
+  if (/signature|verification failed/i.test(message)) return 'JWT_SIGNATURE_VALIDATION';
+  if (error?.name === 'TypeError') return 'TYPEERROR_UNCLASSIFIED';
+  return 'VERIFICATION_ERROR_OTHER';
+}
+
+function safeVerificationErrorHints(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const has = (pattern) => pattern.test(message);
+  return {
+    messageLength: Math.min(message.length, 500),
+    mentionsCryptoKey: has(/CryptoKey/i),
+    mentionsKeyObject: has(/KeyObject/i),
+    mentionsPublicKey: has(/public key|type ['"]public['"]/i),
+    mentionsSubtleCrypto: has(/SubtleCrypto|crypto\.subtle|subtle/i),
+    mentionsImportKey: has(/importKey/i),
+    mentionsVerify: has(/verify/i),
+    mentionsRsa: has(/RSA|RSASSA/i),
+    mentionsAlgorithm: has(/algorithm/i),
+    mentionsParameter: has(/parameter/i),
+    mentionsUndefined: has(/undefined/i),
+    mentionsNull: has(/null/i),
+    mentionsInstance: has(/instance/i),
+    mentionsType: has(/type/i),
+    mentionsNotSupported: has(/not supported|unsupported/i)
+  };
+}
+
+function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error), errorHints = safeVerificationErrorHints(error)) {
+  // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
+  const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
+    ? error.name : 'Error';
+  const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
+    ? error.code : null;
+  try {
+    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory, errorHints });
+  } catch {
+    // Logging must never change the fail-closed authentication result.
+  }
 }
 
 export async function verifyHqFirebaseToken(token, options = {}) {
@@ -38,11 +99,13 @@ export async function verifyHqFirebaseToken(token, options = {}) {
   const now = options.now ?? Date.now();
   const verify = options.verify || jwtVerify;
   const importCertificate = options.importCertificate || importX509;
+  const logDiagnostic = options.logDiagnostic || logSafeVerificationFailure;
 
   if (typeof token !== 'string' || token.length < 20 || token.length > 10000) {
     return denied(401, 'AUTH_TOKEN_MISSING_OR_MALFORMED');
   }
 
+  let verificationStage = 'token-header';
   try {
     const encodedHeader = token.split('.')[0];
     if (!encodedHeader) return denied(401, 'AUTH_TOKEN_INVALID');
@@ -58,6 +121,7 @@ export async function verifyHqFirebaseToken(token, options = {}) {
       return denied(401, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
     }
 
+    verificationStage = 'certificate-fetch';
     let certificates = await loadCertificates(fetchImpl, now);
     let certificate = certificates[header.kid];
     if (!certificate) {
@@ -67,7 +131,9 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     }
     if (!certificate) return denied(401, 'AUTH_SIGNING_KEY_NOT_FOUND');
 
+    verificationStage = 'certificate-key-import';
     const key = await importCertificate(certificate, 'RS256');
+    verificationStage = 'jwt-signature-and-claims';
     const result = await verify(token, key, {
       algorithms: ['RS256'],
       audience: PROJECT_ID,
@@ -88,7 +154,17 @@ export async function verifyHqFirebaseToken(token, options = {}) {
     const email = claims.email.trim().toLowerCase();
     if (!OWNERS.has(email)) return denied(403, 'HQ_OWNER_ACCESS_DENIED');
     return { ok: true, identity: { uid: claims.sub, email } };
-  } catch {
+  } catch (error) {
+    const diagnosticCode = verificationStage === 'certificate-fetch' ? 'AUTH_CERTIFICATE_FETCH_FAILED'
+      : verificationStage === 'certificate-key-import' ? 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED'
+        : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
+          : 'AUTH_TOKEN_VERIFICATION_FAILED';
+    try {
+      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error), safeVerificationErrorHints(error));
+    } catch {
+      // A diagnostic callback must not interrupt authentication failure handling.
+    }
+    // Keep the public response generic; stage details stay in controlled Worker logs.
     return denied(401, 'AUTH_TOKEN_VERIFICATION_FAILED');
   }
 }

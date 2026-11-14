@@ -4,8 +4,10 @@ import {
   readHqJson,
   requireHqDatabase,
   ownerAuthorizationGuardStatement,
-  auditStatement
+  auditStatement,
+  conditionalAuditStatement
 } from '../../lib/hqApi.js';
+import { checkHqRateLimit } from '../../lib/hqRateLimit.js';
 
 const PROJECT_TYPES = new Set(['business-website','portfolio','web-app','automation','ai-app','calculator-generator','maintenance','other']);
 const PROJECT_STATUSES = new Set(['lead','discovery','quoted','approved','in-progress','review','blocked','completed','on-hold','cancelled']);
@@ -152,7 +154,7 @@ async function updateProject(request, db, identity, id) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'project.update', 'project', id, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, 'project.update', 'project', id, crypto.randomUUID(),
       { name: existing.name, status: existing.status, target_date: existing.target_date },
       { name: merged.name, status: merged.status, target_date: merged.target_date })
   ]);
@@ -170,7 +172,7 @@ async function archiveProject(db, identity, id, restore = false) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, restore ? 'project.restore' : 'project.archive', 'project', id, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, restore ? 'project.restore' : 'project.archive', 'project', id, crypto.randomUUID(),
       { name: existing.name, archived: !!existing.archived_at },
       { name: existing.name, archived: !restore })
   ]);
@@ -326,7 +328,7 @@ async function updateProjectTask(request, db, identity, projectId, taskId) {
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'project.task.update', 'project_task', taskId, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, 'project.task.update', 'project_task', taskId, crypto.randomUUID(),
       { title: existing.title, status: existing.status }, { title: fields.title ?? existing.title, status: fields.status ?? existing.status })
   ]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'TASK_NOT_FOUND' }, 404);
@@ -383,7 +385,7 @@ async function updateProjectMilestone(request, db, identity, projectId, mileston
   const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     update,
-    auditStatement(db, identity, 'project.milestone.update', 'project_milestone', milestoneId, crypto.randomUUID(),
+    conditionalAuditStatement(db, identity, 'project.milestone.update', 'project_milestone', milestoneId, crypto.randomUUID(),
       { name: existing.name, status: existing.status }, { name: fields.name ?? existing.name, status: fields.status ?? existing.status })
   ]);
   if ((results?.[1]?.meta?.changes ?? 0) !== 1) return hqJson({ ok: false, error: 'MILESTONE_NOT_FOUND' }, 404);
@@ -396,26 +398,35 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
   if (!dbResult.ok) return dbResult.response;
   const db = dbResult.db;
   try {
+    if (['POST', 'PATCH'].includes(request.method)) {
+      const rateLimit = await checkHqRateLimit(request, env, { type: 'write', uid: identity.uid });
+      if (!rateLimit.ok) return rateLimit.response;
+    }
+
     if (segments.length === 0) {
       if (request.method === 'GET') return await listProjects(request, db);
       if (request.method === 'POST') return await createProject(request, db, identity);
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, POST' });
     }
     const [id, action, childId] = segments;
     if (!id || id.length > 80) return hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
-    if (action === 'archive' && segments.length === 2 && request.method === 'POST') return await archiveProject(db, identity, id, false);
-    if (action === 'restore' && segments.length === 2 && request.method === 'POST') return await archiveProject(db, identity, id, true);
+    if (action === 'archive' || action === 'restore') {
+      if (segments.length === 2 && request.method === 'POST') return await archiveProject(db, identity, id, action === 'restore');
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'POST' });
+    }
     if (action === 'tasks') {
       if (segments.length === 2 && request.method === 'GET') return await listProjectTasks(request, db, id);
       if (segments.length === 2 && request.method === 'POST') return await createProjectTask(request, db, identity, id);
       if (segments.length === 3 && request.method === 'PATCH') return await updateProjectTask(request, db, identity, id, childId);
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      const allow = segments.length === 3 ? 'PATCH' : 'GET, POST';
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': allow });
     }
     if (action === 'milestones') {
       if (segments.length === 2 && request.method === 'GET') return await listProjectMilestones(request, db, id);
       if (segments.length === 2 && request.method === 'POST') return await createProjectMilestone(request, db, identity, id);
       if (segments.length === 3 && request.method === 'PATCH') return await updateProjectMilestone(request, db, identity, id, childId);
-      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      const allow = segments.length === 3 ? 'PATCH' : 'GET, POST';
+      return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': allow });
     }
     if (action) return hqJson({ ok: false, error: 'NOT_FOUND' }, 404);
     if (request.method === 'GET') {
@@ -423,9 +434,9 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
       return project ? hqJson({ ok: true, project }) : hqJson({ ok: false, error: 'PROJECT_NOT_FOUND' }, 404);
     }
     if (request.method === 'PATCH') return await updateProject(request, db, identity, id);
-    return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { 'allow': 'GET, PATCH' });
   } catch (error) {
-    console.error('[Studio HQ] Project API operation failed:', error);
+    console.error('[Studio HQ] Project API operation failed');
     return hqJson({ ok: false, error: 'HQ_REQUEST_FAILED' }, 500);
   }
 }

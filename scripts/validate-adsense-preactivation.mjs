@@ -5,7 +5,7 @@ import path from "node:path";
 
 const publisherId="ca-pub-4572098570133367";
 const allowedPublisherTag=new RegExp('<meta\\s+name="google-adsense-account"\\s+content="' + publisherId + '"\\s*>',"i");
-const eligiblePublisherTagFiles=new Set(["index.html","about/index.html","work/index.html","work/experience/index.html","work/skills/index.html","work/certifications/index.html","work/projects/index.html","notes/index.html","blog/index.html","topics/index.html","resources/index.html"]);
+const eligiblePublisherTagFiles=new Set(["about/index.html","work/index.html","work/experience/index.html","work/skills/index.html","work/certifications/index.html","work/projects/index.html","notes/index.html","blog/index.html","topics/index.html","resources/index.html"]);
 
 const forbiddenPatterns=[
   /ca-pub-\d{10,}/i,
@@ -30,7 +30,8 @@ for(const root of roots)walk(root);
 const violations=[];
 for(const file of files){
   const content=fs.readFileSync(file,"utf8");
-  const publisherTagAllowed=eligiblePublisherTagFiles.has(file);
+  const normalizedFile=file.replace(/\\/g, "/");
+  const publisherTagAllowed=eligiblePublisherTagFiles.has(normalizedFile);
   const publisherIdCount=content.match(/ca-pub-\d{10,}/gi)?.length ?? 0;
   if(publisherTagAllowed){
     assert.equal(content.match(allowedPublisherTag)?.length ?? 0,1,file+" must contain exactly one exact AdSense publisher tag");
