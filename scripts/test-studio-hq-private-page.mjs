@@ -60,6 +60,7 @@ test('Worker marks both Studio HQ asset and SPA fallback HTML responses private 
   assert.match(workerEntry, /function addPrivatePageHeaders\(response\)/);
   assert.match(workerEntry, /headers\.set\('Cache-Control', 'no-store, private, max-age=0'\)/);
   assert.match(workerEntry, /headers\.set\('Pragma', 'no-cache'\)/);
+  assert.match(workerEntry, /headers\.set\('X-Robots-Tag', 'noindex, nofollow, noarchive'\)/);
   const privateRouteCondition = /pathname === ['"]\/studio-hq['"] \|\| pathname\.startsWith\(['"]\/studio-hq\/['"]\)/;
   assert.match(workerEntry, privateRouteCondition);
 
