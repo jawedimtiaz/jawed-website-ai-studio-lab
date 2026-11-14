@@ -1,11 +1,10 @@
 import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
 import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
-
-import { onRequestGet as hqSessionGet, onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
-import { onRequestGet as hqClientsGet, onRequestPost as hqClientsPost, onRequestPut as hqClientsPut, onRequestDelete as hqClientsDelete, onRequestOptions as hqClientsOptions } from './functions/api/hq/clients.js';
-import { onRequestGet as hqProjectsGet, onRequestPost as hqProjectsPost, onRequestPut as hqProjectsPut, onRequestDelete as hqProjectsDelete, onRequestOptions as hqProjectsOptions } from './functions/api/hq/projects.js';
-import { onRequestGet as hqTasksGet, onRequestPost as hqTasksPost, onRequestOptions as hqTasksOptions } from './functions/api/hq/tasks.js';
-import { onRequestGet as hqMilestonesGet, onRequestPost as hqMilestonesPost, onRequestOptions as hqMilestonesOptions } from './functions/api/hq/milestones.js';
+import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } from './functions/api/hq/session.js';
+import { handleHqClients } from './functions/api/hq/clients.js';
+import { handleHqProjects } from './functions/api/hq/projects.js';
+import { handleHqRelease } from './functions/api/hq/release.js';
+import { handleHqFinancial } from './functions/api/hq/financial.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -35,13 +34,13 @@ const LEGACY_REDIRECTS = {
 
 const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
-  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
   'X-Content-Type-Options': 'nosniff',
   'X-Permitted-Cross-Domain-Policies': 'none',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
   'Strict-Transport-Security': 'max-age=31536000',
-  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'none'; form-action 'self' mailto:; object-src 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://lab.jawed.co.in https://jawed.co.in; img-src 'self' data: https://jawed.co.in https://lab.jawed.co.in; style-src 'self' 'unsafe-inline'; font-src 'self';"
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'self' https://refined-actor-skhlb.firebaseapp.com; form-action 'self' mailto:; object-src 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com https://apis.google.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://lab.jawed.co.in https://jawed.co.in https://refined-actor-skhlb.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://www.googleapis.com; img-src 'self' data: https://jawed.co.in https://lab.jawed.co.in; style-src 'self' 'unsafe-inline'; font-src 'self';"
 };
 
 function addSecurityHeaders(response) {
@@ -70,139 +69,141 @@ export default {
       return Response.redirect(destination.toString(), 301);
     }
 
-    // 2. Handle /api/ai endpoints
+    // 2. Private Studio HQ session endpoint. No public CORS and no cacheable response.
+    if (pathname === '/api/hq/session' || pathname === '/api/hq/session/') {
+      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
+      if (request.method === 'OPTIONS') return addSecurityHeaders(await hqSessionOptions(context));
+      if (request.method === 'POST') return addSecurityHeaders(await hqSessionPost(context));
+      return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'METHOD_NOT_ALLOWED' }), {
+        status: 405,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0', 'allow': 'POST, OPTIONS' }
+      }));
+    }
+
+    // 3. Private Studio HQ CRM client endpoints.
+    if (pathname === '/api/hq/clients' || pathname === '/api/hq/clients/' || pathname.startsWith('/api/hq/clients/')) {
+      const segments = pathname.replace(/\/$/, '').split('/').slice(4);
+      const response = await handleHqClients({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 4. Private Studio HQ approvals and QA endpoints.
+    if (pathname.startsWith('/api/hq/projects/') || pathname === '/api/hq/approvals' || pathname.startsWith('/api/hq/approvals/') || pathname === '/api/hq/qa' || pathname.startsWith('/api/hq/qa/')) {
+      const hqParts = pathname.replace(/\/$/, '').split('/').slice(3);
+      const isReleaseRoute = (hqParts[0] === 'projects' && ['approvals', 'qa'].includes(hqParts[2])) ||
+        ['approvals', 'qa'].includes(hqParts[0]);
+      if (isReleaseRoute) {
+        const response = await handleHqRelease({ request, env, segments: hqParts });
+        return addSecurityHeaders(response);
+      }
+    }
+
+    // 5. Private Studio HQ project endpoints.
+    if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/' || pathname.startsWith('/api/hq/projects/')) {
+      const segments = pathname.replace(/\/$/, '').split('/').slice(4);
+      const response = await handleHqProjects({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 6. Private Studio HQ financial endpoints.
+    if (['/api/hq/quotations','/api/hq/invoices','/api/hq/payments'].some(base => pathname === base || pathname === base + '/' || pathname.startsWith(base + '/'))) {
+      const segments = pathname.replace(/\/$/, '').split('/').slice(3);
+      const response = await handleHqFinancial({ request, env, segments });
+      return addSecurityHeaders(response);
+    }
+
+    // 7. Handle /api/ai endpoints
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
-        return addSecurityHeaders(await aiOptions(context));
+        return await aiOptions(context);
       }
       if (request.method === 'GET') {
-        return addSecurityHeaders(await aiGet(context));
+        return await aiGet(context);
       }
       if (request.method === 'POST') {
-        return addSecurityHeaders(await aiPost(context));
+        return await aiPost(context);
       }
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      }));
+      });
     }
 
-    // 3. Handle /api/contact endpoints
+    // 8. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
-        return addSecurityHeaders(await contactOptions(context));
+        return await contactOptions(context);
       }
       if (request.method === 'GET') {
-        return addSecurityHeaders(await contactGet(context));
+        return await contactGet(context);
       }
       if (request.method === 'POST') {
-        return addSecurityHeaders(await contactPost(context));
+        return await contactPost(context);
       }
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      }));
+      });
     }
 
-    // 4. Handle /api/contact/log endpoint
+    // 9. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
-        return addSecurityHeaders(new Response(null, {
+        return new Response(null, {
           status: 204,
           headers: {
             'access-control-allow-origin': '*',
             'access-control-allow-methods': 'POST, GET, OPTIONS',
             'access-control-allow-headers': 'content-type'
           }
-        }));
+        });
       }
       if (request.method === 'POST') {
         let entry = {};
         try {
           entry = await request.json();
         } catch {}
-        return addSecurityHeaders(new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
+        return new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
           status: 200,
           headers: {
             'content-type': 'application/json; charset=utf-8',
             'access-control-allow-origin': '*'
           }
-        }));
+        });
       }
       if (request.method === 'GET') {
-        return addSecurityHeaders(new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
+        return new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
           status: 200,
           headers: {
             'content-type': 'application/json; charset=utf-8',
             'access-control-allow-origin': '*'
           }
-        }));
+        });
       }
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      }));
+      });
     }
 
-    // 5. Handle Studio HQ (/api/hq/*) endpoints
-    if (pathname.startsWith('/api/hq/')) {
-      const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
-      let res;
-
-      if (pathname === '/api/hq/session' || pathname === '/api/hq/session/') {
-        if (request.method === 'OPTIONS') res = await hqSessionOptions(context);
-        else if (request.method === 'GET') res = await hqSessionGet(context);
-        else if (request.method === 'POST') res = await hqSessionPost(context);
-      } else if (pathname === '/api/hq/clients' || pathname === '/api/hq/clients/') {
-        if (request.method === 'OPTIONS') res = await hqClientsOptions(context);
-        else if (request.method === 'GET') res = await hqClientsGet(context);
-        else if (request.method === 'POST') res = await hqClientsPost(context);
-        else if (request.method === 'PUT') res = await hqClientsPut(context);
-        else if (request.method === 'DELETE') res = await hqClientsDelete(context);
-      } else if (pathname === '/api/hq/projects' || pathname === '/api/hq/projects/') {
-        if (request.method === 'OPTIONS') res = await hqProjectsOptions(context);
-        else if (request.method === 'GET') res = await hqProjectsGet(context);
-        else if (request.method === 'POST') res = await hqProjectsPost(context);
-        else if (request.method === 'PUT') res = await hqProjectsPut(context);
-        else if (request.method === 'DELETE') res = await hqProjectsDelete(context);
-      } else if (pathname === '/api/hq/tasks' || pathname === '/api/hq/tasks/') {
-        if (request.method === 'OPTIONS') res = await hqTasksOptions(context);
-        else if (request.method === 'GET') res = await hqTasksGet(context);
-        else if (request.method === 'POST') res = await hqTasksPost(context);
-      } else if (pathname === '/api/hq/milestones' || pathname === '/api/hq/milestones/') {
-        if (request.method === 'OPTIONS') res = await hqMilestonesOptions(context);
-        else if (request.method === 'GET') res = await hqMilestonesGet(context);
-        else if (request.method === 'POST') res = await hqMilestonesPost(context);
-      }
-
-      if (res) {
-        return addSecurityHeaders(res);
-      }
-
-      return addSecurityHeaders(new Response(JSON.stringify({ error: 'HQ endpoint not found', code: 'NOT_FOUND' }), {
-        status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
-      }));
-    }
-
-    // 6. Reject other /api/* with standard 404 JSON
+    // 10. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
-        headers: { 'content-type': 'application/json; charset=utf-8' }
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
       }));
     }
 
-    // 7. Serve static assets via Cloudflare Workers Assets binding if present
+    // 11. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
         if (assetResponse.status !== 404) {
           return addSecurityHeaders(assetResponse);
         }
-        // Fallback to /index.html for SPA routing
+        // If client requested HTML route that doesn't exist as static file, fallback to /index.html (SPA routing)
         const accept = request.headers.get('accept') || '';
         if (request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.')) {
           const indexRequest = new Request(new URL('/index.html', request.url), request);
@@ -211,7 +212,7 @@ export default {
         }
         return addSecurityHeaders(assetResponse);
       } catch (err) {
-        console.error('Static asset fetch failed:', err);
+        console.error('Static asset fetch failed');
       }
     }
 
