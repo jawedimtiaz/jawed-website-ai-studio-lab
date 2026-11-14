@@ -9,7 +9,7 @@
     "workflow_target_elevation": "blocked",
     "workflow_action_sha_pinning": "required",
     "workflow_permissions": "contents-read",
-    "workflow_secret_access": "blocked",
+    "workflow_secret_access": "allowlisted-cloudflare-deployment-secrets-only",
     "runtime_dependency_manifest": "not-applicable-no-package-manifest",
     "dependency_lockfile": "not-applicable-no-package-manifest"
   },
