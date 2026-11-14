@@ -29,6 +29,7 @@ on:
       - 'worker.js'
       - 'tests/hq-owner-authorization.test.js'
       - 'package.json'
+      - 'wrangler.toml'
       - '.github/workflows/studio-hq-auth-tests.yml'
 
 permissions:
