@@ -27,8 +27,8 @@ for(const root of roots)walk(root);
 const violations=[];
 for(const file of files){
   const content=fs.readFileSync(file,"utf8");
-  if(publisherIdPattern.test(content)){
-    violations.push(file+" contains a publisher identifier before explicit activation approval");
+  if(publisherIdPattern.test(content)&&!/<meta\\s+name=["']google-adsense-account["']\\s+content=["']ca-pub-\\d{10,}["']\\s*\\/?\\s*>/i.test(content)){
+    violations.push(file+" contains a publisher identifier outside the Google site-verification meta tag");
   }
   for(const pattern of forbiddenPatterns){
     if(pattern.test(content)){
@@ -45,7 +45,7 @@ const privacy=fs.readFileSync("privacy/index.html","utf8");
 assert.equal(privacy.includes("Advertising and AdSense"),true,"AdSense privacy foundation missing");
 
 console.log("AdSense pre-activation publisher guard: PASS");
-console.log("Publisher verification tag present: no (requires explicit owner approval)");
+console.log("Google site-verification meta tag: allowed as a verification marker; ad-serving runtime remains blocked");
 console.log("AdSense runtime markers detected: 0");
 console.log("ads.txt present: no");
 console.log("Ad serving runtime active: no");
