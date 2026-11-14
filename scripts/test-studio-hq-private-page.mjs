@@ -56,6 +56,13 @@ test('service worker bypasses cache for Studio HQ and descendants', () => {
   assert.match(worker, /url\.pathname\.startsWith\(['"]\/studio-hq\/['"]\)/);
 });
 
+test('Worker marks Studio HQ HTML responses private and non-cacheable', () => {
+  assert.match(workerEntry, /function addPrivatePageHeaders\(response\)/);
+  assert.match(workerEntry, /headers\.set\('Cache-Control', 'no-store, private, max-age=0'\)/);
+  assert.match(workerEntry, /headers\.set\('Pragma', 'no-cache'\)/);
+  assert.match(workerEntry, /pathname === ['"]\/studio-hq['"] \|\| pathname\.startsWith\(['"]\/studio-hq\/['"]\)/);
+});
+
 test('Studio HQ Approvals interface uses authorized same-origin no-store endpoints', () => {
   assert.match(page, /fetch\(`\/api\/hq\/projects\/\$\{encodeURIComponent\(projectId\)\}\/approvals`/);
   assert.match(page, /fetch\(`\/api\/hq\/approvals\/\$\{encodeURIComponent\(approvalId\)\}`/);
