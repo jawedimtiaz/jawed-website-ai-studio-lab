@@ -12,7 +12,13 @@ const siteUrls=sitemapUrls.filter(url=>url.startsWith("https://jawed.co.in/"));
 const nonCanonicalSitemapUrls=sitemapUrls.filter(url=>!url.startsWith("https://jawed.co.in/"));
 const sitemapPaths=siteUrls.map(url=>url.slice("https://jawed.co.in".length)||"/");
 const sourcePaths=tree.filter(file=>file!=="404.html"&&file!=="offline.html"&&!file.startsWith("google"));
-const missingSources=sitemapPaths.filter(path=>!fs.existsSync(sourcePath(path)));
+const toolData=fs.readFileSync("src/data/toolsData.ts","utf8");
+const dynamicToolSlugs=new Set([...toolData.matchAll(/slug:\s*'([^']+)'/g)].map(match=>match[1]));
+const isRegisteredReactToolRoute=path=>{
+  const match=path.match(/^\\/tools\\/([^/]+)\\/$/);
+  return Boolean(match&&dynamicToolSlugs.has(match[1]));
+};
+const missingSources=sitemapPaths.filter(path=>!fs.existsSync(sourcePath(path))&&!isRegisteredReactToolRoute(path));
 const unsitemapPages=sourcePaths.filter(file=>{
   const path=file==="index.html"?"/":"/"+file.replace(/\/index\.html$/,"")+"/";
   return !sitemapPaths.includes(path);
@@ -68,6 +74,9 @@ if(metadataContractErrors.length)errors.push("Published-page metadata contract f
 
 const navigationContractErrors=[];
 for(const file of publishedHtml){
+  // The Vite root index is a React application shell. Its navigation is rendered
+  // by src/components/layout/Header.tsx rather than embedded in index.html.
+  if(file==="index.html")continue;
   if(file==="tools/career-match-resume-review/index.html")continue;
   const html=fs.readFileSync(file,"utf8");
   const nav=html.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/)?.[1]||"";
@@ -83,7 +92,23 @@ for(const file of publishedHtml){
   if(!requiredNavigationContract)navigationContractErrors.push(file);
 }
 if(navigationContractErrors.length)errors.push("Primary navigation parity failed: "+navigationContractErrors.join(", "));
-else console.log("Primary navigation parity contract: PASS");
+else console.log("Static-page primary navigation parity contract: PASS");
+
+const reactHeader=fs.readFileSync("src/components/layout/Header.tsx","utf8");
+const reactNavigationContract=
+  reactHeader.includes('id="site-nav"')&&
+  reactHeader.includes('aria-label="Main navigation"')&&
+  reactHeader.includes("to=\"/about/\"")&&
+  reactHeader.includes("to=\"/work/\"")&&
+  reactHeader.includes("to=\"/topics/\"")&&
+  reactHeader.includes("to=\"/notes/\"")&&
+  reactHeader.includes("to=\"/blog/\"")&&
+  reactHeader.includes("to=\"/resources/\"")&&
+  reactHeader.includes("to=\"/tools/\"")&&
+  reactHeader.includes("to=\"/ai/\"")&&
+  reactHeader.includes("to=\"/contact/\"");
+if(!reactNavigationContract)errors.push("React application navigation is missing one or more required primary routes");
+else console.log("React application primary navigation contract: PASS");
 
 
 const internalLinkIssues=[];
