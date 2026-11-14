@@ -220,3 +220,14 @@ test('refund balance recalculation excludes archived payments',async()=>{
     assert.equal(result.status,'partially-paid');
   } finally {db.close();}
 });
+
+test('Worker preserves global security headers on AI and contact-log API responses',async()=>{
+  for(const path of ['/api/ai','/api/contact/log']) {
+    const response=await worker.fetch(new Request('https://lab.jawed.co.in'+path),{}, {});
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('x-frame-options'),'DENY');
+    assert.equal(response.headers.get('x-content-type-options'),'nosniff');
+    assert.match(response.headers.get('content-security-policy') || /$^/, /frame-ancestors 'none'/);
+    assert.equal(response.headers.get('cross-origin-opener-policy'),'same-origin-allow-popups');
+  }
+});
