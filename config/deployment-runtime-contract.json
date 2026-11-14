@@ -56,5 +56,8 @@
     "Permissions-Policy: geolocation=(), microphone=(), camera=()",
     "Strict-Transport-Security: max-age=31536000",
     "Content-Security-Policy: frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"
+  ],
+  "allowed_redirect_statuses": [
+    301
   ]
 }
