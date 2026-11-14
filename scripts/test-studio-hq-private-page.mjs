@@ -68,7 +68,7 @@ test('Worker marks both Studio HQ asset and SPA fallback HTML responses private 
 
   assert.match(workerEntry, /if \(assetResponse\.status !== 404\)[\s\S]*?\? addPrivatePageHeaders\(response\)/);
   assert.match(workerEntry, /indexResponse = await env\.ASSETS\.fetch\(indexRequest\)[\s\S]*?\? addPrivatePageHeaders\(response\)/);
-});;
+});
 
 test('Studio HQ Approvals interface uses authorized same-origin no-store endpoints', () => {
   assert.match(page, /fetch\(`\/api\/hq\/projects\/\$\{encodeURIComponent\(projectId\)\}\/approvals`/);
