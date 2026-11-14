@@ -12,6 +12,7 @@ on:
       - 'migrations/hq/**'
       - 'package.json'
       - 'wrangler.toml'
+      - 'wrangler.jsonc'
       - '.github/workflows/studio-hq-approvals-qa.yml'
   workflow_dispatch:
 
