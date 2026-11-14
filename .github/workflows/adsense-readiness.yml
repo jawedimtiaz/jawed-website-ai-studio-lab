@@ -68,7 +68,6 @@ on:
       - "resources/index.html"
       - "tools/**"
       - "src/data/toolsData.ts"
-      - "src/data/toolsData.ts"
       - "tools/finance-planning-workspace/index.html"
       - "ai/**"
       - "assets/**"
