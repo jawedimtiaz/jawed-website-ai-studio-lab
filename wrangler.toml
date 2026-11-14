@@ -22,13 +22,14 @@ database_id = "d9ec83ea-7114-4179-af8e-a22ba5494508"
 migrations_dir = "migrations/hq"
 
 # Studio HQ: approximate per-location abuse protection.
+# Session limit is intentionally higher to reduce shared-IP false positives.
 # Namespace IDs must be unique within this Cloudflare account.
 [[ratelimits]]
 name = "HQ_SESSION_LIMITER"
 namespace_id = "8726111401"
 
   [ratelimits.simple]
-  limit = 20
+  limit = 60
   period = 60
 
 [[ratelimits]]
