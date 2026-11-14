@@ -1069,7 +1069,7 @@
       ]
     }
   ],
-  "reviewed_against_sitemap_on": "2026-10-17",
+  "reviewed_against_sitemap_on": "2026-11-14",
   "coverage_policy": {
     "included": "Public site pages intended to provide factual Jawed.co.in content for AI grounding.",
     "excluded_paths": [
@@ -1077,7 +1077,8 @@
       "/privacy/"
     ],
     "excluded_reason": "AI interface and transactional/privacy pages are not knowledge sources.",
-    "summary_evidence_rule": "Summaries are concise scope-level evidence only; detailed claims require sufficient page evidence and must not be inferred from titles or keywords."
+    "summary_evidence_rule": "Summaries are concise scope-level evidence only; detailed claims require sufficient page evidence and must not be inferred from titles or keywords.",
+    "last_review_note": "Reviewed the sitemap and indexed React tool definitions on 2026-11-14. The only toolsData.ts change since the prior review added the hardware-diagnostic tool; existing indexed tool definitions remained unchanged. Added current summaries for the Apple/macOS/Jamf and Microsoft 365 triage routes."
   },
   "knowledge_expansion": {
     "phase": "33",
