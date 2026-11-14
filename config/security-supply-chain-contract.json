@@ -14,5 +14,8 @@
     "dependency_lockfile": "not-applicable-no-package-manifest"
   },
   "scope": "repository-source-and-github-actions",
-  "principle": "Do not introduce dependency, platform, or deployment changes without a concrete finding."
+  "principle": "Do not introduce dependency, platform, or deployment changes without a concrete finding.",
+  "allowed_dependency_manifests": [
+    "package.json"
+  ]
 }
