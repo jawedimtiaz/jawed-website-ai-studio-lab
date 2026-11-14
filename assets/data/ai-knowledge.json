@@ -1025,6 +1025,48 @@
         "privacy",
         "security"
       ]
+    },
+    {
+      "url": "/tools/apple-macos-jamf-support-helper/",
+      "title": "macOS & Jamf Triage Helper",
+      "summary": "Guided macOS enterprise support triage for application crashes, Jamf MDM enrollment and profile synchronization, FileVault key escrow, and Wi-Fi or 802.1X certificate issues. Users select an issue category and macOS version or hardware architecture, then review diagnostic terminal commands and a structured ticket summary. The tool describes its commands as non-destructive diagnostic checks; technicians should still follow their organization’s authorization and change-control requirements.",
+      "keywords": [
+        "macOS",
+        "Apple",
+        "Jamf Pro",
+        "MDM enrollment",
+        "FileVault",
+        "802.1X",
+        "Wi-Fi",
+        "diagnostic commands",
+        "enterprise support",
+        "triage",
+        "ticket notes",
+        "Apple Silicon",
+        "Intel"
+      ]
+    },
+    {
+      "url": "/tools/m365-workplace-sign-in-diagnostic/",
+      "title": "Microsoft 365 & Workplace Sign-In Triage",
+      "summary": "Guided troubleshooting for Microsoft 365 authentication failures across Outlook, Teams, and corporate web applications. Covers MFA notification loops, Conditional Access compliance blocks, stale Windows Primary Refresh Tokens, and macOS Keychain-related sign-in symptoms. Users select the reported symptom and client operating system, review likely causes and verification steps, and prepare an escalation note with correlation ID guidance for identity administrators.",
+      "keywords": [
+        "Microsoft 365",
+        "Microsoft Entra ID",
+        "Azure AD",
+        "MFA",
+        "Conditional Access",
+        "SSO",
+        "Primary Refresh Token",
+        "PRT",
+        "Outlook",
+        "Teams",
+        "Windows",
+        "macOS",
+        "authentication",
+        "sign-in troubleshooting",
+        "escalation"
+      ]
     }
   ],
   "reviewed_against_sitemap_on": "2026-10-17",
