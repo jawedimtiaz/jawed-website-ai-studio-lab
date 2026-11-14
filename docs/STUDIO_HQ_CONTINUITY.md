@@ -342,3 +342,41 @@ Audit writes should target the existing `audit_logs` schema and preserve actor i
 **Recommended next implementation target:** one consolidated compatibility PR that adapts current-main handlers/auth/audit logging to the already-applied canonical schema, with tests on disposable D1. No production migration should be needed unless the complete schema review identifies a specific missing requirement.
 
 No live D1 rows were read, inserted, updated or deleted. No migration, deployment, Worker setting change or secret change was performed during Phase 2.7M.
+
+
+## 12. Critical authentication regression found during Phase 2.7M source review
+
+### Current-main auth implementation is not cryptographically verifying Firebase ID tokens
+
+Read-only source inspection of current main found:
+- `functions/lib/hqAuth.js` decodes the JWT header and payload and checks fields such as `alg`, `exp`, `auth_time`, `iss`, `aud`, `sub`, `email_verified` and the owner email allowlist.
+- It does **not** verify the JWT signature with Google's published signing certificates or a trusted public key. Checking that the header says `RS256` is not signature verification.
+- `tests/hq-authorization.test.js` creates test tokens ending in the literal mock signature `mockSignatureString123` and treats them as authorized when the decoded claims match.
+- The current tests therefore validate claim parsing and authorization branches, but do not establish cryptographic Firebase token authenticity.
+
+### Live Worker auth implementation is materially different
+
+A read-only inspection of the deployed Worker script bundle found a different, more complete authentication implementation:
+- Requires `RS256` and a non-empty `kid`.
+- Fetches and caches Google's Firebase signing certificates.
+- Imports the matching X.509 certificate and invokes the bundled JOSE `jwtVerify` implementation.
+- Validates the allowed algorithm, Firebase project audience, issuer, expiry/issued-at/auth-time claims and owner email allowlist.
+- Queries the existing `hq_users(uid, email, status)` schema and rejects un-enrolled owners rather than automatically bootstrapping an owner from an empty database.
+
+This confirms that the live Worker and current GitHub main are not the same security implementation. The live Worker was inspected read-only; no source, binding, secret, user row or setting was changed.
+
+### Security impact and deployment gate
+
+**Critical: current main must not be deployed as-is.** Its claim-only JWT checks can accept a forged token containing the allowlisted email and fabricated claims because the signature is not authenticated. Combined with the current-main automatic first-owner bootstrap path, this can create an owner enrollment path from attacker-controlled claims if the database is empty. The live deployed Worker currently has a stronger cryptographic verification and explicit owner-enrollment check; do not overwrite it with the weaker current-main implementation.
+
+Required remediation before any deployment:
+1. Restore cryptographic Firebase ID-token verification using trusted Google signing certificates (or a correctly configured, maintained JOSE remote-JWKS/certificate verification flow).
+2. Require and validate `kid`, RS256, signature, issuer, audience, expiry, issued-at, auth-time, subject and verified email.
+3. Remove implicit first-owner bootstrap from normal request handling. Owner enrollment must be a separate controlled operation with an explicit authorization/approval path and must fail closed when no owner exists.
+4. Update tests to use valid signed Firebase test tokens or injected test verifiers that explicitly simulate successful/failed cryptographic verification. Never use an arbitrary mock signature as proof of token authenticity.
+5. Add negative tests for tampered payloads, invalid signatures, unknown `kid`, wrong issuer/audience, expired tokens, unverified email, and owner allowlist mismatch.
+6. Preserve the live Worker’s current strong behavior until a reviewed replacement is proven equivalent or stronger.
+
+### Updated Phase 2.7M recommendation
+
+The preferred canonical-schema compatibility direction remains valid, but the implementation scope must include authentication and audit-log security before any API handler is considered deployable. Treat the authentication regression as a release-blocking security issue, not a routine migration task.
