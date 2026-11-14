@@ -139,76 +139,76 @@ export default {
     if (pathname === '/api/ai' || pathname === '/api/ai/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
-        return await aiOptions(context);
+        return addSecurityHeaders(await aiOptions(context));
       }
       if (request.method === 'GET') {
-        return await aiGet(context);
+        return addSecurityHeaders(await aiGet(context));
       }
       if (request.method === 'POST') {
-        return await aiPost(context);
+        return addSecurityHeaders(await aiPost(context));
       }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      }));
     }
 
     // 8. Handle /api/contact endpoints
     if (pathname === '/api/contact' || pathname === '/api/contact/') {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       if (request.method === 'OPTIONS') {
-        return await contactOptions(context);
+        return addSecurityHeaders(await contactOptions(context));
       }
       if (request.method === 'GET') {
-        return await contactGet(context);
+        return addSecurityHeaders(await contactGet(context));
       }
       if (request.method === 'POST') {
-        return await contactPost(context);
+        return addSecurityHeaders(await contactPost(context));
       }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      }));
     }
 
     // 9. Handle /api/contact/log endpoint
     if (pathname === '/api/contact/log' || pathname === '/api/contact/log/') {
       if (request.method === 'OPTIONS') {
-        return new Response(null, {
+        return addSecurityHeaders(new Response(null, {
           status: 204,
           headers: {
             'access-control-allow-origin': '*',
             'access-control-allow-methods': 'POST, GET, OPTIONS',
             'access-control-allow-headers': 'content-type'
           }
-        });
+        }));
       }
       if (request.method === 'POST') {
         let entry = {};
         try {
           entry = await request.json();
         } catch {}
-        return new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
+        return addSecurityHeaders(new Response(JSON.stringify({ success: true, logged: true, status: entry.status || 'unknown' }), {
           status: 200,
           headers: {
             'content-type': 'application/json; charset=utf-8',
             'access-control-allow-origin': '*'
           }
-        });
+        }));
       }
       if (request.method === 'GET') {
-        return new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
+        return addSecurityHeaders(new Response(JSON.stringify({ ok: true, service: 'contact-log' }), {
           status: 200,
           headers: {
             'content-type': 'application/json; charset=utf-8',
             'access-control-allow-origin': '*'
           }
-        });
+        }));
       }
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' }
-      });
+      }));
     }
 
     // 10. Reject other /api/* with standard 404 JSON
