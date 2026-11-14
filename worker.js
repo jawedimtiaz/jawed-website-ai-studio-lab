@@ -102,7 +102,7 @@ export default {
     // These reuse the same project-scoped canonical handlers and D1 authorization guards.
     if (pathname === '/api/hq/tasks' || pathname === '/api/hq/tasks/') {
       const projectId = url.searchParams.get('projectId');
-      if (!projectId) {
+      if (!projectId || projectId.length > 80) {
         return addSecurityHeaders(new Response(JSON.stringify({ ok: false, error: 'PROJECT_ID_REQUIRED' }), {
           status: 400,
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store, private, max-age=0' }
