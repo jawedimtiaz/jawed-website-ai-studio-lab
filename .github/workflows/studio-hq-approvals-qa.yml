@@ -11,6 +11,7 @@ on:
       - 'worker.js'
       - 'migrations/hq/**'
       - 'package.json'
+      - 'wrangler.toml'
       - '.github/workflows/studio-hq-approvals-qa.yml'
   workflow_dispatch:
 
