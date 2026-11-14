@@ -266,3 +266,8 @@ Current-main `functions/lib/hqApi.js` selects and updates `id`, `role`, `updated
 Because the existing live `hq_users` table already exists, `CREATE TABLE IF NOT EXISTS hq_users` in the un-applied migration will not transform its columns. Applying that migration as-is would not repair the mismatch. This is a confirmed schema incompatibility, not merely a missing Wrangler binding.
 
 **Approval gate:** do not run first-owner enrollment, deploy current-main auth code, or apply the owner-hardening migration until a reviewed forward-only migration is designed to preserve existing owner/user data and all existing CRM/project/QA/financial records. The current live owner bootstrap state was not changed or queried.
+
+
+### Continuity PR #50 latest head update
+
+The continuity document was expanded on its branch with the Cloudflare inventory, live D1 migration/schema evidence, deployed Worker binding evidence, PR #49 source mismatch, current-main monitoring-check root causes and owner-authentication schema incompatibility. Latest branch head at this checkpoint: `8c20958a68f3f8ce0eadca39aa94cc098323bd75`. PR #50 remains open and unmerged. The first commit's supply-chain check passed, but no check runs had yet appeared for this latest head when it was queried. Recheck PR #50 checks before merge approval.
