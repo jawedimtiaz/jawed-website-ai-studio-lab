@@ -1,45 +1,29 @@
-// functions/api/hq/session.js
-// Studio HQ Session API Endpoint
-
-import { verifyAndAuthorizeOwner, jsonResponse } from '../../lib/hqApi.js';
-
-export async function onRequestGet({ request, env }) {
-  const auth = await verifyAndAuthorizeOwner(request, env);
-  if (!auth.authorized) {
-    return auth.response;
-  }
-
-  return jsonResponse({
-    success: true,
-    authenticated: true,
-    owner: auth.owner,
-    timestamp: new Date().toISOString()
-  });
-}
+import { authorizeHqOwner, hqJson, isHqSameOrigin, HQ_JSON_HEADERS } from '../../lib/hqApi.js';
+import { checkHqRateLimit } from '../../lib/hqRateLimit.js';
 
 export async function onRequestPost({ request, env }) {
-  const auth = await verifyAndAuthorizeOwner(request, env);
-  if (!auth.authorized) {
-    return auth.response;
-  }
+  const rateLimit = await checkHqRateLimit(request, env, { type: 'session' });
+  if (!rateLimit.ok) return rateLimit.response;
 
-  return jsonResponse({
-    success: true,
-    authenticated: true,
-    sessionVerified: true,
-    owner: auth.owner,
-    timestamp: new Date().toISOString()
+  const auth = await authorizeHqOwner(request, env);
+  if (!auth.ok) return auth.response;
+
+  return hqJson({
+    ok: true,
+    identity: auth.identity,
+    authorization: 'owner'
   });
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions({ request }) {
+  if (!isHqSameOrigin(request)) {
+    return hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403);
+  }
   return new Response(null, {
     status: 204,
     headers: {
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'access-control-allow-headers': 'content-type, authorization',
-      'access-control-max-age': '86400'
+      ...HQ_JSON_HEADERS,
+      'allow': 'POST, OPTIONS'
     }
   });
 }
