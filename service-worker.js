@@ -51,30 +51,27 @@ self.addEventListener('message', (event) => {
 const isDynamicRequest = (request) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return true;
-  if (request.method !== 'GET') return true;
-  if (url.pathname.startsWith('/api/')) return true;
+  if (request.method!=="GET") return true;
+  if (url.pathname.startsWith("/api/")) return true;
   if (url.pathname === '/studio-hq' || url.pathname.startsWith('/studio-hq/')) return true;
   return false;
 };
 
 const networkFirstNavigation = async (request) => {
   try {
-    const networkResponse = await fetch(request);
-    if (networkResponse.ok) {
+    const response = await fetch(request);
+    if (response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, networkResponse.clone());
+      cache.put(request, response.clone());
     }
-    return networkResponse;
+    return response;
   } catch (error) {
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) return cachedResponse;
-
-    const homeFallback = await caches.match('/');
-    if (homeFallback) return homeFallback;
-
-    const offlineFallback = await caches.match('/offline.html');
-    if (offlineFallback) return offlineFallback;
-
+    const cached=await caches.match(request);
+    if (cached) return cached;
+    const home=await caches.match("/");
+    if (home) return home;
+    const offline=await caches.match("/offline.html");
+    if (offline) return offline;
     return Response.error();
   }
 };
