@@ -24,6 +24,8 @@ on:
       - 'functions/api/hq/financial.test.js'
       - 'migrations/hq/**'
       - 'scripts/test-hq-migration.mjs'
+      - 'scripts/test-hq-service-worker-cache.mjs'
+      - 'scripts/test-studio-hq-private-page.mjs'
       - 'functions/api/hq/projects.js'
       - 'functions/api/hq/projects.test.js'
       - 'worker.js'
