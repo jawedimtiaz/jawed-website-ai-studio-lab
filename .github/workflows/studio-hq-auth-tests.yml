@@ -54,3 +54,5 @@ jobs:
         run: npm run test:hq-auth
       - name: TypeScript and production build
         run: npm run build
+      - name: Validate Cloudflare Worker configuration (dry run)
+        run: npx wrangler deploy --dry-run
