@@ -229,3 +229,28 @@ Before any deployment PR is considered ready:
 7. Re-run all relevant CI and build checks on the final deployment candidate.
 
 **Next action:** continue read-only investigation of the four failed current-main workflow runs and inspect the exact SQL/schema compatibility before proposing one bounded correction PR. No implementation, merge, deployment or migration is authorized by this audit.
+
+
+### Additional source-to-database compatibility check
+
+A read-only fetch of the currently deployed Lab Worker script content was performed through Cloudflare. The returned script content included legacy SQL references such as `FROM clients`, `HQ_DB` and `hq_users`, consistent with the existing live D1 schema's `clients`/ `projects` / `project_tasks` / `project_milestones` naming. No secret values were extracted or displayed.
+
+By contrast, the current-main Studio HQ route handlers explicitly query and write:
+- `hq_clients`
+- `hq_projects`
+- `hq_tasks`
+- `hq_milestones`
+
+Those four `hq_*` business tables were not present in the live database's `sqlite_master` table listing at the time of inspection. The current-main migration `migrations/0002_hq_owner_authorization_hardening.sql` defines these `hq_*` tables, but it is not in the live D1 migration ledger.
+
+**Implication:** do not deploy current-main Studio HQ handlers against the existing database until a deliberate data/schema migration plan has been reviewed. Existing manually tested client/project records may reside in the legacy table family; switching the application to the new `hq_*` tables without a verified data migration risks making those records appear missing. No rows were queried, changed, deleted or migrated during this check.
+
+### Clarification on current-main production reliability failures
+
+The four failed “Production” reliability jobs were inspected at the log and contract level. Their contracts target `https://jawed.co.in` (the separately protected personal website), not `https://lab.jawed.co.in`:
+- Static asset checks expect legacy paths `/assets/css/style.css`, `/assets/js/main.js`, and `/assets/js/analytics.js`; the checks received 404 responses.
+- Smoke checks expect older page markers and `/api/ai` JSON behavior on the personal site; several markers were missing and `/api/ai` returned 404.
+- AI GET checks to the personal site's `/api/ai` received 404 and HTML rather than the expected JSON response.
+- AI POST checks expected a JSON 403 rejection but received HTTP 405.
+
+These are failures in repository monitoring contracts against the personal website's current public behavior. They are **not direct tests of Studio HQ or the Lab Worker**. Do not change `jawed.co.in` to make these old contracts pass without explicit approval. Classify or update the monitoring contracts in the Lab repository only after a separate, approved read-only comparison with the personal site's intended current architecture; do not silently change the protected website.
