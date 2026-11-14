@@ -99,7 +99,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // For HTML navigation requests, use network-first with offline fallback
-  if (request.mode === 'navigate') {
+  if (request.mode==="navigate") {
     event.respondWith(networkFirstNavigation(request));
     return;
   }
