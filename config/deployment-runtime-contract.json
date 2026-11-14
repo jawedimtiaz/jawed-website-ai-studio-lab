@@ -1,27 +1,39 @@
 {
   "phase": "39C",
-  "scope": "deployment-runtime-and-security-baseline-reliability",
-  "production_origin": "https://jawed.co.in",
-  "alternate_origin": "https://www.jawed.co.in",
-  "deployment_model": "cloudflare-pages",
-  "build_command": null,
-  "build_output_directory": ".",
+  "scope": "studio-hq-cloudflare-worker-runtime-and-security-baseline",
+  "deployment_model": "cloudflare-worker",
+  "worker_name": "jawed-website-ai-studio-lab",
+  "entrypoint": "worker.js",
+  "wrangler_config": "wrangler.jsonc",
+  "build_command": "bun run build",
+  "build_output_directory": "dist",
+  "assets_binding": "ASSETS",
+  "assets_directory": "./dist",
   "functions_directory": "functions",
   "required_runtime_files": [
-    "_headers",
-    "_redirects",
-    "_routes.json",
-    "404.html",
-    "sitemap.xml",
-    "index.html"
+    "worker.js",
+    "wrangler.jsonc",
+    "functions/api/ai.js",
+    "functions/api/contact.js",
+    "functions/api/hq/session.js",
+    "functions/api/hq/clients.js",
+    "functions/api/hq/projects.js",
+    "functions/api/hq/tasks.js",
+    "functions/api/hq/milestones.js"
   ],
   "api_routes": [
-    "/api/ai"
+    "/api/ai",
+    "/api/contact",
+    "/api/hq/session",
+    "/api/hq/clients",
+    "/api/hq/projects",
+    "/api/hq/tasks",
+    "/api/hq/milestones"
   ],
-  "canonical_origin_must_be_exact": true,
-  "no_package_manifest_required": true,
-  "external_deployment_provider": "Cloudflare Pages",
-  "required_security_headers": [
+  "lab_origin": "https://lab.jawed.co.in",
+  "content_canonical_origin": "https://jawed.co.in",
+  "content_canonical_origin_must_be_exact": true,
+  "required_worker_security_headers": [
     "X-Frame-Options: DENY",
     "Cross-Origin-Opener-Policy: same-origin",
     "X-Content-Type-Options: nosniff",
@@ -31,12 +43,7 @@
     "Strict-Transport-Security: max-age=31536000",
     "Content-Security-Policy:"
   ],
-  "allowed_redirect_statuses": [200, 301],
-  "required_route_configuration": {
-    "version": 1,
-    "include": [
-      "/api/*"
-    ],
-    "exclude": []
-  }
+  "api_origin_policy": "jawed.co.in-and-subdomains",
+  "static_asset_binding_required": true,
+  "deployment_scope": "Studio HQ Lab Worker only; no personal-site or Kaushal deployment"
 }
