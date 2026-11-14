@@ -1,134 +1,248 @@
-// functions/lib/hqAuth.js
-// Firebase Authentication & Token Verification for Studio HQ
+// Firebase ID token verification for the Studio HQ owner API.
+// Uses the Worker Web Crypto API; no JWT payload is trusted before RS256 verification.
 
-const DEFAULT_PROJECT_ID = 'ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb';
-const DEFAULT_ALLOWED_EMAILS = ['jawedimtiaz@gmail.com'];
+const DEFAULT_PROJECT_ID = 'refined-actor-skhlb';
+const CERTIFICATE_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+const DEFAULT_OWNER_EMAILS = ['jawedimtiaz@gmail.com'];
+const MAX_TOKEN_LENGTH = 12_000;
+const MAX_CERTIFICATE_RESPONSE_BYTES = 128 * 1024;
+const CERTIFICATE_FETCH_TIMEOUT_MS = 5_000;
+const MAX_CERTIFICATE_CACHE_MS = 60 * 60 * 1000;
+
+let certificateCache = { expiresAt: 0, certificates: null };
+
+function failure(code, error = 'Firebase authentication token could not be verified') {
+  return { valid: false, code, error };
+}
+
+function decodeBase64Url(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error('INVALID_BASE64URL');
+  }
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function decodeJsonSegment(value) {
+  const bytes = decodeBase64Url(value);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// Minimal strict DER reader used only to extract SubjectPublicKeyInfo from
+// Google's X.509 certificate. Signature verification itself is Web Crypto.
+function readDerNode(bytes, offset) {
+  const headerOffset = offset;
+  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  const tag = bytes[offset++];
+  if (offset >= bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  let length = bytes[offset++];
+  if (length & 0x80) {
+    const count = length & 0x7f;
+    if (count === 0 || count > 4 || offset + count > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+    length = 0;
+    for (let i = 0; i < count; i++) length = length * 256 + bytes[offset++];
+  }
+  const start = offset;
+  const end = start + length;
+  if (end > bytes.length) throw new Error('INVALID_CERTIFICATE_DER');
+  return { tag, offset: headerOffset, start, end, next: end };
+}
+
+function derChildren(bytes, parent) {
+  const children = [];
+  let offset = parent.start;
+  while (offset < parent.end) {
+    const child = readDerNode(bytes, offset);
+    children.push(child);
+    offset = child.next;
+  }
+  if (offset !== parent.end) throw new Error('INVALID_CERTIFICATE_DER');
+  return children;
+}
+function decodeBase64(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error('INVALID_CERTIFICATE_BASE64');
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function getSpkiDer(pem) {
+  if (typeof pem !== 'string' || pem.length > 16_384) throw new Error('INVALID_CERTIFICATE');
+  const base64 = pem.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g, '');
+  const der = decodeBase64(base64);
+  const root = readDerNode(der, 0);
+  if (root.tag !== 0x30 || root.next !== der.length) throw new Error('INVALID_CERTIFICATE_DER');
+  const certificate = derChildren(der, root);
+  if (certificate.length !== 3 || certificate[0].tag !== 0x30) throw new Error('INVALID_CERTIFICATE_DER');
+  const tbs = derChildren(der, certificate[0]);
+  const index = tbs[0]?.tag === 0xa0 ? 1 : 0;
+  const spki = tbs[index + 5];
+  if (!spki || spki.tag !== 0x30) throw new Error('INVALID_CERTIFICATE_SPKI');
+  return der.slice(spki.offset, spki.end);
+}
+
+function ownerEmailsFromEnv(env = {}) {
+  const configured = env.HQ_ALLOWED_OWNER_EMAILS;
+  const values = Array.isArray(configured)
+    ? configured
+    : typeof configured === 'string'
+      ? configured.split(',')
+      : DEFAULT_OWNER_EMAILS;
+  return values.map((email) => String(email).trim().toLowerCase()).filter(Boolean);
+}
+
+function cacheExpiry(response, now) {
+  const cacheControl = response.headers.get('cache-control') || '';
+  const match = cacheControl.match(/(?:^|,)\s*max-age=(\d+)/i);
+  const seconds = match ? Number(match[1]) : 300;
+  return now + Math.max(0, Math.min(seconds, MAX_CERTIFICATE_CACHE_MS / 1000)) * 1000;
+}
+
+async function readBoundedText(response, maxBytes) {
+  if (!response.body) throw new Error('CERTIFICATE_RESPONSE_EMPTY');
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error('CERTIFICATE_RESPONSE_TOO_LARGE');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+async function loadCertificates(fetchImpl, now, forceRefresh = false) {
+  if (!forceRefresh && certificateCache.certificates && certificateCache.expiresAt > now) {
+    return certificateCache.certificates;
+  }
+  const response = await fetchImpl(CERTIFICATE_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(CERTIFICATE_FETCH_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error('CERTIFICATE_FETCH_FAILED');
+  const declaredLength = Number(response.headers.get('content-length') || 0);
+  if (declaredLength > MAX_CERTIFICATE_RESPONSE_BYTES) throw new Error('CERTIFICATE_RESPONSE_TOO_LARGE');
+  const body = await readBoundedText(response, MAX_CERTIFICATE_RESPONSE_BYTES);
+  const certificates = JSON.parse(body);
+  if (!certificates || typeof certificates !== 'object' || Array.isArray(certificates)) {
+    throw new Error('CERTIFICATE_RESPONSE_INVALID');
+  }
+  const entries = Object.entries(certificates);
+  if (!entries.length || entries.length > 20 || entries.some(([kid, pem]) =>
+    !kid || kid.length > 256 || typeof pem !== 'string' || !pem.includes('BEGIN CERTIFICATE')
+  )) throw new Error('CERTIFICATE_RESPONSE_INVALID');
+  certificateCache = { certificates, expiresAt: cacheExpiry(response, now) };
+  return certificates;
+}
+
+export async function importFirebaseCertificate(pem) {
+  const spki = getSpkiDer(pem);
+  return crypto.subtle.importKey(
+    'spki',
+    spki,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+}
 
 /**
- * Parses and decodes a JWT token without external heavy dependencies.
- * Validates header, payload structure, and claims.
- * @param {string} token 
- * @returns {{ header: object, payload: object, rawSignature: string } | null}
+ * Verifies Firebase Secure Token ID tokens.
+ * Optional third argument provides deterministic fetch/key hooks for unit tests only.
  */
-export function decodeJwt(token) {
-  if (typeof token !== 'string') return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
+export async function verifyFirebaseToken(idToken, env = {}, options = {}) {
+  if (typeof idToken !== 'string' || idToken.length < 20 || idToken.length > MAX_TOKEN_LENGTH) {
+    return failure('UNAUTHORIZED', 'Missing or malformed Firebase ID token');
+  }
+
+  const projectId = typeof env.FIREBASE_PROJECT_ID === 'string' ? env.FIREBASE_PROJECT_ID.trim() : DEFAULT_PROJECT_ID;
+  if (!/^[a-z0-9-]{1,128}$/.test(projectId)) return failure('FIREBASE_PROJECT_ID_INVALID');
+  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
 
   try {
-    const parseBase64Url = (str) => {
-      let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-      while (base64.length % 4 !== 0) {
-        base64 += '=';
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return failure('INVALID_TOKEN', 'Malformed JWT structure');
+    const header = decodeJsonSegment(parts[0]);
+    if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid || header.kid.length > 256 || header.crit !== undefined || header.b64 === false || header.jku !== undefined || header.jwk !== undefined || header.x5u !== undefined || header.x5c !== undefined) {
+      return failure('INVALID_TOKEN_HEADER', 'Unsupported JWT algorithm or missing signing key ID');
+    }
+    const payload = decodeJsonSegment(parts[1]);
+    const signature = decodeBase64Url(parts[2]);
+    const nowMs = options.now ?? Date.now();
+    const nowSeconds = Math.floor(nowMs / 1000);
+    const fetchImpl = options.fetchImpl || fetch;
+    const importCertificate = options.importCertificate || importFirebaseCertificate;
+    let certificates = await loadCertificates(fetchImpl, nowMs);
+    let certificate = certificates[header.kid];
+    if (!certificate) {
+      certificates = await loadCertificates(fetchImpl, nowMs, true);
+      certificate = certificates[header.kid];
+    }
+    if (!certificate) return failure('SIGNING_KEY_NOT_FOUND', 'Firebase signing key was not found');
+
+    const publicKey = await importCertificate(certificate);
+    const signingInput = new TextEncoder().encode(parts[0] + '.' + parts[1]);
+    const verified = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      publicKey,
+      signature,
+      signingInput
+    );
+    if (!verified) return failure('INVALID_SIGNATURE', 'Firebase ID token signature is invalid');
+
+    // Claims are trusted only after the cryptographic signature succeeds.
+    if (payload.iss !== expectedIssuer) return failure('INVALID_ISSUER', 'Firebase token issuer mismatch');
+    if (payload.aud !== projectId) return failure('INVALID_AUDIENCE', 'Firebase token audience mismatch');
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || payload.exp <= nowSeconds) {
+      return failure('TOKEN_EXPIRED', 'Firebase authentication token has expired');
+    }
+    if (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) || payload.iat > nowSeconds + 5) {
+      return failure('INVALID_ISSUED_AT', 'Firebase token issued-at claim is invalid');
+    }
+    if (typeof payload.auth_time !== 'number' || !Number.isFinite(payload.auth_time) || payload.auth_time > nowSeconds + 5 || payload.auth_time > payload.iat) {
+      return failure('INVALID_AUTH_TIME', 'Firebase token auth_time claim is invalid');
+    }
+    if (typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128) {
+      return failure('MISSING_UID', 'Firebase token subject is invalid');
+    }
+    if (payload.email_verified !== true || typeof payload.email !== 'string' || !payload.email.trim()) {
+      return failure('EMAIL_UNVERIFIED', 'Firebase email must be verified');
+    }
+    const email = payload.email.trim().toLowerCase();
+    if (!ownerEmailsFromEnv(env).includes(email)) {
+      return failure('UNAUTHORIZED_EMAIL', 'Email address is not in the authorized owner allowlist');
+    }
+    return {
+      valid: true,
+      user: {
+        uid: payload.sub,
+        email,
+        emailVerified: true,
+        authTime: payload.auth_time,
+        projectId
       }
-      const jsonStr = atob(base64);
-      return JSON.parse(jsonStr);
     };
-
-    const header = parseBase64Url(parts[0]);
-    const payload = parseBase64Url(parts[1]);
-    return { header, payload, rawSignature: parts[2] };
   } catch {
-    return null;
+    // Includes certificate network/timeout/parse errors and crypto failures.
+    return failure('TOKEN_VERIFICATION_FAILED', 'Firebase token verification failed closed');
   }
 }
 
-/**
- * Retrieves the allowed owner emails from environment or fallback defaults.
- * @param {object} env 
- * @returns {string[]}
- */
-export function getAllowedOwnerEmails(env = {}) {
-  if (env.HQ_ALLOWED_OWNER_EMAILS) {
-    if (Array.isArray(env.HQ_ALLOWED_OWNER_EMAILS)) {
-      return env.HQ_ALLOWED_OWNER_EMAILS.map((e) => String(e).trim().toLowerCase());
-    }
-    if (typeof env.HQ_ALLOWED_OWNER_EMAILS === 'string') {
-      return env.HQ_ALLOWED_OWNER_EMAILS.split(',')
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-    }
-  }
-  return DEFAULT_ALLOWED_EMAILS.map((e) => e.toLowerCase());
-}
-
-/**
- * Verifies Firebase ID Token claims and owner email allowlist.
- * @param {string} idToken 
- * @param {object} env 
- * @returns {Promise<{ valid: boolean, user?: object, error?: string, code?: string }>}
- */
-export async function verifyFirebaseToken(idToken, env = {}) {
-  if (!idToken || typeof idToken !== 'string') {
-    return { valid: false, error: 'Missing or invalid authentication token', code: 'UNAUTHORIZED' };
-  }
-
-  const jwt = decodeJwt(idToken);
-  if (!jwt || !jwt.header || !jwt.payload) {
-    return { valid: false, error: 'Malformed JWT token structure', code: 'INVALID_TOKEN' };
-  }
-
-  const { header, payload } = jwt;
-
-  // 1. Verify RS256 algorithm
-  if (header.alg !== 'RS256') {
-    return { valid: false, error: 'Invalid JWT algorithm, expected RS256', code: 'INVALID_ALGORITHM' };
-  }
-
-  const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
-  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
-  const nowInSeconds = Math.floor(Date.now() / 1000);
-
-  // 2. Verify Claims: Expiry
-  if (typeof payload.exp !== 'number' || payload.exp <= nowInSeconds) {
-    return { valid: false, error: 'Firebase authentication token has expired', code: 'TOKEN_EXPIRED' };
-  }
-
-  // 3. Verify Claims: Auth Time
-  if (typeof payload.auth_time !== 'number' || payload.auth_time > nowInSeconds) {
-    return { valid: false, error: 'Token auth_time is in the future', code: 'INVALID_AUTH_TIME' };
-  }
-
-  // 4. Verify Claims: Issuer
-  if (payload.iss !== expectedIssuer) {
-    return { valid: false, error: 'Token issuer mismatch', code: 'INVALID_ISSUER' };
-  }
-
-  // 5. Verify Claims: Audience
-  if (payload.aud !== projectId) {
-    return { valid: false, error: 'Token audience mismatch', code: 'INVALID_AUDIENCE' };
-  }
-
-  // 6. Verify User Identity (UID & Email)
-  const uid = payload.sub || payload.user_id || payload.uid;
-  if (!uid || typeof uid !== 'string') {
-    return { valid: false, error: 'Token missing user subject ID', code: 'MISSING_UID' };
-  }
-
-  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
-  if (!email) {
-    return { valid: false, error: 'Token missing user email address', code: 'MISSING_EMAIL' };
-  }
-
-  // 7. Verify Email Verification Flag
-  if (payload.email_verified !== true) {
-    return { valid: false, error: 'User email address is not verified in Firebase', code: 'EMAIL_UNVERIFIED' };
-  }
-
-  // 8. Verify Allowed Owner Email Allowlist
-  const allowedEmails = getAllowedOwnerEmails(env);
-  if (!allowedEmails.includes(email)) {
-    return { valid: false, error: 'Email address is not in authorized owner allowlist', code: 'UNAUTHORIZED_EMAIL' };
-  }
-
-  return {
-    valid: true,
-    user: {
-      uid,
-      email,
-      emailVerified: true,
-      authTime: payload.auth_time,
-      projectId
-    }
-  };
+export function resetFirebaseCertificateCacheForTests() {
+  certificateCache = { expiresAt: 0, certificates: null };
 }

@@ -1,0 +1,35 @@
+name: HQ Firebase Authentication Security Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/lib/hqAuth.js"
+      - "tests/hq-auth-crypto.test.js"
+      - "tests/hq-authorization.test.js"
+      - ".github/workflows/hq-auth-security.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hq-auth-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firebase-token-verification:
+    name: Cryptographic Firebase token verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Run Firebase authentication security tests
+        run: node --test tests/hq-auth-crypto.test.js tests/hq-authorization.test.js
