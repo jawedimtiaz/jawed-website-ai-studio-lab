@@ -28,9 +28,9 @@ for (const file of files) {
   const fail = message => failures.push(path + ": " + message);
   if (!/<html\b[^>]*\blang\s*=\s*["'][a-z]{2,3}(?:-[a-z0-9]+)*["']/i.test(html)) fail("document must declare a valid primary language on <html lang>");
   if (!/<title\b[^>]*>\s*[^<\s][\s\S]*?<\/title\s*>/i.test(html)) fail("document must have a non-empty <title>");
-  if (path === "index.html" && /<div id="root"><\\/div>/.test(html)) {
+  if (path === "index.html" && /<div id="root"><\/div>/.test(html)) {
     const homeRoute = await readFile("src/pages/HomePage.tsx", "utf8");
-    if (!/<main\\b[^>]*>/i.test(homeRoute)) fail("React SPA home route must expose a <main> landmark");
+    if (!/<main\b[^>]*>/i.test(homeRoute)) fail("React SPA home route must expose a <main> landmark");
   } else if (!/<main\\b[^>]*>/i.test(html)) {
     fail("document must expose a <main> landmark");
   }
