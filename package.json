@@ -7,12 +7,14 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc && vite build && node scripts/prepare-dist.mjs",
     "lint": "tsc --noEmit",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test:hq-auth": "node --test functions/lib/hqAuth.test.js functions/lib/hqApi.test.js functions/lib/hqRateLimit.test.js functions/api/hq/clients.test.js functions/api/hq/clients.api.test.js functions/api/hq/projects.test.js functions/api/hq/release.test.js functions/api/hq/financial.test.js tests/hq-owner-authorization.test.js scripts/test-hq-service-worker-cache.mjs scripts/test-studio-hq-private-page.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.30.0",
     "@types/three": "^0.186.0",
     "firebase": "^13.0.0",
+    "jose": "6.1.2",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -27,6 +29,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.12",
     "typescript": "^5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "wrangler": "4.160.1"
   }
 }

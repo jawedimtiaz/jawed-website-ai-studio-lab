@@ -1,0 +1,42 @@
+name: Studio HQ Approvals and QA Tests
+
+on:
+  pull_request:
+    branches:
+      - fix/studio-hq-bounded-json-body
+    paths:
+      - 'functions/api/hq/**'
+      - 'functions/lib/hqApi.js'
+      - 'functions/lib/hqAuth.js'
+      - 'worker.js'
+      - 'migrations/hq/**'
+      - 'package.json'
+      - 'wrangler.toml'
+      - 'wrangler.jsonc'
+      - '.github/workflows/studio-hq-approvals-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-approvals-qa:
+    name: Validate Approvals & QA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.12.0
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Verify Studio HQ test suite
+        run: npm run test:hq-auth
+      - name: Verify D1 schema
+        run: node scripts/test-hq-migration.mjs
+      - name: TypeScript and production build
+        run: npm run build
+      - name: Validate Wrangler Worker configuration (dry run)
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
