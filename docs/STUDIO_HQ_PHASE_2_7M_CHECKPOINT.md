@@ -141,11 +141,16 @@ The following observations were obtained after the original checkpoint was writt
 
 ### Next continuation tasks
 
-1. Prepare a documented, no-write D1 backup/recovery runbook and clearly mark the restore drill as not yet performed.
-2. Review the existing workflow action pins and Node 20 deprecation warning as a separate maintenance proposal; do not modify workflow pins until compatibility is checked.
-3. Review Vite chunk composition and propose targeted code-splitting only if it can be done without broad unrelated refactoring.
-4. Continue read-only release-readiness reconciliation. Recheck live evidence before any future release recommendation.
-5. Stop before any merge, deployment, live Cloudflare configuration change, D1 write/migration, or branch-protection mutation unless the user explicitly approves that specific action.
+1. **D1 runbook review:** Have the owner review `docs/studio-hq-d1-backup-recovery-runbook.md`. Backup export and a disposable-database restore drill remain unperformed and require separate approval.
+2. **Workflow inventory:** Complete an inventory of all `.github/workflows/*.yml` files, recording action pins, runner/runtime, package manager, permissions, and trigger paths. Then prepare a separate CI maintenance proposal using verified immutable SHAs. Do not update workflow pins in PR #51.
+3. **Bundle optimization proposal:** Evaluate nested lazy loading for `HardwareShowcase3D` with measured before/after build output and browser checks in a separate change. No optimization has been implemented yet.
+4. **Analytics warning:** Inspect `public/assets/js/analytics.js` (or its actual repository path) and determine why Vite warns about the classic deferred script. Preserve execution semantics; do not convert it to a module without evidence.
+5. **Release-readiness reconciliation:** Recheck current live Worker bindings/version, D1 recovery evidence, branch protection and dependency advisory status using read-only access. Do not inspect the Kaushal customer Worker.
+6. Keep PR #51 Draft and unmerged. Stop before merge, deployment, live Cloudflare configuration changes, D1 export/import/restore/migration/writes, branch-protection mutations, or any customer/personal-site changes unless the user explicitly approves that exact operation.
+
+### Continuation protocol
+
+For a new chat, start in the Jawed Web Studio — Business & Development HQ project and ask the assistant to read this checkpoint from the PR branch, verify the current PR head and workflow status, then continue the listed tasks. A screenshot is optional context only; GitHub's current branch, PR and workflow data are authoritative.
 
 ### D1 backup/recovery runbook prepared — 15 November 2026
 
