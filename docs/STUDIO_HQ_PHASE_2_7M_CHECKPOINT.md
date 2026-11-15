@@ -468,3 +468,41 @@ This is stronger evidence that PR #51's canonical migration lineage matches the 
 - The PR remains Draft and unmerged. Documentation commits do not prove that application CI has rerun on the latest head.
 
 **Next safe action:** perform a final exact-head review of the PR #51 changed-file set and current required checks, then prepare a separate owner-reviewable proposal for resolving the three-commit main drift. Do not rebase, merge, deploy, or run remote migrations without explicit approval.
+
+
+## 21. Final-head PR and CI evidence recheck — 15 November 2026
+
+### Current PR state
+
+- PR #51 remains open, Draft, and unmerged.
+- Latest head at this check: `47bea3f711f3ee684c72e4d7832ff515788f09b3`.
+- PR metadata base snapshot: `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`.
+- Direct comparison against current main: 163 commits ahead, 3 behind; common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- GitHub reports the PR is not currently mergeable. Do not attempt a merge or automatic rebase.
+- PR changed-file inventory: 63 paths. The recent commits added only documentation updates to the existing checkpoint, schema review, and CI/deployment review; no application source or workflow files were changed by those documentation commits.
+
+### Latest application-code CI evidence
+
+- The latest identified application-code commit before the documentation-only continuation commits is `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`.
+- GitHub returned 13 PR-triggered workflow runs for that exact commit. All 13 completed successfully:
+  - AdSense Readiness Gate
+  - Accessibility Document Contract
+  - AI Regression Gate
+  - PWA Reliability Gate
+  - Deployment Runtime Reliability Gate
+  - Security Baseline Gate
+  - Studio HQ D1 Schema Validation
+  - Site Integrity Gate
+  - Security Supply Chain Gate
+  - Core Web Vitals Protection Gate
+  - Performance Baseline Gate
+  - Studio HQ Firebase Auth Tests
+  - Career Match Browser Runtime Gate
+- The latest documentation-only head `47bea3f711f3ee684c72e4d7832ff515788f09b3` has no associated check runs returned. Do not label the current PR head “13/13 green”; the evidence is 13/13 successful on the preceding application-code commit, with no application-code changes in the subsequent documentation commits.
+- No new tests were executed locally or in Cloudflare during this documentation reconciliation.
+
+### Release decision
+
+PR #51 remains Draft and unmerged. The 13 successful application-code checks and fresh D1 column/type/integrity comparison are positive evidence, but they do not resolve the 3-commit main drift, active Worker binding mismatch, account-wide rate-limit namespace uniqueness, untested D1 restore drill, or deployment approval requirement.
+
+No merge, rebase, deployment, remote D1 migration, database write, Cloudflare settings mutation, or customer/personal website change was performed.
