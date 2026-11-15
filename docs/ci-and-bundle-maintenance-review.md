@@ -476,3 +476,66 @@ Before deployment, record the currently active deployment ID and version ID, and
 **Conclusion:** This preflight procedure is prepared for owner review only. Do not upload a Worker version, deploy traffic, modify bindings, run D1 operations, or test mutating HQ endpoints under the current authorization.
 
 Official reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
+
+## 16. PR #49 deployment-source reconciliation against PR #51 — 15 November 2026
+
+This is the deployment-source analysis originally recorded on main on 15 November 2026. It has been carried into the PR #51 review after a fresh status recheck. The technical source/configuration findings remain applicable; PR head/base/divergence metadata below is refreshed to the latest read-only GitHub observations.
+
+### Current PR states and checks
+
+- PR #49 (fresh recheck): open, non-draft, unmerged, mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base SHA `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct comparison against current main reports 3 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Its head has two PR-triggered workflow runs returned: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are not deployment runs.
+- PR #51 (fresh recheck): open, Draft, unmerged, currently reported not mergeable. Latest head `77b60af57b254329881505c247e06a6713ecf667`; PR metadata base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`. Direct comparison against current main reports 161 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. The latest two commits are documentation-only; no PR-triggered workflow runs were returned for the newest documentation checkpoint commit. Do not infer that the prior application-code CI results reran on this documentation head.
+
+### PR #49's deployment workflow — actual source behavior
+
+File: `.github/workflows/manual-studio-hq-worker-deploy.yml`.
+
+- Trigger: `workflow_dispatch` only; job condition requires `github.ref == 'refs/heads/main'`. No push or pull-request deployment trigger.
+- It checks out the hard-coded commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6` (the PR #46 merge commit), not the PR #49 head and not current main at dispatch time.
+- It then installs locked Bun dependencies, builds, checks Worker name and `dist/index.html`, validates only `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER`, and runs `bunx wrangler deploy --config wrangler.jsonc` with the two Cloudflare deployment secrets.
+- The deployment workflow itself is added in PR #49. The exact pinned source is independent of the branch's current `wrangler.jsonc`; the workflow explicitly overrides checkout ref.
+
+### Critical source-configuration mismatch
+
+At the exact pinned source commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, `wrangler.jsonc` contains:
+
+- D1 binding `HQ_DB` to database `jawed-studio-hq` (ID `d9ec83ea-7114-4179-af8e-a22ba5494508`), migrations directory `migrations/hq`.
+- `HQ_SESSION_LIMITER` namespace `8726111401`, threshold 60 requests / 60 seconds.
+- `HQ_WRITE_LIMITER` namespace `8726111402`, threshold 30 requests / 60 seconds.
+- No `HQ_RATE_LIMITER` binding.
+
+By contrast, the PR #51 source configuration declares three limiters:
+
+- `HQ_SESSION_LIMITER`: namespace `620261114`, 10 / 60 seconds.
+- `HQ_WRITE_LIMITER`: namespace `620261115`, 30 / 60 seconds.
+- `HQ_RATE_LIMITER`: namespace `620261116`, 120 / 60 seconds.
+
+PR #51 application code adds the general authenticated request limiter. Its API handlers rely on the general limiter as well as session/write limits. The PR #49 deployment workflow's validation loop checks only the session and write binding names; it would not detect the missing general limiter in its pinned source. Therefore a manual run of PR #49 would build/deploy the older PR #46 application revision and its older two-binding configuration, not the PR #51 application code or three-binding configuration.
+
+### Current main and PR #49 branch configuration
+
+- Current main `wrangler.jsonc` contains only `AI`, `ASSETS`, `ENVIRONMENT`, and `CANONICAL_ORIGIN`; it has no D1 or rate-limit declarations.
+- PR #49 branch `wrangler.jsonc` has the same stripped configuration. This does not change what its workflow deploys because the workflow checks out the hard-coded PR #46 commit.
+- PR #51 branch restores the canonical `HQ_DB` binding and three rate-limit bindings. Its migration directory is `migrations/hq`, with `0001_studio_hq_schema.sql` and `0002_financial_management.sql` matching the live D1 migration ledger.
+
+### Migration history caution
+
+Current main contains a legacy root-level `migrations/0002_hq_owner_authorization_hardening.sql` defining parallel `hq_*` tables (for example `hq_clients`, `hq_projects`, `hq_tasks`, `hq_milestones`, and `hq_audit_logs`). The live D1 migration ledger does not list this file; it lists only the two canonical migrations under the `migrations/hq` history. PR #51's canonical migration set instead uses `clients`, `projects`, `project_tasks`, `project_milestones`, and `audit_logs`, plus the financial tables in its additive second migration. The root-level legacy migration is not present in the PR #51 branch. Do not apply the main-branch root migration or combine it with the canonical migration directory without a schema-level compatibility plan.
+
+### PR #49 security validator exception
+
+PR #49 changes the security supply-chain validator to allow only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` references, and only inside the exact manual deployment workflow. Other workflows remain forbidden from accessing secrets. This is a narrow and intentional exception; it does not resolve the stale pinned-source issue.
+
+### Recommendation / release decision
+
+**Do not merge or manually dispatch PR #49 in its current form.** It is a manual-only workflow, but its hard-coded source commit is stale relative to PR #51 and omits the general `HQ_RATE_LIMITER` required by the newer code. Its own validation would not catch that omission. The old session threshold also differs from the newer intended limit.
+
+Before any deployment workflow can be approved, one consolidated deployment candidate must:
+
+1. Pin the exact approved application commit after PR #51's intended code is merged/reconciled with current main (or another explicitly selected, fully reviewed source).
+2. Validate all three required limiter names and exact expected thresholds, not just two names.
+3. Validate the D1 database ID and migration directory against the canonical live ledger without running migrations.
+4. Preserve the security validator's narrow secret allowlist, `contents: read`, immutable action SHAs, and manual-only trigger.
+5. Include a reviewed rollback procedure, source SHA annotation, and post-deployment binding verification.
+
+No files in PR #49, PR #51 application code, main, Cloudflare configuration, D1 schema/data, or secrets were changed. No workflow was dispatched, no deployment was run, and no PR was merged.
