@@ -233,3 +233,59 @@ Additional source inspection confirms:
 - Verify fallback accessibility (status announcement, readable text, no layout collapse) and error recovery (refresh/retry). Confirm no regression to route navigation or page-level error boundary.
 
 This remains a design review only. No local build was executed, no before/after measurements exist, and no source code was changed. The optimization is not yet validated and must be a separate change from PR #51.
+
+
+## 10. Analytics script warning — source-level diagnosis — 15 November 2026
+
+The exact referenced file was located at `assets/js/analytics.js` (not a guessed `public/` path) and fetched from the current PR branch. `index.html` references it as:
+
+```html
+<script src="/assets/js/analytics.js" defer></script>
+<script type="module" src="/src/main.tsx"></script>
+```
+
+The analytics file is a one-line classic-script IIFE. It:
+- Defines a guarded one-time loader using `window.__jawedGaLoaded`.
+- Initializes `window.dataLayer` and `window.gtag` if absent.
+- Queues the Google Analytics `js` and `config` calls for measurement ID `G-14C5DCPM15`.
+- Exposes `window.jawedTrack` as a guarded event helper.
+- Appends the Google Tag Manager gtag script asynchronously.
+- Defers the loader until the window load event, then schedules it with `requestIdleCallback` (3-second timeout) or a 1.5-second timer fallback.
+
+### Diagnosis
+
+The Vite warning is consistent with Vite encountering a classic external script in HTML that it cannot transform/bundle as a module. The source itself is intentionally classic and uses browser globals; the warning does not by itself indicate a runtime defect. The script is explicitly deferred and loaded outside the app module graph.
+
+Do **not** change it to `type="module"` merely to silence the warning. Before any such change, compare execution timing, global exposure, CSP behavior, analytics consent/privacy policy, duplicate-load protection, and event ordering with the React entry point. A more suitable resolution may be to leave it as a static public asset and use a Vite-supported public-asset reference/layout so it is copied unchanged without being parsed as a module, but this must be demonstrated by a clean build and production preview. Do not change the path or script attributes speculatively.
+
+### Acceptance checks for a separate maintenance change
+
+1. Build output contains exactly one analytics script at the expected URL, with the source preserved byte-for-byte if the static asset approach is chosen.
+2. No duplicate Google tag injection; `window.__jawedGaLoaded`, `window.gtag`, and `window.jawedTrack` remain available as intended.
+3. Confirm the analytics request is still deferred until after the load/idle schedule and is not moved into the critical rendering path.
+4. Verify CSP permits the external Google tag endpoint under the current policy and confirm the deployed analytics behavior in a consent/privacy-compliant test session.
+5. Confirm no new console errors, duplicate page_view events, or changed navigation event behavior.
+
+This is a source-level diagnosis only. No build was run, no analytics request was made, and no runtime behavior was tested. No file was changed.
+
+## 11. CI maintenance proposal — bounded separate PR
+
+Based on the complete 34-file inventory, the lowest-risk first CI maintenance change is:
+
+- In the five Studio HQ workflow files only, replace checkout v4.2.2 pin `11bd71901bbe5b1630ceea73d27597364c9af683` with the already-used checkout v5.1.0 pin `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`.
+- Replace setup-node v4.4.0 pin `49933ea5288caeca8642d1e84afbd3f7d6820020` with the already-used setup-node v7.0.0 pin `820762786026740c76f36085b0efc47a31fe5020`.
+- Keep the existing full SHA pinning, runner, Node version, scripts, permissions, trigger filters and job behavior unchanged in this first pass. This isolates the action-runtime update from app runtime changes.
+- The five files are: `studio-hq-approvals-qa.yml`, `studio-hq-auth-tests.yml`, `studio-hq-crm-tests.yml`, `studio-hq-d1-schema.yml`, and `studio-hq-projects-tests.yml`.
+- Keep `twa-engineering.yml` Node 20 runtime upgrade as a separate, independently tested change to Node 24.12.0 (or another supported LTS explicitly selected after validation). The validator is a standalone Node script and the workflow does not install Android build tooling, but compatibility still needs to be executed rather than assumed.
+
+This first-pass proposal intentionally uses the same immutable action pins already exercised by 29 workflows in the repository, rather than combining a fleet-wide latest-patch upgrade with the Node 20 runtime changes. After the five-workflow change passes, a later separate update can evaluate checkout v7.0.1 and setup-node v7.1.0. Those exact SHAs were verified against their upstream tag refs but have not been exercised in this repository.
+
+### Required verification
+
+- Run all five Studio HQ workflow jobs on the maintenance branch, including the Bun setup/auth test, npm build and Wrangler dry-run in the auth job.
+- Run the TWA validation after its separate Node upgrade.
+- Inspect actual job logs for Node 20 action-runtime warnings and ensure they disappear from the five updated workflows.
+- Ensure all workflow permissions remain `contents: read`, SHA pins remain immutable, and no deployment, secrets access, or D1 writes are introduced.
+- Do not apply any of these workflow edits to PR #51; create a separate maintenance branch/PR after the current PR's intended disposition is decided.
+
+No workflow files have been edited and no workflow was manually triggered. This section is a proposal, not an implementation or test result.
