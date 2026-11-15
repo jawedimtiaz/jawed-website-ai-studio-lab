@@ -398,6 +398,8 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
   if (!dbResult.ok) return dbResult.response;
   const db = dbResult.db;
   try {
+    const generalLimit = await checkHqRateLimit(request, env, { type: 'general', uid: identity.uid });
+    if (!generalLimit.ok) return generalLimit.response;
     if (['POST', 'PATCH'].includes(request.method)) {
       const rateLimit = await checkHqRateLimit(request, env, { type: 'write', uid: identity.uid });
       if (!rateLimit.ok) return rateLimit.response;
