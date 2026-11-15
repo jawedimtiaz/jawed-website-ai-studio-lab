@@ -40,7 +40,7 @@ on:
       - '.github/workflows/studio-hq-auth-tests.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   hq-auth-unit-tests:
@@ -79,13 +79,24 @@ jobs:
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
       - name: Verify gRPC server-auth code is absent from production artifacts
         run: node scripts/verify-no-grpc-runtime.mjs dist .wrangler-dry-run
-      - name: Upload generated lockfile candidate for review
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: studio-hq-bun-lock-candidate
-          path: |
-            bun.lock
-            package.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit patched dependency lockfile to the PR branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cp bun.lock "$RUNNER_TEMP/bun.lock"
+          cp package.json "$RUNNER_TEMP/package.json"
+          git fetch origin "$GITHUB_HEAD_REF"
+          git checkout -B lockfile-update FETCH_HEAD
+          cp "$RUNNER_TEMP/bun.lock" bun.lock
+          cp "$RUNNER_TEMP/package.json" package.json
+          git add bun.lock package.json
+          if git diff --cached --quiet; then
+            echo "Committed dependency lockfile already matches the generated candidate."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(deps): update Vite to patched release"
+          git push origin "HEAD:refs/heads/$GITHUB_HEAD_REF"
