@@ -35,7 +35,7 @@ const request=(path,method='GET',body,headers={})=>new Request('https://lab.jawe
   method,headers:{...(body===undefined?{}:{'content-type':'application/json'}),...headers},
   body:body===undefined?undefined:JSON.stringify(body)
 });
-const call=(db,req,segments)=>handleAuthorizedHqFinancial({request:req,env:{HQ_DB:db},segments,identity});
+const call=(db,req,segments)=>handleAuthorizedHqFinancial({request:req,env:{ENVIRONMENT:'test',HQ_DB:db},segments,identity});
 const seed= db => {
   db.sqlite.prepare("INSERT INTO hq_users(uid,email,status) VALUES (?,?,'active')").run(identity.uid,identity.email);
   db.sqlite.prepare("INSERT INTO clients(id,name,created_by) VALUES ('client-1','Test Client',?)").run(identity.uid);
