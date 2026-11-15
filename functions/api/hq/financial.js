@@ -266,7 +266,7 @@ async function addPayment(request, db, identity, invoiceId) {
   const insert = db.prepare(`INSERT INTO payments (id,invoice_id,amount_minor,currency,payment_method,reference_number,paid_at,recorded_by,notes)
     SELECT ?,id,?,'INR',?,?,?,?,? FROM invoices i
     WHERE i.id=? AND i.status IN ('issued','partially-paid','overdue')
-      AND i.total_minor - (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id)
+      AND i.total_minor - (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
           + (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id) >= ?`)
     .bind(paymentId,x.amount_minor,x.payment_method ?? null,ref,paidAt,identity.uid,notes,invoiceId,x.amount_minor);
   const idem = db.prepare(`INSERT INTO payment_idempotency_keys (id,idempotency_key,invoice_id,payment_id,request_fingerprint)
