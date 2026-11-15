@@ -1,134 +1,174 @@
-// functions/lib/hqAuth.js
-// Firebase Authentication & Token Verification for Studio HQ
+import { importX509, jwtVerify } from 'jose';
 
-const DEFAULT_PROJECT_ID = 'ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb';
-const DEFAULT_ALLOWED_EMAILS = ['jawedimtiaz@gmail.com'];
+const PROJECT_ID = 'refined-actor-skhlb';
+const ISSUER = 'https://securetoken.google.com/' + PROJECT_ID;
+const CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+const OWNERS = new Set(['jawedimtiaz@gmail.com', 'jawed@jawed.co.in']);
+let cache = { expiresAt: 0, certificates: null };
 
-/**
- * Parses and decodes a JWT token without external heavy dependencies.
- * Validates header, payload structure, and claims.
- * @param {string} token 
- * @returns {{ header: object, payload: object, rawSignature: string } | null}
- */
-export function decodeJwt(token) {
-  if (typeof token !== 'string') return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  try {
-    const parseBase64Url = (str) => {
-      let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-      while (base64.length % 4 !== 0) {
-        base64 += '=';
-      }
-      const jsonStr = atob(base64);
-      return JSON.parse(jsonStr);
-    };
-
-    const header = parseBase64Url(parts[0]);
-    const payload = parseBase64Url(parts[1]);
-    return { header, payload, rawSignature: parts[2] };
-  } catch {
-    return null;
-  }
+function denied(status, code) {
+  return { ok: false, status, code };
 }
 
-/**
- * Retrieves the allowed owner emails from environment or fallback defaults.
- * @param {object} env 
- * @returns {string[]}
- */
-export function getAllowedOwnerEmails(env = {}) {
-  if (env.HQ_ALLOWED_OWNER_EMAILS) {
-    if (Array.isArray(env.HQ_ALLOWED_OWNER_EMAILS)) {
-      return env.HQ_ALLOWED_OWNER_EMAILS.map((e) => String(e).trim().toLowerCase());
-    }
-    if (typeof env.HQ_ALLOWED_OWNER_EMAILS === 'string') {
-      return env.HQ_ALLOWED_OWNER_EMAILS.split(',')
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-    }
-  }
-  return DEFAULT_ALLOWED_EMAILS.map((e) => e.toLowerCase());
+function expiryFrom(response, now) {
+  const value = response.headers.get('cache-control') || '';
+  const match = value.match(/(?:^|,)\s*max-age=(\d+)/i);
+  const seconds = match ? Number(match[1]) : 300;
+  return now + Math.max(0, Math.min(seconds, 3600)) * 1000;
 }
 
-/**
- * Verifies Firebase ID Token claims and owner email allowlist.
- * @param {string} idToken 
- * @param {object} env 
- * @returns {Promise<{ valid: boolean, user?: object, error?: string, code?: string }>}
- */
-export async function verifyFirebaseToken(idToken, env = {}) {
-  if (!idToken || typeof idToken !== 'string') {
-    return { valid: false, error: 'Missing or invalid authentication token', code: 'UNAUTHORIZED' };
+async function loadCertificates(fetchImpl, now) {
+  if (cache.certificates && cache.expiresAt > now) return cache.certificates;
+  const response = await fetchImpl(CERT_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) throw new Error('CERTIFICATE_FETCH_FAILED');
+  const data = await response.json();
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('CERTIFICATE_RESPONSE_INVALID');
   }
+  const entries = Object.entries(data);
+  if (!entries.length || entries.some(([kid, pem]) =>
+    !kid || typeof pem !== 'string' || !pem.startsWith('-----BEGIN CERTIFICATE-----')
+  )) throw new Error('CERTIFICATE_RESPONSE_INVALID');
+  cache = { certificates: Object.fromEntries(entries), expiresAt: expiryFrom(response, now) };
+  return cache.certificates;
+}
 
-  const jwt = decodeJwt(idToken);
-  if (!jwt || !jwt.header || !jwt.payload) {
-    return { valid: false, error: 'Malformed JWT token structure', code: 'INVALID_TOKEN' };
+function classifyVerificationError(error) {
+  // Prefer stable JOSE error identifiers; inspect text only to classify generic runtime TypeErrors.
+  if (error?.name === 'JWTClaimValidationFailed' || error?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return 'JWT_CLAIM_VALIDATION';
+  if (error?.name === 'JWSSignatureVerificationFailed' || error?.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') return 'JWT_SIGNATURE_VALIDATION';
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (/CryptoKey instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY';
   }
-
-  const { header, payload } = jwt;
-
-  // 1. Verify RS256 algorithm
-  if (header.alg !== 'RS256') {
-    return { valid: false, error: 'Invalid JWT algorithm, expected RS256', code: 'INVALID_ALGORITHM' };
+  if (/KeyObject instances for asymmetric algorithms must be of type ['"]public['"]/i.test(message)) {
+    return 'JOSE_EXPECTED_PUBLIC_KEY_OBJECT';
   }
-
-  const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
-  const expectedIssuer = `https://securetoken.google.com/${projectId}`;
-  const nowInSeconds = Math.floor(Date.now() / 1000);
-
-  // 2. Verify Claims: Expiry
-  if (typeof payload.exp !== 'number' || payload.exp <= nowInSeconds) {
-    return { valid: false, error: 'Firebase authentication token has expired', code: 'TOKEN_EXPIRED' };
+  if (/must be a CryptoKey|invalid keyData|key data must be/i.test(message)) {
+    return 'WEBCRYPTO_KEY_TYPE_OR_DATA';
   }
-
-  // 3. Verify Claims: Auth Time
-  if (typeof payload.auth_time !== 'number' || payload.auth_time > nowInSeconds) {
-    return { valid: false, error: 'Token auth_time is in the future', code: 'INVALID_AUTH_TIME' };
+  if (/crypto\.subtle\.(verify|importKey)|subtle\.(verify|importKey)/i.test(message)) {
+    return 'WEBCRYPTO_API_REJECTED_INPUT';
   }
+  if (/audience|issuer|claim/i.test(message)) return 'JWT_CLAIM_VALIDATION';
+  if (/signature|verification failed/i.test(message)) return 'JWT_SIGNATURE_VALIDATION';
+  if (error?.name === 'TypeError') return 'TYPEERROR_UNCLASSIFIED';
+  return 'VERIFICATION_ERROR_OTHER';
+}
 
-  // 4. Verify Claims: Issuer
-  if (payload.iss !== expectedIssuer) {
-    return { valid: false, error: 'Token issuer mismatch', code: 'INVALID_ISSUER' };
-  }
-
-  // 5. Verify Claims: Audience
-  if (payload.aud !== projectId) {
-    return { valid: false, error: 'Token audience mismatch', code: 'INVALID_AUDIENCE' };
-  }
-
-  // 6. Verify User Identity (UID & Email)
-  const uid = payload.sub || payload.user_id || payload.uid;
-  if (!uid || typeof uid !== 'string') {
-    return { valid: false, error: 'Token missing user subject ID', code: 'MISSING_UID' };
-  }
-
-  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
-  if (!email) {
-    return { valid: false, error: 'Token missing user email address', code: 'MISSING_EMAIL' };
-  }
-
-  // 7. Verify Email Verification Flag
-  if (payload.email_verified !== true) {
-    return { valid: false, error: 'User email address is not verified in Firebase', code: 'EMAIL_UNVERIFIED' };
-  }
-
-  // 8. Verify Allowed Owner Email Allowlist
-  const allowedEmails = getAllowedOwnerEmails(env);
-  if (!allowedEmails.includes(email)) {
-    return { valid: false, error: 'Email address is not in authorized owner allowlist', code: 'UNAUTHORIZED_EMAIL' };
-  }
-
+function safeVerificationErrorHints(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const has = (pattern) => pattern.test(message);
   return {
-    valid: true,
-    user: {
-      uid,
-      email,
-      emailVerified: true,
-      authTime: payload.auth_time,
-      projectId
-    }
+    messageLength: Math.min(message.length, 500),
+    mentionsCryptoKey: has(/CryptoKey/i),
+    mentionsKeyObject: has(/KeyObject/i),
+    mentionsPublicKey: has(/public key|type ['"]public['"]/i),
+    mentionsSubtleCrypto: has(/SubtleCrypto|crypto\.subtle|subtle/i),
+    mentionsImportKey: has(/importKey/i),
+    mentionsVerify: has(/verify/i),
+    mentionsRsa: has(/RSA|RSASSA/i),
+    mentionsAlgorithm: has(/algorithm/i),
+    mentionsParameter: has(/parameter/i),
+    mentionsUndefined: has(/undefined/i),
+    mentionsNull: has(/null/i),
+    mentionsInstance: has(/instance/i),
+    mentionsType: has(/type/i),
+    mentionsNotSupported: has(/not supported|unsupported/i)
   };
+}
+
+function logSafeVerificationFailure(stage, code, error, errorCategory = classifyVerificationError(error), errorHints = safeVerificationErrorHints(error)) {
+  // Log only allowlisted exception metadata. Never log the token, claims, owner identity, certificate, or exception message.
+  const errorName = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(error.name)
+    ? error.name : 'Error';
+  const errorCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code)
+    ? error.code : null;
+  try {
+    console.warn('Studio HQ Firebase token verification failed', { stage, code, errorName, errorCode, errorCategory, errorHints });
+  } catch {
+    // Logging must never change the fail-closed authentication result.
+  }
+}
+
+export async function verifyHqFirebaseToken(token, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const now = options.now ?? Date.now();
+  const verify = options.verify || jwtVerify;
+  const importCertificate = options.importCertificate || importX509;
+  const logDiagnostic = options.logDiagnostic || logSafeVerificationFailure;
+
+  if (typeof token !== 'string' || token.length < 20 || token.length > 10000) {
+    return denied(401, 'AUTH_TOKEN_MISSING_OR_MALFORMED');
+  }
+
+  let verificationStage = 'token-header';
+  try {
+    const encodedHeader = token.split('.')[0];
+    if (!encodedHeader) return denied(401, 'AUTH_TOKEN_INVALID');
+    let header;
+    try {
+      const normalized = encodedHeader.replace(/-/g, '+').replace(/_/g, '/');
+      header = JSON.parse(atob(normalized));
+    } catch {
+      return denied(401, 'AUTH_TOKEN_INVALID');
+    }
+
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+      return denied(401, 'AUTH_TOKEN_ALGORITHM_OR_KEY_INVALID');
+    }
+
+    verificationStage = 'certificate-fetch';
+    let certificates = await loadCertificates(fetchImpl, now);
+    let certificate = certificates[header.kid];
+    if (!certificate) {
+      cache.expiresAt = 0;
+      certificates = await loadCertificates(fetchImpl, now);
+      certificate = certificates[header.kid];
+    }
+    if (!certificate) return denied(401, 'AUTH_SIGNING_KEY_NOT_FOUND');
+
+    verificationStage = 'certificate-key-import';
+    const key = await importCertificate(certificate, 'RS256');
+    verificationStage = 'jwt-signature-and-claims';
+    const result = await verify(token, key, {
+      algorithms: ['RS256'],
+      audience: PROJECT_ID,
+      issuer: ISSUER,
+      clockTolerance: 5
+    });
+    const claims = result.payload;
+    const seconds = Math.floor(now / 1000);
+
+    if (
+      typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) || claims.exp <= seconds ||
+      typeof claims.iat !== 'number' || !Number.isFinite(claims.iat) || claims.iat > seconds + 5 ||
+      typeof claims.auth_time !== 'number' || !Number.isFinite(claims.auth_time) || claims.auth_time > seconds + 5 ||
+      typeof claims.sub !== 'string' || !claims.sub ||
+      claims.email_verified !== true || typeof claims.email !== 'string'
+    ) return denied(401, 'AUTH_CLAIMS_INVALID');
+
+    const email = claims.email.trim().toLowerCase();
+    if (!OWNERS.has(email)) return denied(403, 'HQ_OWNER_ACCESS_DENIED');
+    return { ok: true, identity: { uid: claims.sub, email } };
+  } catch (error) {
+    const diagnosticCode = verificationStage === 'certificate-fetch' ? 'AUTH_CERTIFICATE_FETCH_FAILED'
+      : verificationStage === 'certificate-key-import' ? 'AUTH_CERTIFICATE_KEY_IMPORT_FAILED'
+        : verificationStage === 'jwt-signature-and-claims' ? 'AUTH_JWT_VERIFICATION_FAILED'
+          : 'AUTH_TOKEN_VERIFICATION_FAILED';
+    try {
+      logDiagnostic(verificationStage, diagnosticCode, error, classifyVerificationError(error), safeVerificationErrorHints(error));
+    } catch {
+      // A diagnostic callback must not interrupt authentication failure handling.
+    }
+    // Keep the public response generic; stage details stay in controlled Worker logs.
+    return denied(401, 'AUTH_TOKEN_VERIFICATION_FAILED');
+  }
+}
+
+export function resetHqCertificateCacheForTests() {
+  cache = { expiresAt: 0, certificates: null };
 }
