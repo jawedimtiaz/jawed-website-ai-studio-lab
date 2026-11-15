@@ -13,7 +13,7 @@ The database was created on 6 November 2026. Its migrations were applied through
 - Primary region: APAC
 - Read replication: disabled
 - Initial state at creation: 0 tables
-- Current schema: 17 application tables, the D1 migration tracking table, and Cloudflare's internal `_cf_KV` table
+- Current schema: 23 application tables, the D1 migration tracking table, SQLite's `sqlite_sequence`, and Cloudflare's internal `_cf_KV` table
 - Applied migrations: `0001_studio_hq_schema.sql` and `0002_financial_management.sql`
 
 ## Data model
@@ -70,3 +70,17 @@ The following observations were made through read-only checks and are a snapshot
 - That active version did not expose `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, or `HQ_RATE_LIMITER`, although those bindings are declared in the PR branch's `wrangler.jsonc`.
 - A D1 Time Travel bookmark was observed. This is not evidence of a separately exported backup or a successfully tested restore.
 - These checks did not change D1 records, Worker settings, or deployments.
+
+
+## Live schema and migration verification — 15 November 2026 (read-only)
+
+A fresh read-only query against the dedicated D1 database `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`) confirmed:
+
+- 26 tables total: 23 application tables, `d1_migrations`, SQLite's `sqlite_sequence`, and Cloudflare's internal `_cf_KV`.
+- The 23 application table names and ordered column names/types match the combined PR #51 migration definitions in `migrations/hq/0001_studio_hq_schema.sql` and `migrations/hq/0002_financial_management.sql`. This comparison checks column names and declared types; it is not a full comparison of every CHECK constraint, index, trigger, or foreign-key definition.
+- The migration ledger contains exactly `0001_studio_hq_schema.sql` and `0002_financial_management.sql`.
+- `PRAGMA quick_check` returned `ok`.
+- `PRAGMA foreign_key_check` returned zero rows.
+- The queries returned no application/customer/financial row contents. No rows were inserted, updated, or deleted; no migration, export, restore, Worker deployment, or setting change was performed.
+
+This fresh result strengthens the evidence that the PR #51 canonical migration lineage matches the current live table/column structure. It does not prove that the PR #51 application handlers are production-ready, that the deployed Worker runs this branch, or that backup/recovery has been tested.
