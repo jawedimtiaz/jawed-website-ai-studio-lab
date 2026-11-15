@@ -204,3 +204,12 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Detailed implementation and acceptance criteria recorded in `docs/ci-and-bundle-maintenance-review.md`; update commit: `ef330faf021d047b0755efcf4cc3f753db65910e`.
 - No code change, local build, before/after measurement, or browser validation was performed. This remains a proposal for a separate change; do not implement in PR #51.
 - PR #51 remains Draft and unmerged. No deployment or D1/Cloudflare mutation occurred.
+
+
+### Base-branch drift and authoritative continuity record — 15 November 2026
+
+- Rechecked PR #51 after documentation updates. Current PR head: `360aa831e43f456862a8e84bb3cf9971f13a0a09`; state open, Draft, unmerged. GitHub PR metadata currently reports `mergeable: false` (this is a current API observation; the precise reason has not been established).
+- Compared PR head with `main`: branch is 146 commits ahead and 1 commit behind; the single newer main commit is `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`, message `docs(hq): record Firebase project ID mismatch`, which adds `docs/STUDIO_HQ_CONTINUITY.md`.
+- Read the new main-branch continuity record. It establishes GitHub repository state as the primary source of truth, reiterates project boundaries and explicit approval gates, and records a separate dated Phase 2.7L / PR #49 deployment-readiness audit. That document's dated PR #49 and deployment findings must be independently refreshed before use; do not substitute its 14 November snapshot for current live state or conflate PR #49 with PR #51.
+- No branch update, rebase, merge, or cherry-pick was performed. PR #51 remains Draft and unmerged. Do not attempt to make it mergeable automatically; first determine why GitHub reports `mergeable: false` and review the new main commit's context.
+- The current docs-only commits have no associated workflow runs returned by the PR-triggered workflow-run endpoint. Do not claim new CI coverage for these documentation commits.
