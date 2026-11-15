@@ -104,7 +104,7 @@ async function listDocuments(db, table, request) {
   if (status && !allowed.includes(status)) return error('STATUS_INVALID');
   if (table === 'invoices') {
     const netPaid = `((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id))`;
+      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id AND p2.archived_at IS NULL))`;
     const effective = `CASE WHEN i.status IN ('draft','void') THEN i.status
       WHEN i.total_minor <= ${netPaid} THEN 'paid'
       WHEN i.due_on IS NOT NULL AND i.due_on < ? THEN 'overdue'
@@ -160,13 +160,13 @@ async function getDocument(db, type, id) {
   const row = type === 'invoice'
     ? await db.prepare(`SELECT i.*,
         ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) AS calculated_amount_paid_minor,
+        - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id AND p2.archived_at IS NULL)) AS calculated_amount_paid_minor,
         CASE WHEN i.status IN ('draft','void') THEN i.status
           WHEN i.total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) THEN 'paid'
+            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id AND p2.archived_at IS NULL)) THEN 'paid'
           WHEN i.due_on IS NOT NULL AND i.due_on < ? THEN 'overdue'
           WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id)) > 0 THEN 'partially-paid'
+            - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id AND p2.archived_at IS NULL)) > 0 THEN 'partially-paid'
           ELSE 'issued' END AS effective_status
         FROM invoices i WHERE i.id=? AND i.archived_at IS NULL`).bind(indiaDate(),id).first()
     : await db.prepare(`SELECT * FROM quotations WHERE id = ? AND archived_at IS NULL`).bind(id).first();
@@ -267,20 +267,20 @@ async function addPayment(request, db, identity, invoiceId) {
     SELECT ?,id,?,'INR',?,?,?,?,? FROM invoices i
     WHERE i.id=? AND i.status IN ('issued','partially-paid','overdue')
       AND i.total_minor - (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=i.id AND p.archived_at IS NULL)
-          + (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id) >= ?`)
+          + (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=i.id AND p2.archived_at IS NULL) >= ?`)
     .bind(paymentId,x.amount_minor,x.payment_method ?? null,ref,paidAt,identity.uid,notes,invoiceId,x.amount_minor);
   const idem = db.prepare(`INSERT INTO payment_idempotency_keys (id,idempotency_key,invoice_id,payment_id,request_fingerprint)
     SELECT ?,?,?,?,? WHERE changes()=1`).bind(crypto.randomUUID(),key,invoiceId,paymentId,hash);
   const results = await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,idem,
     db.prepare(`UPDATE invoices SET amount_paid_minor =
       (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
-      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?),
+      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=? AND p2.archived_at IS NULL),
       status=CASE
         WHEN total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
-          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?)) THEN 'paid'
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=? AND p2.archived_at IS NULL)) THEN 'paid'
         WHEN due_on IS NOT NULL AND due_on < ? THEN 'overdue'
         WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=? AND p.archived_at IS NULL)
-          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=?)) > 0 THEN 'partially-paid'
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=? AND p2.archived_at IS NULL)) > 0 THEN 'partially-paid'
         ELSE 'issued' END,
       updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
       WHERE id=? AND changes()=1`).bind(invoiceId,invoiceId,invoiceId,invoiceId,indiaDate(),invoiceId,invoiceId,invoiceId),
@@ -315,13 +315,13 @@ async function addRefund(request, db, identity, paymentId) {
   const results=await db.batch([ownerAuthorizationGuardStatement(db,identity),insert,idem,
     db.prepare(`UPDATE invoices SET amount_paid_minor =
       (SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
-      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id),
+      - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id AND p2.archived_at IS NULL),
       status=CASE
         WHEN total_minor <= ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
-          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id)) THEN 'paid'
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id AND p2.archived_at IS NULL)) THEN 'paid'
         WHEN due_on IS NOT NULL AND due_on < ? THEN 'overdue'
         WHEN ((SELECT COALESCE(SUM(p.amount_minor),0) FROM payments p WHERE p.invoice_id=invoices.id AND p.archived_at IS NULL)
-          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id)) > 0 THEN 'partially-paid'
+          - (SELECT COALESCE(SUM(r.amount_minor),0) FROM payment_refunds r JOIN payments p2 ON p2.id=r.payment_id WHERE p2.invoice_id=invoices.id AND p2.archived_at IS NULL)) > 0 THEN 'partially-paid'
         ELSE 'issued' END,
       updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
       WHERE id=(SELECT invoice_id FROM payments WHERE id=?) AND changes()=1`).bind(indiaDate(),paymentId),
