@@ -20,8 +20,8 @@ if (report.error) {
 }
 
 const allowedAdvisories = new Set([
-  'GHSA-m9gg-hp2v-232j',
-  'GHSA-f596-whhp-79r4'
+  'GHSA-M9GG-HP2V-232J',
+  'GHSA-F596-WHHP-79R4'
 ]);
 const expectedPackages = new Set([
   '@firebase/firestore',
