@@ -194,3 +194,13 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Inventory commit: `476c353cb65922ac2be780cfbad5277ae030d0f2`.
 - No workflow was manually triggered or modified; no live Cloudflare/D1 changes, merge, or deployment occurred. PR #51 remains Draft and unmerged.
 - Next tasks: separate CI-maintenance proposal and measured Three.js lazy-load experiment; continue read-only release-readiness checks. Do not conflate workflow inventory with proof that every scheduled workflow has recently passed.
+
+
+### Nested Three.js lazy-load design review — 15 November 2026
+
+- Inspected `src/App.tsx`, `src/pages/WorkPage.tsx`, `src/components/common/ErrorBoundary.tsx`, and `src/components/hardware/HardwareShowcase3D.tsx`.
+- Confirmed WorkPage is already route-lazy; HardwareShowcase3D is statically imported but rendered only in Work overview. App already provides route Suspense, RouteErrorBoundary, and a shared chunk-load-aware ErrorBoundary.
+- A bounded proposal is a nested lazy import of HardwareShowcase3D with a local accessible Suspense fallback, retaining existing route lazy loading and error recovery. Non-overview tabs should not request the Three.js chunk.
+- Detailed implementation and acceptance criteria recorded in `docs/ci-and-bundle-maintenance-review.md`; update commit: `ef330faf021d047b0755efcf4cc3f753db65910e`.
+- No code change, local build, before/after measurement, or browser validation was performed. This remains a proposal for a separate change; do not implement in PR #51.
+- PR #51 remains Draft and unmerged. No deployment or D1/Cloudflare mutation occurred.
