@@ -339,3 +339,37 @@ The latest version metadata still has no source commit SHA annotation. Version 1
 5. The Kaushal Worker and personal website were not inspected.
 
 No configuration was changed and no deployment was triggered. PR #51 remains Draft and unmerged.
+
+
+## 13. Live D1 schema and migration-ledger recheck — 15 November 2026 (read-only SQL)
+
+A restricted read-only D1 query pass was performed against the dedicated Studio HQ database only. Statements were limited to catalog inspection, migration-ledger selection, and SQLite integrity PRAGMAs. Cloudflare query metadata reported `changed_db: false` and `rows_written: 0` for every query.
+
+### Current schema catalog
+
+The current database catalog returned 25 user/application tables (including Cloudflare's `_cf_KV` and `d1_migrations`) and two triggers. Tables observed:
+
+`_cf_KV`, `activity_notes`, `approvals`, `assets`, `audit_logs`, `client_contacts`, `clients`, `d1_migrations`, `deployments`, `financial_sequences`, `hq_users`, `invoice_items`, `invoices`, `maintenance_plans`, `payment_idempotency_keys`, `payment_refunds`, `payments`, `project_milestones`, `project_tasks`, `projects`, `qa_checks`, `quotation_items`, `quotations`, `refund_idempotency_keys`, `repositories`.
+
+Triggers observed: `trg_audit_logs_no_delete`, `trg_audit_logs_no_update`.
+
+### Applied migration ledger
+
+The live `d1_migrations` table still reports exactly:
+
+| Migration | Applied at (UTC as stored) |
+|---|---|
+| `0001_studio_hq_schema.sql` | 2026-11-06 05:02:32 |
+| `0002_financial_management.sql` | 2026-11-11 06:10:07 |
+
+No root-level `0002_hq_owner_authorization_hardening.sql` migration was listed in the live ledger. This reinforces the earlier finding that the root-level migration file in the older main-branch continuity snapshot is not the migration history currently applied to this database. Do not apply it or infer it is required without a deliberate schema compatibility review.
+
+### Integrity checks
+
+- `PRAGMA quick_check` returned `ok`.
+- `PRAGMA foreign_key_check` returned an empty result set (no FK violations reported).
+- Catalog query, migration ledger query and both integrity checks each reported `changed_db: false`, `rows_written: 0`.
+
+### Limits
+
+This pass did not inspect client, project, user, financial, payment, quotation or audit-log row contents. It did not export, backup, restore, migrate, write, delete or update any data. A successful `quick_check` is not a backup/restore drill and does not establish a recovery point objective or recovery time objective.
