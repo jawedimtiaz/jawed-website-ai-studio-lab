@@ -182,3 +182,15 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Confirmed `WorkPage.tsx` statically imports `HardwareShowcase3D`, which imports Three.js and add-ons. A nested lazy import remains a candidate, but no before/after build or browser validation has been run.
 - No workflow/application source changes, live Cloudflare changes, D1 operations, merge, or deployment were performed.
 - Next: obtain an authoritative workflow directory listing, finish the inventory and verify candidate immutable action SHAs; then treat bundle lazy-loading as a separate measured experiment. Keep PR #51 Draft and unmerged.
+
+
+### Complete GitHub Actions workflow inventory — 15 November 2026
+
+- Enumerated `.github/workflows/` through the GitHub directory endpoint: **34 workflow files**. All 34 were individually fetched and reviewed. Full filenames, action pins, runner/Node matrix, permissions, triggers, package-manager patterns, candidate immutable action SHAs, and limitations are documented in `docs/ci-and-bundle-maintenance-review.md`.
+- Matrix: 28 general workflows use `ubuntu-24.04` + Node 22; five Studio HQ workflows use `ubuntu-latest` + Node 24.12.0; `twa-engineering.yml` uses `ubuntu-latest` + Node 20 (EOL). All 34 declare `contents: read`; all have path filters. Triggers vary across PR, push, manual dispatch, and scheduled probes.
+- 29 workflows use immutable checkout v5.1.0 and setup-node v7.0.0 pins (Node 24 action runtime). Five Studio HQ workflows still use checkout v4.2.2 and setup-node v4.4.0 pins (Node 20 action runtime); these explain the action-runtime deprecation warning. The HQ auth workflow additionally pins setup-bun v2.2.0.
+- Verified candidate latest immutable pins by resolving upstream tag refs: checkout v7.0.1 = `3d3c42e5aac5ba805825da76410c181273ba90b1`; setup-node v7.1.0 = `949feb2413d6458794dcd2491c4babbbce0c15c1`. These are proposals only; no workflow file was changed. Review checkout v7 fork-PR safety behavior and setup-node v7 ESM / NODE_AUTH_TOKEN changes before a separate maintenance PR.
+- Node 20 in `twa-engineering.yml` is EOL as of 15 November 2026; move to supported LTS only after compatibility validation. Do not change this in PR #51.
+- Inventory commit: `476c353cb65922ac2be780cfbad5277ae030d0f2`.
+- No workflow was manually triggered or modified; no live Cloudflare/D1 changes, merge, or deployment occurred. PR #51 remains Draft and unmerged.
+- Next tasks: separate CI-maintenance proposal and measured Three.js lazy-load experiment; continue read-only release-readiness checks. Do not conflate workflow inventory with proof that every scheduled workflow has recently passed.
