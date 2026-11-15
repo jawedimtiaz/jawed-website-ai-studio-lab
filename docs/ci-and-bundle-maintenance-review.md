@@ -90,3 +90,40 @@ No analytics changes were made.
 3. Create a separate CI maintenance proposal and run the complete workflow matrix.
 4. Separately prototype the nested lazy load for `HardwareShowcase3D`, compare build artifacts, and run browser checks.
 5. Review analytics script behavior before deciding whether the Vite warning requires a change.
+
+
+## 7. Follow-up source inspection — 15 November 2026
+
+### Studio HQ auth workflow inspected
+
+The exact workflow file is `.github/workflows/studio-hq-auth-tests.yml` (blob `30f7e7b31744d9cd4909b4500e305b24ed17bd54`). Its current configuration on this branch shows:
+
+- Workflow name: `Studio HQ Firebase Auth Tests`.
+- Job: `hq-auth-unit-tests`; runner: `ubuntu-latest`.
+- Workflow permissions: `contents: read` only.
+- Runtime/toolchain: Node.js `24.12.0`; Bun setup; dependency install uses `bun install --frozen-lockfile --ignore-scripts`.
+- Validation commands: Bun audit with the repository's narrow audit checker; `npm run test:hq-auth`; `npm run build`; Wrangler `deploy --dry-run`; production-artifact gRPC marker scan.
+- Action pins: checkout `11bd71901bbe5b1630ceea73d27597364c9af683`, setup-node `49933ea5288caeca8642d1e84afbd3f7d6820020`, and setup-bun `0c5077e51419868618aeaa5fe8019c62421857d6`. All are immutable commit references. The first two correspond to the older action releases associated with the Node 20 runtime warning. The setup-bun release/runtime compatibility has not yet been independently checked.
+- Push trigger: only `feat/studio-hq-firebase-auth` and `fix/phase-2-7j-hq-auth-d1-alignment`; no push path filter.
+- Pull-request trigger: base branches `main`, `feat/studio-hq-projects-api`, `fix/studio-hq-owner-status-enforcement`, and `fix/studio-hq-bounded-json-body`; an explicit path filter covers HQ auth/API, tests, migrations, Worker/config, package/lock files, and this workflow.
+- No `workflow_dispatch` trigger is present in this file.
+
+This is one-workflow inspection, not the complete repository workflow inventory. The connected GitHub file-fetch interface available during this review could fetch known paths but did not expose a directory/tree listing; attempts to enumerate all `.github/workflows` entries were therefore inconclusive. Do not infer that this is the only workflow. Complete inventory remains open until the directory contents can be retrieved authoritatively.
+
+### Analytics script path and behavior inspected
+
+- `index.html` references `/assets/js/analytics.js` as a classic deferred script.
+- The actual source file is `assets/js/analytics.js` (blob `103343a1c5dcf75d0195de7bdf104dcd030eb279`); it is not under `public/`.
+- The file is a classic IIFE. It initializes `window.dataLayer` and `window.gtag`, defines `window.jawedTrack`, and schedules injection of Google's external `gtag.js` after the page load/idle period. It relies on browser globals and intentionally does not use ES module imports/exports.
+- `scripts/prepare-dist.mjs` explicitly copies the root `assets` directory into `dist/assets` after Vite builds. This explains how the classic script is preserved as a static asset for the final output even though Vite warns that it cannot bundle the script as a module.
+- No conversion to `type="module"` is recommended on current evidence. Preserve the classic deferred execution and static-copy behavior; a future change should test production output path, load order, duplicate initialization protection, consent/privacy requirements, and analytics event delivery.
+
+### Bundle import confirmation
+
+- `src/pages/WorkPage.tsx` imports `HardwareShowcase3D` statically.
+- `src/components/hardware/HardwareShowcase3D.tsx` imports Three.js, `RoomEnvironment`, and `OrbitControls` directly.
+- The component is rendered only in the Work overview tab. A nested lazy import remains a bounded optimisation candidate, but no build was run in this read-only review; no before/after size claim or browser validation is made here.
+
+### Scope and status
+
+No workflow or application files were changed. The complete workflow inventory, verification of newer immutable action SHAs, and measured bundle/lazy-load experiment remain outstanding. PR #51 remains Draft and unmerged.
