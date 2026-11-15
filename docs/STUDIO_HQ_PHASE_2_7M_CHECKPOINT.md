@@ -146,3 +146,13 @@ The following observations were obtained after the original checkpoint was writt
 3. Review Vite chunk composition and propose targeted code-splitting only if it can be done without broad unrelated refactoring.
 4. Continue read-only release-readiness reconciliation. Recheck live evidence before any future release recommendation.
 5. Stop before any merge, deployment, live Cloudflare configuration change, D1 write/migration, or branch-protection mutation unless the user explicitly approves that specific action.
+
+### D1 backup/recovery runbook prepared — 15 November 2026
+
+- Added [`docs/studio-hq-d1-backup-recovery-runbook.md`](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/blob/fix/phase-2-7m-canonical-d1-compatibility-20261114/docs/studio-hq-d1-backup-recovery-runbook.md).
+- The runbook documents Time Travel, SQL export, secure backup handling, destructive restore controls, post-recovery validation, and a future disposable-database restore drill.
+- It explicitly states that no export/import/restore/drill has been performed, that RTO/RPO are not established, and that a Time Travel bookmark alone is not a tested backup.
+- Cloudflare documentation reviewed on 15 November 2026: Time Travel/backup retention, D1 export/import, export API behavior, restore API, and D1 limits.
+- Export can temporarily block database requests; live restore overwrites the database in place. The runbook therefore requires a maintenance window and explicit approval.
+- No live D1 operation or Cloudflare change was performed. The runbook is documentation only and remains subject to review.
+- Runbook commit: `70dcd6ccc3e2cfd7fc98cd9c92251872c4390cf3`.
