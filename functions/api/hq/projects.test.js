@@ -49,7 +49,7 @@ const request = (path, method = 'GET', body) => new Request('https://lab.jawed.c
   body: body === undefined ? undefined : JSON.stringify(body)
 });
 const call = (db, req, segments = []) => handleAuthorizedHqProjects({
-  request: req, env: { HQ_DB: db }, segments, identity
+  request: req, env: { ENVIRONMENT: 'test', HQ_DB: db }, segments, identity
 });
 
 test('validates project name, client, status, currency and date range', () => {
