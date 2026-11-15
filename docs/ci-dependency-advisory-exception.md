@@ -2,7 +2,7 @@
 
 ## Scope
 
-The CI audit currently reports one high-severity advisory, GHSA-m9gg-hp2v-232j, through the Firebase Firestore dependency chain. The affected package entries observed during review were:
+The CI audit currently reports two reviewed advisories, GHSA-m9gg-hp2v-232j (high) and GHSA-f596-whhp-79r4 (low), through the Firebase Firestore dependency chain. The affected package entries observed during review were:
 
 - `firebase`
 - `@firebase/firestore`
@@ -13,7 +13,7 @@ The advisory concerns gRPC server-authentication credential configurations. The 
 
 ## CI treatment
 
-CI does not disable npm audit and does not ignore all high-severity findings. `scripts/check-dependency-audit.mjs` permits only the exact GHSA identifier and exact reviewed four-package dependency chain, with high severity. A new package, severity, or advisory fails the check. The complete npm audit JSON remains available in the job log.
+CI does not disable npm audit and does not ignore all high-severity findings. `scripts/check-dependency-audit.mjs` permits only those two exact GHSA identifiers and the exact reviewed four-package dependency chain. The aggregate npm package severity can be high because the package is affected by the high-severity advisory; both advisory identifiers must match the reviewed set. A new package, severity, or advisory fails the check. The complete npm audit JSON remains available in the job log.
 
 After the production frontend build and Wrangler dry-run bundle are generated, `scripts/verify-no-grpc-runtime.mjs` scans both artifact directories for the gRPC package marker and server-authentication API markers. A match or missing artifact directory fails CI.
 
