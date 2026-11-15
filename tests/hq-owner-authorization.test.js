@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { authorizeHqOwner, ownerAuthorizationGuardStatement } from '../functions/lib/hqApi.js';
 import worker from '../worker.js';
 
+const workerEnv = { HQ_RATE_LIMITER: { limit: async () => ({ success: true }) } };
+
 function makeRequest() {
   return new Request('https://lab.jawed.co.in/api/hq/session', {
     method: 'POST',
@@ -104,7 +106,7 @@ test('Worker routes project API paths, including trailing slashes, to HQ authori
   for (const path of ['/api/hq/projects', '/api/hq/projects/', '/api/hq/projects/project-1/tasks']) {
     const response = await worker.fetch(
       new Request('https://lab.jawed.co.in' + path, { method: 'GET' }),
-      {},
+      workerEnv,
       {}
     );
     assert.equal(response.status, 401, path);
@@ -116,7 +118,7 @@ test('Worker routes project API paths, including trailing slashes, to HQ authori
 test('Worker routes CRM API paths to HQ authorization', async () => {
   const response = await worker.fetch(
     new Request('https://lab.jawed.co.in/api/hq/clients', { method: 'GET' }),
-    {},
+    workerEnv,
     {}
   );
   assert.equal(response.status, 401);
@@ -138,7 +140,7 @@ test('Worker routes Approvals and QA API paths, including trailing slashes, to H
   for (const path of releasePaths) {
     const response = await worker.fetch(
       new Request('https://lab.jawed.co.in' + path, { method: 'GET' }),
-      {},
+      workerEnv,
       {}
     );
     assert.equal(response.status, 401, path);
