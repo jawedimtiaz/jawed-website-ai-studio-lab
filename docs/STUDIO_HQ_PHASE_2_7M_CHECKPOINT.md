@@ -409,3 +409,34 @@ The maintenance review has the same structural issue: main's Section 16 adds the
 The three main-side commits are documentation-only, but two paths overlap with independently created branch documents. This is a manageable documentation reconciliation, not evidence that the 157+ commit Studio HQ implementation can be safely rebased without review. Preserve the two document histories and avoid an automatic merge/rebase.
 
 No Git history, source file, branch, PR metadata, workflow, Cloudflare setting, Worker, D1 database, personal website, or Kaushal customer project was modified during this read-only comparison. PR #51 remains Draft and unmerged.
+
+
+## 19. Fresh live D1 schema-to-migration verification — 15 November 2026 (read-only)
+
+### Exact database queried
+
+- Database: `jawed-studio-hq`.
+- Database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- All statements were read-only metadata/catalog/integrity queries. No customer, owner, or financial row contents were selected.
+
+### Schema comparison against PR #51 migration files
+
+- Live `sqlite_master` inventory returned 26 tables: 23 application tables, `d1_migrations`, SQLite `sqlite_sequence`, and Cloudflare internal `_cf_KV`.
+- The combined PR #51 migration files define 23 application tables.
+- Compared the ordered column names and declared SQLite types for all 23 application tables against live `PRAGMA table_info` results. **All 23 tables matched exactly at the column-name/type level; 289 column definitions were compared.**
+- This check did not compare every CHECK constraint, index, trigger, or foreign-key definition. Do not describe it as a complete DDL equivalence proof.
+- The live migration ledger contains exactly `0001_studio_hq_schema.sql` and `0002_financial_management.sql`, matching the PR #51 migration filenames.
+- Fresh `PRAGMA quick_check` returned `ok`.
+- Fresh `PRAGMA foreign_key_check` returned zero rows.
+
+### Documentation correction
+
+- Updated `docs/studio-hq-d1-schema.md` to correct the application table count from 17 to 23 and record the fresh verification scope and limitations.
+- Documentation commit: `cb588cf9bc7e6e5b49793cbb5f20ef163a5fe09b`.
+- No database write, migration, export, restore, Worker deployment, Worker setting change, branch rebase, or merge occurred.
+
+### Interpretation
+
+This is stronger evidence that PR #51's canonical migration lineage matches the live D1 table/column structure. It does not prove that every application query is compatible, that the live Worker runs PR #51, that owner authentication succeeds against the live owner record, or that backup/recovery has been tested. Keep the existing release blockers: account-wide rate-limit namespace uniqueness is unverified; a disposable-D1 restore drill is not performed; active Worker binding state must be reconciled; and explicit deployment approval is still required.
+
+**Next safe action:** complete the documentation content reconciliation proposal, then perform a separate full source/CI review on the exact resulting PR head. Keep PR #51 Draft and unmerged.
