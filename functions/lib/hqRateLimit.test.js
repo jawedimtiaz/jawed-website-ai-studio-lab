@@ -500,3 +500,19 @@ test('Worker generic API 404 response includes security headers and no-store', a
   assert.equal(res.headers.get('cache-control'), 'no-store, private, max-age=0');
   assert.equal(res.headers.get('x-frame-options'), 'DENY');
 });
+
+
+test('All authenticated Studio HQ API groups enforce the general request limiter', () => {
+  const files = [
+    'functions/api/hq/session.js',
+    'functions/api/hq/clients.js',
+    'functions/api/hq/projects.js',
+    'functions/api/hq/release.js',
+    'functions/api/hq/financial.js'
+  ];
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8');
+    assert.match(source, /type:\s*['"]general['"]/,
+      file + ' must apply the general authenticated request limit');
+  }
+});
