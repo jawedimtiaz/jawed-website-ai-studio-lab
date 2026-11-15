@@ -550,3 +550,47 @@ All three commit patches are documentation-only; no application source, workflow
 The branch remains 3 commits behind main. A future integration should be separately planned and reviewed against the full source diff, then CI must run on the exact resulting head. This documentation comparison does not resolve the branch's not-mergeable state or any outstanding deployment blockers.
 
 No merge, rebase, cherry-pick, force-push, deployment, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal project change was performed.
+
+
+## 23. Phase 2.7P — pre-authentication rate-limit hardening — 15 November 2026
+
+### Source-review finding
+
+A targeted read-only review found that the session endpoint applied an IP-based limiter before Firebase token verification, but the CRM, Projects, Approvals/QA and Financial API wrappers called `authorizeHqOwner()` before any general rate-limit check. Their general limiter was applied only after successful authentication and was keyed by owner UID. Consequently, invalid-token traffic sent directly to those four endpoint groups could reach token verification without first consuming an IP-based request bucket.
+
+### Bounded source correction
+
+Added an IP-keyed `HQ_RATE_LIMITER` check with `type: 'general'` before `authorizeHqOwner()` in:
+- `functions/api/hq/clients.js`
+- `functions/api/hq/projects.js`
+- `functions/api/hq/release.js`
+- `functions/api/hq/financial.js`
+
+The existing post-authentication UID-based general limiter and write limiter remain in place. The session endpoint retains its dedicated pre-authentication `HQ_SESSION_LIMITER`.
+
+Added a regression test in `functions/lib/hqRateLimit.test.js` that exercises all four public handler wrappers with a successful IP limiter and missing token, then confirms a rejected IP bucket returns HTTP 429 before token verification.
+
+### Commits and source verification
+
+The GitHub Contents API updates were committed sequentially to this PR branch:
+- CRM wrapper: `595a19d5303bc7d287dd242474e601ab8faf0d34`
+- Projects wrapper: `283ad5ffc36f373ab4a6df0c2b0123fbe28e13c4`
+- Approvals/QA wrapper: `fc7ecf00868a28fc2b5c802775610e1d513cda9d`
+- Financial wrapper: `7c2deb67eb65867a4c431a42cf00182ed525a46d`
+- Regression test: `6a5f7c8686444463239a9c05a2d21af440662933`
+
+A fresh GitHub fetch confirmed all four wrappers contain the pre-authentication general limiter and the test file contains the new regression test. `package.json` confirms the test is included in `npm run test:hq-auth`.
+
+### CI status and limitations
+
+- Latest application-code head at this check: `6a5f7c8686444463239a9c05a2d21af440662933`.
+- GitHub returned one push-triggered AdSense Readiness Gate run, completed successfully.
+- No Studio HQ Firebase Auth Tests run or PR-triggered workflow run was returned for this head at the time of this checkpoint.
+- No local test suite was executed in this review. The rate-limit correction is therefore **source-reviewed but not yet test-verified**.
+- Do not treat the successful AdSense workflow as evidence that the Studio HQ tests passed.
+
+### Release implications
+
+The new pre-authentication check relies on the configured `HQ_RATE_LIMITER` binding. The live Worker inventory previously returned no rate-limit bindings; the three namespace IDs in the PR's Wrangler config also remain unverified for account-wide uniqueness. This change is not deployable until the binding deployment prerequisite is resolved and the exact resulting PR head passes the required Studio HQ CI.
+
+No deployment, merge, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal customer-project change was performed.
