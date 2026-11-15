@@ -359,6 +359,8 @@ Do not rebase/update PR #51 yet. First prepare a read-only reconciliation plan f
 
 ## 18. Merge-base-aware comparison of current main commits — 15 November 2026
 
+> **Historical snapshot — superseded by Sections 20–21 below.** This section records the initial comparison before the later documentation reconciliation. Do not use its intermediate file-length, section-presence, or PR-head figures as the current state. The later Section 20 records that the PR branch already incorporated main's CI review Section 16 and explains why the main-only continuity document was not copied unchanged. Section 21 is the later exact-head PR/CI status checkpoint. A fresh compare performed during Phase 2.7O still reports this branch 164 commits ahead and 3 behind `main`, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`; PR #51 remains Draft, open, unmerged and currently reported not mergeable. No branch history update or integration was performed.
+
 Read-only comparison completed from common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
 
 ### Commit sequence on main after the common ancestor
