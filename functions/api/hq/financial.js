@@ -380,6 +380,8 @@ export async function handleAuthorizedHqFinancial({request,env,segments,identity
   }
 }
 export async function handleHqFinancial({request,env,segments}) {
+  const ipLimit=await checkHqRateLimit(request,env,{type:'general'});
+  if(!ipLimit.ok)return ipLimit.response;
   const auth=await authorizeHqOwner(request,env); if(!auth.ok)return auth.response;
   return handleAuthorizedHqFinancial({request,env,segments,identity:auth.identity});
 }
