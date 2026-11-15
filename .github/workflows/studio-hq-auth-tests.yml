@@ -84,6 +84,10 @@ jobs:
             }));
           }
           NODE
+      - name: Report resolved Firebase and gRPC dependency versions
+        shell: bash
+        run: |
+          npm ls firebase @firebase/firestore @firebase/firestore-compat @grpc/grpc-js --all || true
       - name: Run HQ authentication tests
         run: npm run test:hq-auth
       - name: TypeScript and production build
