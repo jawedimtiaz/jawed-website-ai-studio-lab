@@ -19,7 +19,10 @@ if (report.error) {
   process.exit(2);
 }
 
-const allowedAdvisory = 'GHSA-m9gg-hp2v-232j';
+const allowedAdvisories = new Set([
+  'GHSA-m9gg-hp2v-232j',
+  'GHSA-f596-whhp-79r4'
+]);
 const expectedPackages = new Set([
   '@firebase/firestore',
   '@firebase/firestore-compat',
@@ -46,9 +49,9 @@ for (const [packageName, item] of entries) {
     .filter(Boolean);
   const dependencyLinks = via.filter(value => typeof value === 'string');
 
-  if (advisoryIds.some(id => id.toLowerCase() === allowedAdvisory.toLowerCase())) observedAllowedAdvisory = true;
+  if (advisoryIds.some(id => allowedAdvisories.has(id.toUpperCase()))) observedAllowedAdvisory = true;
 
-  const onlyExpectedAdvisory = advisoryIds.every(id => id.toLowerCase() === allowedAdvisory.toLowerCase());
+  const onlyExpectedAdvisory = advisoryIds.every(id => allowedAdvisories.has(id.toUpperCase()));
   const onlyExpectedDependencyLinks = dependencyLinks.every(name => expectedPackages.has(name));
 
   if (
@@ -78,7 +81,7 @@ if (!observedAllowedAdvisory || !exactPackageSet || unexpected.length > 0) {
 
 console.log('Dependency audit summary:', JSON.stringify(report.metadata?.vulnerabilities || {}));
 console.log(
-  'Narrow exception applied to GHSA-m9gg-hp2v-232j only, for the reviewed Firebase/gRPC transitive chain:',
+  'Narrow exception applied only to the two reviewed gRPC advisories GHSA-m9gg-hp2v-232j and GHSA-f596-whhp-79r4, for the reviewed Firebase/gRPC transitive chain:',
   [...observedPackages].sort().join(', ')
 );
 console.log('Any new package, severity, or advisory will fail this check.');
