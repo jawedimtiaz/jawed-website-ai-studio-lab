@@ -156,3 +156,13 @@ The following observations were obtained after the original checkpoint was writt
 - Export can temporarily block database requests; live restore overwrites the database in place. The runbook therefore requires a maintenance window and explicit approval.
 - No live D1 operation or Cloudflare change was performed. The runbook is documentation only and remains subject to review.
 - Runbook commit: `70dcd6ccc3e2cfd7fc98cd9c92251872c4390cf3`.
+
+### CI and bundle maintenance review — 15 November 2026
+
+- Added [`docs/ci-and-bundle-maintenance-review.md`](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/blob/fix/phase-2-7m-canonical-d1-compatibility-20261114/docs/ci-and-bundle-maintenance-review.md).
+- Read-only review confirmed the Studio HQ auth workflow pins older `actions/checkout` and `actions/setup-node` commits. Latest CI warns their action runtime targets Node 20 and is being forced to Node 24, although the job itself explicitly installs Node 24.12.0.
+- Official upstream action documentation currently shows checkout v7 and setup-node v7; a separate maintenance PR should use reviewed immutable SHAs and verify runner requirements, release notes, inputs, permissions, and package-manager caching before updating the workflow matrix.
+- Bundle review found `src/App.tsx` already lazy-loads WorkPage, but `src/pages/WorkPage.tsx` statically imports `HardwareShowcase3D`, which imports Three.js and addons. A bounded follow-up is to lazy-load that 3D component inside WorkPage so the large Three.js payload is deferred until the overview showcase is rendered.
+- The Vite warning for classic deferred `/assets/js/analytics.js` requires script-behavior review before any module conversion.
+- No workflow, application, analytics, Worker, D1, personal-site, or Kaushal changes were made. These are separate maintenance recommendations, not edits to the current remediation.
+- Review document commit: `54a46baeb7eb1ac32d49aec6b7a92cf620f4b437`.
