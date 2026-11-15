@@ -427,3 +427,52 @@ Read-only source inspection confirms the HQ session endpoint checks the session 
 ### Explicitly not performed
 
 No live API request was sent to deliberately trigger a missing-binding response, because an unauthenticated or authenticated request could alter state or produce ambiguous behavior. No Worker upload, version creation, deployment, settings update, D1 write or migration was performed.
+
+## 15. Controlled rate-limit binding deployment preflight — procedure only, not authorized/executed — 15 November 2026
+
+This section defines the evidence and approval gates for a future controlled deployment. It is not an instruction to deploy now. PR #51 remains Draft/unmerged and current owner approval does not include Worker upload, version creation, traffic change, or configuration mutation.
+
+### Gate A — source and review freeze
+
+1. Confirm the intended source commit is the reviewed PR head and record its full SHA. Do not deploy a moving branch name without recording the resolved SHA.
+2. Review the exact diff against the intended base branch. Resolve base drift through an explicit, reviewed branch update; do not rebase/cherry-pick automatically.
+3. Require application-code CI to pass on the exact intended code commit. Docs-only CI absence must not be represented as application validation.
+4. Confirm wrangler.jsonc points to the approved Studio HQ D1 ID. Do not run migrations as part of the rate-limit binding change.
+5. Confirm all three namespace IDs are positive integer strings, distinct within this Worker, and reserved uniquely across the Cloudflare account. The owner must provide an account-level uniqueness attestation or approve replacement IDs through a safe account-level allocation process. Do not inspect Kaushal's customer Worker or other customer resources.
+
+### Gate B — D1 and application safety
+
+1. Confirm a recent, usable D1 recovery point and a tested disposable-database restore procedure. The current runbook records that no export/import/restore drill has been performed and RTO/RPO are unknown.
+2. If that prerequisite remains unmet, do not treat the HQ release as production-ready. Do not make a live D1 backup/export or restore part of this rate-limit change without separate approval.
+3. Confirm no schema migration is required. The rate-limit binding update is intended to be configuration-only; do not apply the unrecorded root-level migration as part of it.
+4. Ensure the release candidate retains fail-closed behavior: missing/malformed limiter bindings in Lab/production must return controlled HTTP 503, not bypass rate limiting.
+
+### Gate C — explicit deployment approval and execution plan
+
+Obtain separate explicit approval naming the exact source commit SHA, target Worker jawed-website-ai-studio-lab, target environment/domain, whether version upload and traffic deployment are authorized, planned time window, operator, rollback approver, and acceptable interruption window. Approval to continue analysis or update documentation is not deployment approval.
+
+Only after approval, an authorized operator should:
+
+1. Reconfirm Cloudflare account and exact Worker identity before running Wrangler.
+2. Confirm Wrangler supports the configured rate-limit binding syntax (Cloudflare docs currently require Wrangler 4.36.0 or later).
+3. Run the repository's exact lockfile-based install and full validation from the approved commit; capture dry-run output showing the three bindings.
+4. Perform the separately approved version upload/deployment using the repository's pinned toolchain and explicit Worker/environment selection. Never run an unqualified deploy command against an ambiguous working directory/account.
+5. Capture returned version ID, deployment ID, timestamp, and source commit SHA in deployment annotations or an immutable release record. Verify traffic allocation and ensure the intended version is active.
+6. Retrieve new version metadata and confirm all three rate-limit binding names and configured values are present where the API exposes them. Do not rely on dashboard visibility for this check.
+7. Run only approved, non-mutating runtime smoke checks. Verify expected protected read/session behavior and that limiter errors fail closed. Avoid creating CRM, project, approval, quotation, invoice, payment, or audit data as a test. A production POST test is not acceptable without a dedicated disposable test identity/data plan and explicit approval.
+8. Review logs for unexpected 5xx/503/429 responses, authentication failures, and Worker exceptions. Verify normal site routes and HQ UI availability.
+
+### Gate D — rollback readiness
+
+Before deployment, record the currently active deployment ID and version ID, and confirm the prior version remains available for rollback. Define the rollback command/API action and approver in the change record before the change window. If the new version lacks any required binding, fails smoke checks, or produces unexpected 5xx errors, stop further rollout and execute only the pre-approved rollback. Reconfirm traffic allocation and health after rollback. Do not improvise a rollback or alter D1 state.
+
+### Current status
+
+- Gate A: source/CI evidence partly available; PR base drift and final source freeze still need resolution. Account-wide namespace uniqueness is unverified.
+- Gate B: D1 integrity checks passed, but tested backup/restore drill is outstanding; release gate not met.
+- Gate C: explicit deployment approval not granted; no deployment authorized or performed.
+- Gate D: historical active version metadata is known, but an approved rollback plan has not been recorded.
+
+**Conclusion:** This preflight procedure is prepared for owner review only. Do not upload a Worker version, deploy traffic, modify bindings, run D1 operations, or test mutating HQ endpoints under the current authorization.
+
+Official reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
