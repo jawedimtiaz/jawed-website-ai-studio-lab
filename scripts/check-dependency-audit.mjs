@@ -14,6 +14,11 @@ try {
   process.exit(2);
 }
 
+if (report.error) {
+  console.error('npm audit returned an error instead of a complete audit result:', JSON.stringify(report.error));
+  process.exit(2);
+}
+
 const allowedAdvisory = 'GHSA-m9gg-hp2v-232j';
 const expectedPackages = new Set([
   '@firebase/firestore',
