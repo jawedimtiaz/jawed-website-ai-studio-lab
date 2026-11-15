@@ -634,3 +634,43 @@ This verifies the code/test changes and Wrangler configuration dry run on the ex
 The feature branch remains Draft, open, unmerged and not currently mergeable against main. The main-branch three-commit drift, live binding discrepancy, namespace uniqueness, D1 backup/restore drill and separate deployment approval remain release gates.
 
 No Worker deployment, live binding change, D1 migration/write, owner enrollment, merge, personal website change, or Kaushal customer-project change was performed.
+
+
+## 25. Phase 2.7Q — D1 backup runbook review and live metadata recheck — 15 November 2026
+
+### Live D1 metadata (read-only)
+
+Cloudflare's D1 metadata API was queried for the exact database UUID configured by the Lab:
+- Name: `jawed-studio-hq`.
+- UUID: `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- Storage version: `production`.
+- Region: `APAC`.
+- Reported database file size: 401,408 bytes.
+- Current Time Travel bookmark: API returned a bookmark successfully. The bookmark value is not copied into this repository.
+
+This confirms the database is on the production storage backend that supports Time Travel. Actual retention depends on the Cloudflare plan; the account plan was not verified in this check. Cloudflare's current documentation states 30 days for Workers Paid and 7 days for Workers Free.
+
+### Runbook review and correction
+
+Reviewed `docs/studio-hq-d1-backup-recovery-runbook.md` against the current Cloudflare D1 documentation and found its export command wrote to a relative `./secure-backups` path. If run from the repository root, this could place a sensitive SQL export inside the Git working tree, contrary to the runbook's own data-handling rule.
+
+Updated the example to require an approved encrypted absolute backup directory outside the Git repository, create that directory, generate a UTC timestamp, and pass the resulting absolute output path to `wrangler d1 export`.
+
+Official documentation confirms:
+- Time Travel is automatic for supported production-storage D1 databases; it does not need to be enabled manually.
+- Restore overwrites the database in place and is destructive; Cloudflare returns a previous bookmark that can be used to undo the restore.
+- D1 SQL export is supported through `wrangler d1 export`; a running export blocks other database requests.
+- Time Travel retention is 30 days on Workers Paid and 7 days on Workers Free.
+
+### Current backup/recovery status
+
+- No SQL export was performed.
+- No import or restore drill was performed.
+- No live D1 writes, migrations, or configuration changes were performed.
+- RTO/RPO remain unestablished.
+- A disposable D1 restore drill still requires explicit approval and separate data-handling review.
+- The account's actual plan/Time Travel retention window remains unverified.
+
+Documentation correction commit: `66b17151743980760a6fadaefb95bb48bc44bbff`.
+
+This review does not authorize an export or restore. The next safe step is to establish the approved encrypted backup destination and obtain explicit approval for a scheduled export; do not execute it without that approval.
