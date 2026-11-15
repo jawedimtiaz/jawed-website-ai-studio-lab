@@ -8,6 +8,9 @@ export async function onRequestPost({ request, env }) {
   const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
 
+  const generalLimit = await checkHqRateLimit(request, env, { type: 'general', uid: auth.identity.uid });
+  if (!generalLimit.ok) return generalLimit.response;
+
   return hqJson({
     ok: true,
     identity: auth.identity,
