@@ -355,3 +355,57 @@ This update is documentation-only on the existing PR branch. It records current 
 ### Next action
 
 Do not rebase/update PR #51 yet. First prepare a read-only reconciliation plan for the three commits now on main, comparing their exact changed paths/content against the PR branch and identifying any overlap or conflict risk. Present a merge-base-aware recommendation before any branch mutation. Continue to keep all release prerequisites separate from CI success.
+
+
+## 18. Merge-base-aware comparison of current main commits — 15 November 2026
+
+Read-only comparison completed from common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+
+### Commit sequence on main after the common ancestor
+
+The GitHub compare endpoint for `f432865d33e30d988f070ccf0b7b8b68e9442f7f...main` returned exactly three main-side commits, in order:
+
+1. `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` — `docs(hq): record Firebase project ID mismatch`. Adds `docs/STUDIO_HQ_CONTINUITY.md` (392 lines in that commit). Its content establishes an authoritative continuity record, project separation rules, prior Phase 2.7L/2.7M findings, and handover instructions.
+2. `5c78a3e7bbb171b5d1cbc5534c1f043ec0e20022` — `docs(hq): reconcile PR49 deployment source with PR51`. Adds `docs/ci-and-bundle-maintenance-review.md` (540 lines at current main), including Section 16, the PR #49 deployment-source reconciliation and explicit recommendation not to merge or manually dispatch PR #49 in its then-current form.
+3. `355341935a8ba87011e52d0c862852900aefe9db` — `docs(hq): checkpoint PR49 deployment source reconciliation`. Adds `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` (279 lines at current main), including the PR #49 reconciliation checkpoint and deployment guardrails.
+
+All three commits are documentation additions on main; no application, workflow, package, migration, or Worker source changes are included in these three commit patches.
+
+### Path-level overlap against the PR #51 branch
+
+The current PR #51 branch is based on the same common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f` and does not contain the three main-side commits. The branch has its own independently created versions of two of the same paths:
+
+| Path | Current main | PR #51 branch | Reconciliation assessment |
+|---|---|---|---|
+| `docs/STUDIO_HQ_CONTINUITY.md` | Exists (393 lines currently) | Not present (404 from branch ref) | Main-only addition; can be added without a same-path conflict, but review for any branch-specific facts before adopting |
+| `docs/ci-and-bundle-maintenance-review.md` | Exists (540 lines; Sections 1–16) | Exists (478 lines; Sections 1–15) | Add/add same-path divergence; content-level reconciliation required |
+| `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` | Exists (279 lines; includes PR #49 reconciliation) | Exists (358 lines; includes this branch's Section 17 and prior branch history) | Add/add same-path divergence; content-level reconciliation required |
+
+The branch's Section 17 is a fresh PR #51/GitHub/CI release-readiness update. Main's checkpoint has a PR #49 deployment-source reconciliation section that is not present in the branch checkpoint, but its substance is recorded in main's maintenance review Section 16. The two checkpoint versions should not be resolved by choosing one entire side: preserve both the branch's latest Section 17 and main's PR #49 reconciliation evidence, then remove stale duplicated status statements or clearly label them historical.
+
+The maintenance review has the same structural issue: main's Section 16 adds the PR #49 reconciliation. Preserve branch Sections 1–15 and add/validate Section 16 from main, while checking any changed wording or dates in the earlier sections before treating the main copy as a wholesale replacement.
+
+### Merge-base and divergence interpretation
+
+- Common ancestor: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Main-side commits after that ancestor: 3 (listed above).
+- The PR #51 branch does not contain those three commits. Its own history contains the Studio HQ remediation and subsequent checkpoint documentation.
+- The PR metadata's recorded base snapshot is `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`, but the direct compare still identifies `f432865d33e30d988f070ccf0b7b8b68e9442f7f` as the actual common ancestor. Do not treat the PR metadata base SHA as proof that the branch contains that commit.
+- The current branch compare against main previously returned 158 commits ahead and 3 behind after the documentation checkpoint update. No branch history was rewritten.
+
+### Recommended reconciliation plan (proposal only)
+
+1. Keep PR #51 Draft and unmerged.
+2. Do not rebase, merge, cherry-pick, force-push, or update the branch automatically.
+3. For a future owner-approved branch update, first create a clean preservation point and reconcile the two overlapping Markdown files by section:
+   - `docs/ci-and-bundle-maintenance-review.md`: preserve Sections 1–15 from the branch and bring in main's Section 16 after checking section dependencies and date/status accuracy.
+   - `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`: preserve branch Section 17 and all valid prior branch evidence; incorporate main's PR #49 reconciliation findings, ensuring PR status/head/base/check counts are refreshed rather than copied as current.
+   - `docs/STUDIO_HQ_CONTINUITY.md`: consider adding the main-only continuity document as a separate documentation file after confirming its dated claims remain clearly historical and do not supersede the current Phase 2.7M checkpoint.
+4. Review the resulting full diff for accidental deletion of Studio HQ security/D1 code, migrations, test fixtures, workflow definitions, or the current release blockers.
+5. Only after the reconciliation diff is approved, perform a separately authorized branch update and rerun required CI on the resulting exact head.
+
+### Conclusion
+
+The three main-side commits are documentation-only, but two paths overlap with independently created branch documents. This is a manageable documentation reconciliation, not evidence that the 157+ commit Studio HQ implementation can be safely rebased without review. Preserve the two document histories and avoid an automatic merge/rebase.
+
+No Git history, source file, branch, PR metadata, workflow, Cloudflare setting, Worker, D1 database, personal website, or Kaushal customer project was modified during this read-only comparison. PR #51 remains Draft and unmerged.
