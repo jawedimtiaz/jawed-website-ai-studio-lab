@@ -56,3 +56,29 @@ The following observations were obtained after the original checkpoint was writt
 - Updated `docs/studio-hq-d1-schema.md` to distinguish verified live D1 state from the repository's intended schema and to record the observed Worker deployment/binding evidence.
 - Corrected this checkpoint's rate-limit declaration wording and clarified that no changes by this PR phase does not mean no historical Worker deployment or D1 migration exists.
 - These are documentation-only changes. Re-run the PR checks on the resulting head; prior CI results do not automatically verify this new commit.
+
+
+## Phase 2.7N — Rate-limit safeguard and Cloudflare reconciliation — 15 November 2026
+
+### Code safeguard committed
+
+- Updated `functions/lib/hqRateLimit.js`: if `ENVIRONMENT` is `lab` or `production` and no supported limiter binding is present, the request now fails closed with HTTP 503 `RATE_LIMIT_UNAVAILABLE`. Isolated local/test environments without those deployed environment values retain the existing pass-through behavior.
+- Added a regression test in `functions/lib/hqRateLimit.test.js` for missing bindings in both deployed environments.
+- Commits: `36760f52d1988376351f6ad5184b07581c19520c` (middleware) and `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03` (test).
+- On exact head `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03`, all 14 listed GitHub Actions workflow runs completed successfully. The `hq-auth-unit-tests` job reports 131 tests, and its TypeScript/production build step succeeded.
+
+### Read-only Cloudflare evidence
+
+- Current Worker settings GET and active version 13 metadata both show only `AI`, `ASSETS`, `CANONICAL_ORIGIN`, `ENVIRONMENT`, and `HQ_DB`. Neither contains `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, or `HQ_RATE_LIMITER`.
+- Active deployment remains `739b15b1-22b5-499c-a738-7830cb394579`, with 100% traffic on version `cf1dba45-c28c-4865-9571-dc508f6863d2`. Version 13 has no source commit SHA annotation.
+- The PR's `wrangler.jsonc` declares namespace IDs `620261114`, `620261115`, and `620261116`, each a positive integer string and distinct from the other two within this configuration. Each uses period 60 seconds, which is a supported period.
+- Cloudflare documentation states namespace IDs must be unique within the Cloudflare account. Account-wide uniqueness was not verified because doing so would require inspecting other Worker configurations, including the separate Kaushal customer Worker, which is out of scope and must remain untouched. Treat account-wide namespace uniqueness as an outstanding pre-deployment check.
+- Cloudflare's Workers Rate Limiting API is approximate and location-scoped; requests can exceed the configured threshold while counters synchronize. It is not a strict global quota mechanism.
+- The settings and version inspections were GET-only. No Cloudflare setting, Worker version, deployment, route, D1 record, or migration was changed.
+
+### Release implications and guardrails
+
+- Deploying the new code without the three bindings would cause protected Studio HQ API requests to fail closed with HTTP 503. Do not deploy until the intended bindings are configured and verified.
+- CI success validates the repository checks; it does not activate the bindings or prove the live Worker has the PR's source.
+- Do not inspect or modify the Kaushal Worker to establish namespace uniqueness. Resolve the account-wide uniqueness question through an authorized account-level inventory that does not disclose or alter customer configuration, or choose a safe account-wide namespace allocation with explicit owner approval.
+- PR #51 remains Draft, open, unmerged. No merge or deployment is authorized by this checkpoint.
