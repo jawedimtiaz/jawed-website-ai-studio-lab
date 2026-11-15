@@ -47,8 +47,8 @@ function resolveLimiterBinding(env, type) {
 
 /**
  * Checks rate limits using Cloudflare Workers Rate Limiting API bindings if configured.
- * If no supported rate-limiter binding is configured in `env`, the check gracefully passes
- * through ({ ok: true }) because binding activation is intentionally deferred.
+ * If no supported rate-limiter binding is configured in a deployed Studio HQ environment,
+ * the check fails closed with HTTP 503. Local/test environments without ENVIRONMENT may pass through.
  * If a supported binding is present in `env` but null, malformed, or lacks a callable
  * `.limit()` method, or if `.limit()` throws or returns a malformed response, it fails
  * closed with HTTP 503 RATE_LIMIT_UNAVAILABLE.
@@ -57,8 +57,12 @@ export async function checkHqRateLimit(request, env, options = {}) {
   const type = options.type || 'general';
   const { configured, binding } = resolveLimiterBinding(env, type);
 
-  // Preserve pass-through only when no supported rate-limiter binding is configured in the environment.
+  // A deployed Studio HQ environment must never silently run without its configured limiter.
+  // Local/test environments without ENVIRONMENT retain pass-through for isolated unit fixtures.
   if (!configured) {
+    if (env?.ENVIRONMENT === 'lab' || env?.ENVIRONMENT === 'production') {
+      return { ok: false, response: hqRateLimitUnavailableResponse() };
+    }
     return { ok: true };
   }
 
