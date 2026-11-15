@@ -444,6 +444,8 @@ export async function handleAuthorizedHqProjects({ request, env, segments, ident
 }
 
 export async function handleHqProjects({ request, env, segments }) {
+  const ipLimit = await checkHqRateLimit(request, env, { type: 'general' });
+  if (!ipLimit.ok) return ipLimit.response;
   const auth = await authorizeHqOwner(request, env);
   if (!auth.ok) return auth.response;
   return handleAuthorizedHqProjects({ request, env, segments, identity: auth.identity });
