@@ -72,7 +72,17 @@ jobs:
           }
           for (const [name, item] of vulnerabilities) {
             const via = (item.via || []).map(entry =>
-              typeof entry === 'string' ? entry : entry.name || entry.title || 'advisory'
+              typeof entry === 'string'
+                ? { name: entry }
+                : {
+                    name: entry.name,
+                    title: entry.title,
+                    url: entry.url,
+                    range: entry.range,
+                    severity: entry.severity,
+                    cwe: entry.cwe,
+                    cvss: entry.cvss
+                  }
             );
             console.log(JSON.stringify({
               package: name,
