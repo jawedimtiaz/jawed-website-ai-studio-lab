@@ -4,7 +4,7 @@
 
 Dedicated Cloudflare D1 database: `jawed-studio-hq`.
 
-The database was created on 6 November 2026. The initial schema migration was applied through the Cloudflare D1 SQL API and recorded in `d1_migrations`. No Worker or Pages deployment has occurred.
+The database was created on 6 November 2026. Its migrations were applied through the Cloudflare D1 SQL API and recorded in `d1_migrations`. Cloudflare deployment history separately confirms that Worker versions and deployments exist for `jawed-website-ai-studio-lab`; the currently active version is not proven to have been built from the current PR #51 head.
 
 ## Database resource
 
@@ -13,8 +13,8 @@ The database was created on 6 November 2026. The initial schema migration was ap
 - Primary region: APAC
 - Read replication: disabled
 - Initial state at creation: 0 tables
-- Current schema: 17 application tables plus the D1 migration tracking table
-- Applied migration: `0001_studio_hq_schema.sql`
+- Current schema: 17 application tables, the D1 migration tracking table, and Cloudflare's internal `_cf_KV` table
+- Applied migrations: `0001_studio_hq_schema.sql` and `0002_financial_management.sql`
 
 ## Data model
 
@@ -40,7 +40,7 @@ The database was created on 6 November 2026. The initial schema migration was ap
 
 - Migration executed successfully against the dedicated D1 database.
 - `d1_migrations` contains `0001_studio_hq_schema.sql`.
-- D1 reported 18 application/migration tables (Cloudflare's internal `_cf_KV` table is excluded from that count).
+- Read-only inspection found the expected canonical tables, including the financial tables introduced by migration 0002.
 - `PRAGMA foreign_key_check` returned no violations.
 - `PRAGMA quick_check` returned `ok`.
 - The same migration passed isolated in-memory SQLite tests for table creation, archive/restore, FK restrictions, append-only audit triggers, and JSON validity.
@@ -49,11 +49,24 @@ The database was created on 6 November 2026. The initial schema migration was ap
 
 D1 must only be accessed from the Worker after Firebase ID-token verification and exact owner allowlist authorization. Never expose D1 credentials or database bindings to browser code. Every mutating API must write an audit event in the same logical operation where possible.
 
-Owner UIDs are not seeded yet. They must be captured from the verified Firebase identities, not guessed from email addresses.
+Read-only inspection on 15 November 2026 found one row in `hq_users`. The identity fields were not retrieved or reproduced in this document. Do not infer that this record is valid for the currently configured owner allowlist from the row count alone; owner eligibility must be checked through the approved, privacy-preserving verification procedure.
 
 ## Remaining before data access
 
-1. Complete the Worker-side owner authorization integration and rate-limiting design.
-2. Add API-level tests for every read/write path.
-3. Seed the two owner records only after verified Firebase UID retrieval.
-4. Keep the Worker undeployed until preview verification and security review are complete.
+1. Verify the active Worker version and source commit; the latest observed active version metadata did not include a source commit annotation.
+2. Configure and verify the three declared rate-limit bindings on the active Worker. The active version observed on 15 November 2026 exposed `HQ_DB`, `AI`, `ASSETS`, `CANONICAL_ORIGIN`, and `ENVIRONMENT`, but no rate-limit bindings.
+3. Confirm owner authorization using verified Firebase identity and the approved owner allowlist; do not expose owner identifiers in this document.
+4. Establish and test a safe D1 backup/recovery procedure. A Time Travel bookmark was observed, but no restore test was performed.
+5. Keep PR #51 in Draft and do not merge or deploy until the release prerequisites and explicit approvals are satisfied.
+
+
+## Live-state reconciliation — 15 November 2026
+
+The following observations were made through read-only checks and are a snapshot, not a permanent guarantee:
+
+- D1 migration history records both `0001_studio_hq_schema.sql` and `0002_financial_management.sql` as applied.
+- `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows.
+- The live Worker has deployment/version history. The latest observed active version was `cf1dba45-c28c-4865-9571-dc508f6863d2`, with 100% traffic. Its metadata did not provide a source commit SHA, so the deployed source cannot be matched conclusively to PR #51.
+- That active version did not expose `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, or `HQ_RATE_LIMITER`, although those bindings are declared in the PR branch's `wrangler.jsonc`.
+- A D1 Time Travel bookmark was observed. This is not evidence of a separately exported backup or a successfully tested restore.
+- These checks did not change D1 records, Worker settings, or deployments.
