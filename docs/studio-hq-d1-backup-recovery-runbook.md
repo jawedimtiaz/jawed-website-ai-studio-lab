@@ -50,7 +50,12 @@ A D1 SQL export can provide a separate artifact for retention and recovery. Clou
 
 ```bash
 # DATA EXPORT — accesses live database; schedule and approve first.
-npx wrangler d1 export jawed-studio-hq --remote --output=./secure-backups/jawed-studio-hq-<UTC_TIMESTAMP>.sql
+# Replace this with an approved encrypted backup directory OUTSIDE the Git repository.
+export HQ_BACKUP_DIR="/absolute/path/to/approved-secure-backup-directory"
+mkdir -p "$HQ_BACKUP_DIR"
+BACKUP_UTC="$(date -u +%Y%m%dT%H%M%SZ)"
+npx wrangler d1 export jawed-studio-hq --remote \
+  --output="$HQ_BACKUP_DIR/jawed-studio-hq-$BACKUP_UTC.sql"
 ```
 
 Important operational considerations:
