@@ -594,3 +594,43 @@ A fresh GitHub fetch confirmed all four wrappers contain the pre-authentication 
 The new pre-authentication check relies on the configured `HQ_RATE_LIMITER` binding. The live Worker inventory previously returned no rate-limit bindings; the three namespace IDs in the PR's Wrangler config also remain unverified for account-wide uniqueness. This change is not deployable until the binding deployment prerequisite is resolved and the exact resulting PR head passes the required Studio HQ CI.
 
 No deployment, merge, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal customer-project change was performed.
+
+
+## 24. Phase 2.7P — CI regression correction and successful verification — 15 November 2026
+
+### Test-fixture correction
+
+The first CI run after adding pre-authentication limiting reported 127 passed / 5 failed. All five failures were existing Worker-routing tests that supplied an empty Worker environment and expected authentication to return 401. With the new fail-closed IP limiter, those fixtures correctly received 503 because the test limiter binding was absent.
+
+Updated the Worker test fixtures in:
+- `functions/api/hq/financial.test.js`
+- `functions/lib/hqRateLimit.test.js`
+- `tests/hq-owner-authorization.test.js`
+
+The affected routing tests now supply an explicit successful mock `HQ_RATE_LIMITER`, so they test routing/authentication behavior without disabling the production fail-closed rule.
+
+### CI trigger
+
+Added the current Phase 2.7M feature branch to the `push.branches` list in `.github/workflows/studio-hq-auth-tests.yml`. This ensures the dedicated Studio HQ test workflow runs for future pushes to this branch, in addition to its pull-request trigger.
+
+### Successful exact-head CI evidence
+
+The Studio HQ Firebase Auth Tests workflow ran on exact code/test head:
+`b14a7057bdd2a4379a9ff2ec50ba469212a2b2a1`
+
+- Workflow run: [43744589197](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43744589197)
+- Job `hq-auth-unit-tests`: completed successfully.
+- `npm run test:hq-auth`: **132 passed, 0 failed, 0 skipped**.
+- TypeScript and production build: passed.
+- Wrangler `deploy --dry-run`: passed; log ended with `--dry-run: exiting now.`, so no Worker version was published.
+- gRPC artifact check: inspected 45 text build artifacts; no `@grpc/grpc-js` or gRPC server-auth markers found.
+- Dependency audit step: passed with the existing narrow exception for the two documented `@grpc/grpc-js` advisories; no new advisory was reported by that gate.
+- Workflow and job both report conclusion `success`.
+
+### Interpretation and remaining limits
+
+This verifies the code/test changes and Wrangler configuration dry run on the exact application-code head above. It does not prove the new limiter bindings are active in the live Worker, that namespace IDs are unique account-wide, or that a deployment/rollback has been performed.
+
+The feature branch remains Draft, open, unmerged and not currently mergeable against main. The main-branch three-commit drift, live binding discrepancy, namespace uniqueness, D1 backup/restore drill and separate deployment approval remain release gates.
+
+No Worker deployment, live binding change, D1 migration/write, owner enrollment, merge, personal website change, or Kaushal customer-project change was performed.
