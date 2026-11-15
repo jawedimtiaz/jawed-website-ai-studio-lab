@@ -373,3 +373,57 @@ No root-level `0002_hq_owner_authorization_hardening.sql` migration was listed i
 ### Limits
 
 This pass did not inspect client, project, user, financial, payment, quotation or audit-log row contents. It did not export, backup, restore, migrate, write, delete or update any data. A successful `quick_check` is not a backup/restore drill and does not establish a recovery point objective or recovery time objective.
+
+
+## 14. Rate-limit binding discrepancy — dry-run versus active version evidence — 15 November 2026
+
+The rate-limit binding discrepancy was investigated against both the exact successful GitHub Actions dry-run log and the active Cloudflare Worker version API response.
+
+### Repository / CI dry-run evidence
+
+At application-code commit `90040797cca8e26234446e207f51d180efbeb342`, GitHub Actions run `43738084618`, job `hq-auth-unit-tests` (job ID `132885017632`) ran:
+
+```sh
+npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+```
+
+The actual job log printed all three expected bindings:
+
+- `env.HQ_SESSION_LIMITER (10 requests/60s)`
+- `env.HQ_WRITE_LIMITER (30 requests/60s)`
+- `env.HQ_RATE_LIMITER (120 requests/60s)`
+
+Then printed `--dry-run: exiting now.` The step completed successfully. This is strong evidence that the committed Wrangler config parses and Wrangler's dry-run recognizes the three rate-limit bindings. It is **not** evidence that those bindings were uploaded or deployed to Cloudflare.
+
+### Active Cloudflare version evidence
+
+A fresh GET of the exact active version resource for version 13 (`cf1dba45-c28c-4865-9571-dc508f6863d2`) returned a `resources.bindings` array containing only:
+
+- `AI`
+- `ASSETS`
+- `CANONICAL_ORIGIN`
+- `ENVIRONMENT`
+- `HQ_DB`
+
+The three rate-limit binding names were absent from that returned version resource. The Worker settings GET returned the same five binding names. The active deployment still directs 100% traffic to version 13. Version 13 has no source commit SHA annotation.
+
+Cloudflare's current Rate Limiting documentation states that rate-limit bindings are not currently visible in the Cloudflare dashboard. This does not invalidate the API version-resource observation: the evidence above is from the Cloudflare API's active-version `resources.bindings` payload, not a dashboard screenshot. However, API omission alone cannot establish whether the platform has a separate representation for these bindings; a direct runtime test with an authorized safe test route or a controlled deployment is required for definitive runtime proof. No such test or deployment was performed.
+
+### Best-supported conclusion
+
+- Wrangler dry-run recognizes the three configured bindings in the PR's source configuration.
+- The current active Cloudflare version API response does not expose those bindings in its version resource.
+- The current source code deliberately fails closed with HTTP 503 when a supported binding is missing or unusable in Lab/production. The active version's exact source commit is not proven, so do not assert that this fail-closed code is what version 13 executes.
+- The mismatch remains unresolved and is a release blocker until a controlled, owner-approved verification establishes that a deployed version has all three usable bindings and the intended code.
+
+### Namespace uniqueness
+
+Cloudflare docs specify that each `namespace_id` must be a positive integer string unique within the Cloudflare account. The three configured IDs are distinct from each other within `wrangler.jsonc`, but account-wide uniqueness is not proven. Cloudflare documentation also says bindings sharing a namespace share counters for a key within each location. Do not inspect the Kaushal customer Worker or its configuration to check this. Account-wide uniqueness remains an owner-level pre-deployment prerequisite.
+
+### Rate-limit code path review
+
+Read-only source inspection confirms the HQ session endpoint checks the session limiter before owner authentication, then applies the general limiter after successful owner authorization. CRM, project, release/QA, and financial handlers apply the general limiter after owner authorization and the write limiter to POST/PATCH mutations. Missing bindings in the current branch fail closed by default; only explicit `ENVIRONMENT=test` fixtures bypass the absent-binding condition. The existing CI unit suite includes the corresponding fail-closed regression tests.
+
+### Explicitly not performed
+
+No live API request was sent to deliberately trigger a missing-binding response, because an unauthenticated or authenticated request could alter state or produce ambiguous behavior. No Worker upload, version creation, deployment, settings update, D1 write or migration was performed.
