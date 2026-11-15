@@ -440,3 +440,31 @@ No Git history, source file, branch, PR metadata, workflow, Cloudflare setting, 
 This is stronger evidence that PR #51's canonical migration lineage matches the live D1 table/column structure. It does not prove that every application query is compatible, that the live Worker runs PR #51, that owner authentication succeeds against the live owner record, or that backup/recovery has been tested. Keep the existing release blockers: account-wide rate-limit namespace uniqueness is unverified; a disposable-D1 restore drill is not performed; active Worker binding state must be reconciled; and explicit deployment approval is still required.
 
 **Next safe action:** complete the documentation content reconciliation proposal, then perform a separate full source/CI review on the exact resulting PR head. Keep PR #51 Draft and unmerged.
+
+
+## 20. PR #49 review document reconciled; continuity-record adoption decision — 15 November 2026
+
+### CI and deployment review reconciliation
+
+- Compared the current-main `docs/ci-and-bundle-maintenance-review.md` with the PR #51 branch copy section by section.
+- Branch Sections 1–15 were already substantively identical to main. The only observed differences in the shared content were trailing newline formatting in two sections.
+- Appended main's Section 16, “PR #49 deployment-source reconciliation against PR #51”, to the branch document.
+- Refreshed the PR state and divergence figures in that imported section rather than copying its older PR #51 head/counts.
+- Fresh PR #49 metadata: open, non-draft, unmerged, mergeable; head `8ba814c23e51c6182309cff5d22184084f7a1745`, base `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct compare to current main: 3 ahead / 3 behind. Its two returned PR workflow runs, Security Supply Chain Gate and Site Integrity Gate, completed successfully. Neither is a deployment run.
+- Fresh PR #51 metadata before this checkpoint update: open, Draft, unmerged, not mergeable; head `a90e1b2d76cc1cfcaf1f377a100449a9543c21f9`. Direct compare to current main: 162 ahead / 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- No PR #49 workflow dispatch, deployment, merge, or Cloudflare/D1 write occurred.
+
+### Main-only continuity document review
+
+- Reviewed `docs/STUDIO_HQ_CONTINUITY.md` on main (blob `9d5612cd5ca266c0c64de3b47c05a4c06b432449`).
+- It contains useful Phase 2.7L/2.7M findings, including the Firebase signature-verification regression, Firebase project-ID mismatch, schema incompatibility, and project separation rules.
+- Its header still says “Last reconciled: 14 November 2026”; its initial repository/PR checkpoint and handover instructions refer to the earlier main SHA and PR #50/PR #49 state. It is therefore a dated historical continuity record, not a current authoritative snapshot.
+- Decision: do not copy it unchanged into PR #51 or allow it to supersede this branch's later Phase 2.7M/2.7N checkpoint. Its still-relevant security and architecture findings are already represented in the current branch's implementation notes and checkpoint. If a canonical continuity record is needed later, refresh its repository/PR/deployment state and explicitly label historical findings before adopting it.
+
+### Latest branch/document status
+
+- The CI maintenance review reconciliation was committed as `a90e1b2d76cc1cfcaf1f377a100449a9543c21f9`.
+- This checkpoint update is documentation-only. No application source, workflow, package, migration, D1 data, Cloudflare setting, Worker version, personal website, or Kaushal customer resource was changed.
+- The PR remains Draft and unmerged. Documentation commits do not prove that application CI has rerun on the latest head.
+
+**Next safe action:** perform a final exact-head review of the PR #51 changed-file set and current required checks, then prepare a separate owner-reviewable proposal for resolving the three-commit main drift. Do not rebase, merge, deploy, or run remote migrations without explicit approval.
