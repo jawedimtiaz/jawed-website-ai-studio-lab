@@ -127,3 +127,82 @@ This is one-workflow inspection, not the complete repository workflow inventory.
 ### Scope and status
 
 No workflow or application files were changed. The complete workflow inventory, verification of newer immutable action SHAs, and measured bundle/lazy-load experiment remain outstanding. PR #51 remains Draft and unmerged.
+
+
+## 8. Complete workflow inventory — 15 November 2026
+
+The repository directory endpoint was used to enumerate `.github/workflows/` at the PR branch. It contains **34 workflow files**. Every file was fetched individually and its runner, action pins, Node version, top-level permissions, triggers, and path-filter presence were reviewed.
+
+### Inventory by workflow purpose
+
+| Group | Workflow files |
+|---|---|
+| Accessibility, monetization, AI and origin | `accessibility-document-contract.yml`, `adsense-readiness.yml`, `ai-regression.yml`, `canonical-origin-reliability.yml` |
+| Browser, performance and finance | `career-match-browser-runtime.yml`, `core-web-vitals-protection.yml`, `finance-calculator-regression.yml`, `finance-tools-browser-runtime.yml`, `performance-baseline.yml` |
+| Deployment and production reliability | `deployment-runtime-reliability.yml`, `production-404-reliability.yml`, `production-ai-get-reliability.yml`, `production-ai-post-reliability.yml`, `production-api-method-boundary.yml`, `production-availability-monitoring.yml`, `production-cache-reliability.yml`, `production-html-seo-reliability.yml`, `production-legacy-redirects.yml`, `production-media-assets.yml`, `production-robots-reliability.yml`, `production-security-headers.yml`, `production-sitemap-reliability.yml`, `production-smoke-reliability.yml`, `production-static-assets.yml` |
+| Security and site integrity | `security-baseline.yml`, `security-supply-chain.yml`, `site-integrity.yml`, `pwa-reliability.yml` |
+| Studio HQ | `studio-hq-approvals-qa.yml`, `studio-hq-auth-tests.yml`, `studio-hq-crm-tests.yml`, `studio-hq-d1-schema.yml`, `studio-hq-projects-tests.yml` |
+| Android/TWA | `twa-engineering.yml` |
+
+### Runner and runtime matrix
+
+| Workflow count | Runner | Node runtime | Notes |
+|---:|---|---|---|
+| 28 | `ubuntu-24.04` | Node 22 | General site, browser, finance, performance, security and production validator workflows |
+| 5 | `ubuntu-latest` | Node 24.12.0 | Studio HQ workflows; `studio-hq-auth-tests.yml` also installs Bun |
+| 1 | `ubuntu-latest` | Node 20 | `twa-engineering.yml`; Node 20 is EOL as of 15 November 2026 and should be moved to a supported LTS after compatibility validation |
+
+All 34 workflows declare top-level `permissions: contents: read`. No workflow-level write permission was found in this inventory. All 34 have path filters. Triggers are a mix of `pull_request`, `push`, `workflow_dispatch`, and scheduled checks; not every production workflow runs on pull requests. The production probes that are schedule/manual and/or main-push scoped should remain separated from unrelated Lab PR gating.
+
+### Action pin matrix
+
+All observed `uses:` references are immutable full commit SHAs, not floating tags.
+
+| Scope | Action reference | Verified release / commit |
+|---|---|---|
+| 29 workflows | `actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09` | checkout v5.1.0; Node 24 runtime |
+| 29 workflows | `actions/setup-node@820762786026740c76f36085b0efc47a31fe5020` | setup-node v7.0.0; Node 24 runtime |
+| 5 Studio HQ workflows | `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` | checkout v4.2.2; Node 20 action runtime |
+| 5 Studio HQ workflows | `actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020` | setup-node v4.4.0; Node 20 action runtime |
+| HQ auth workflow only | `oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6` | verified commit message identifies setup-bun v2.2.0 |
+
+The five older-pinned Studio HQ files are `studio-hq-approvals-qa.yml`, `studio-hq-auth-tests.yml`, `studio-hq-crm-tests.yml`, `studio-hq-d1-schema.yml`, and `studio-hq-projects-tests.yml`. They are the source of the Node 20 action-runtime deprecation warning. The 29 other workflows already use Node-24-compatible checkout/setup-node action releases, although those pins are not the latest patch releases.
+
+### Package-manager and execution patterns
+
+- The 28 Node 22 workflows and the TWA workflow primarily run repository-owned `node scripts/*.mjs` validators. No dependency-install step was identified in the sampled workflow files; most validation scripts are intentionally lightweight and operate directly on checked-out source/assets.
+- The Studio HQ auth workflow uses Bun for deterministic installation: `bun install --frozen-lockfile --ignore-scripts`; it then runs the HQ test suite/build through npm scripts and Wrangler via `npx`.
+- The remaining four Studio HQ workflows use the older checkout/setup-node action pins and run their dedicated tests/validation scripts. Their individual YAML files were inspected; they do not share the auth workflow's Bun install step.
+- Browser runtime workflows execute dedicated validation scripts; inspect their embedded setup steps before changing browser tooling or caching. Current workflows explicitly disable setup-node package-manager caching where configured, avoiding implicit cache behavior.
+
+### Verified current action releases and candidate immutable SHAs
+
+Official upstream release pages identify checkout v7.0.1 and setup-node v7.1.0 as latest at review time. Their exact tag refs were resolved through the GitHub API to immutable commit SHAs:
+
+- `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` — v7.0.1.
+- `actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1` — v7.1.0.
+
+These are verified candidate pins, not applied changes. Checkout v5 and later use the Node 24 action runtime; setup-node v5 and later also use Node 24. Checkout v7 changes fork-PR safety defaults for `pull_request_target` and `workflow_run`; none of the 34 inventoried workflows declares either trigger. Setup-node v7 migrates internals to ESM and changes the no-token `NODE_AUTH_TOKEN` fallback; review release notes and runner compatibility in a separate maintenance PR before applying.
+
+Official references:
+- https://github.com/actions/checkout/releases
+- https://github.com/actions/setup-node/releases
+- https://github.com/actions/checkout
+- https://github.com/actions/setup-node
+- https://nodejs.org/en/about/previous-releases
+- https://nodejs.org/en/about/eol
+
+### CI maintenance recommendations
+
+1. Prepare a separate, narrowly scoped PR to update the five Studio HQ workflows from checkout v4.2.2/setup-node v4.4.0 to reviewed Node-24-compatible immutable pins. Consider updating all 34 to the latest verified patch SHAs only after release-note compatibility review; do not mix this with PR #51.
+2. Move `twa-engineering.yml` from Node 20 to a supported LTS (Node 22 or 24) after running its validation and verifying any Android tooling compatibility. Node 20 is EOL and no longer receives upstream security fixes.
+3. Preserve `contents: read` least-privilege permissions. Keep `persist-credentials: false` where the workflow does not need authenticated git operations.
+4. Keep production live-probe workflows scheduled/manual or main-scoped as currently designed; avoid accidentally adding them to unrelated pull-request checks.
+5. After changes, run the full workflow matrix, including browser and Studio HQ jobs, and inspect action-runtime warnings. No workflow file has been changed in PR #51 as part of this inventory.
+
+### Inventory completeness and limitations
+
+- Directory enumeration returned exactly 34 workflow files; all 34 were individually fetched and reviewed for the matrix above.
+- The summary is a configuration inventory, not a runtime test of all workflows. It does not prove every scheduled workflow currently succeeds or that every browser dependency works on a different Node runtime.
+- No GitHub Actions workflow was edited or triggered manually for this review.
+- PR #51 remains Draft and unmerged.
