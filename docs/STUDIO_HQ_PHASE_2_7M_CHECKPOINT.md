@@ -674,3 +674,33 @@ Official documentation confirms:
 Documentation correction commit: `66b17151743980760a6fadaefb95bb48bc44bbff`.
 
 This review does not authorize an export or restore. The next safe step is to establish the approved encrypted backup destination and obtain explicit approval for a scheduled export; do not execute it without that approval.
+
+
+## 26. Phase 2.7R — Cloudflare Workers Rate Limiting namespace semantics recheck — 15 November 2026
+
+### Current Cloudflare documentation findings
+
+The Cloudflare Workers Rate Limiting documentation (updated 12 November 2026) confirms:
+- `namespace_id` must be a positive integer represented as a string and must be unique within the Cloudflare account.
+- Two bindings sharing a namespace ID on the same account share counters for a given key within each Cloudflare location, including across different Workers.
+- Distinct independent bindings should use distinct namespace IDs.
+- Rate Limiting bindings are not currently visible in the Cloudflare dashboard.
+- The API specification search returned the legacy zone-level `/zones/{zone_id}/rate_limits` endpoints, but no account-level inventory endpoint for Workers Rate Limiting binding namespace IDs.
+- Counters are approximate and eventually consistent within each Cloudflare location; different locations maintain separate counts. This mechanism is not a strict global quota and requests may exceed the configured threshold.
+
+### PR #51 configuration assessment
+
+The current `wrangler.jsonc` uses three positive integer namespace IDs:
+- `HQ_SESSION_LIMITER`: `620261114`, 10 requests / 60 seconds.
+- `HQ_WRITE_LIMITER`: `620261115`, 30 requests / 60 seconds.
+- `HQ_RATE_LIMITER`: `620261116`, 120 requests / 60 seconds.
+
+The configured 60-second period is supported by the Workers Rate Limiting API. The source configuration alone does not prove the three IDs are unused elsewhere in the account.
+
+### Release decision
+
+Account-wide namespace uniqueness remains **unverified**. The currently available Cloudflare API/dashboard surfaces inspected do not provide an authoritative inventory of Workers Rate Limiting namespace IDs. Do not claim uniqueness based only on the three IDs being distinct within this repository.
+
+Treat these bindings as approximate per-location abuse controls, not strict global quotas. Keep deployment gated until the owner has an authoritative account-wide uniqueness check or explicitly approves a documented namespace allocation process with adequate evidence.
+
+No Worker settings, bindings, namespace IDs, deployments, D1 data, or Cloudflare resources were changed during this review.
