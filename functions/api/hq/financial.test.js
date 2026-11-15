@@ -260,3 +260,34 @@ test('payment creation excludes archived payments when checking remaining invoic
     assert.equal((await second.json()).payment.amount_minor,20000);
   } finally {db.close();}
 });
+
+
+test('invoice balance excludes refunds belonging to archived payments',async()=>{
+  const db=new TestD1();
+  try {
+    seed(db);
+    const created=await call(db,request('/api/hq/invoices','POST',{
+      client_id:'client-1',project_id:'project-1',due_on:'2027-01-01',
+      items:[{...line,tax_rate_bps:0,unit_price_minor:20000}]
+    }),['invoices']);
+    assert.equal(created.status,201);
+    const invoice=(await created.json()).invoice;
+    const issued=await call(db,request('/api/hq/invoices/'+invoice.id+'/issue','POST',{}),['invoices',invoice.id,'issue']);
+    assert.equal(issued.status,200);
+    const paymentResponse=await call(db,request('/api/hq/invoices/'+invoice.id+'/payments','POST',{
+      amount_minor:5000,payment_method:'upi'
+    },{'idempotency-key':'archived-refund-payment-01'}),['invoices',invoice.id,'payments']);
+    assert.equal(paymentResponse.status,201);
+    const payment=(await paymentResponse.json()).payment;
+    const refund=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{
+      amount_minor:2000,reason:'Partial refund'
+    },{'idempotency-key':'archived-refund-key-0001'}),['payments',payment.id,'refunds']);
+    assert.equal(refund.status,201);
+
+    db.sqlite.prepare('UPDATE payments SET archived_at=? WHERE id=?').run('2026-11-11T10:00:00.000Z',payment.id);
+    const detail=await call(db,request('/api/hq/invoices/'+invoice.id),['invoices',invoice.id]);
+    const result=(await detail.json()).invoice;
+    assert.equal(result.amount_paid_minor,0);
+    assert.equal(result.status,'issued');
+  } finally {db.close();}
+});
