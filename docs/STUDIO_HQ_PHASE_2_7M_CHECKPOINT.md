@@ -254,3 +254,13 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Account-wide uniqueness of namespace IDs `620261114`, `620261115`, `620261116` remains unverified. Do not inspect Kaushal customer Worker configuration. Keep this as an owner-level pre-deployment prerequisite.
 - Full evidence, limitations and conclusion documented in `docs/ci-and-bundle-maintenance-review.md` (commit `beae3b39978e7d7a528859a00371781b26611d81`).
 - No Worker upload/deployment/settings write, D1 write/migration, or live HQ API request was performed.
+
+### Controlled rate-limit deployment preflight documented — 15 November 2026
+
+- Added Section 15 to `docs/ci-and-bundle-maintenance-review.md`, defining four owner-reviewed gates: source/CI freeze, D1/application safety, explicit deployment approval/execution, and rollback readiness.
+- The procedure requires exact source SHA, account-wide namespace uniqueness attestation without inspecting Kaushal resources, tested disposable D1 restore, explicit Worker/environment approval, version/deployment provenance, active binding metadata verification, non-mutating smoke tests, and a pre-approved rollback plan.
+- Current release gates remain unmet: namespace uniqueness unverified; D1 restore drill not performed; PR base drift remains; no deployment approval; rollback plan not recorded.
+- This is documentation only. No Worker upload/version/deployment, traffic change, binding/settings mutation, D1 export/restore/write/migration, live HQ endpoint request, or customer/personal-site inspection occurred.
+- Review document commit: `b40356301d8f3116c3eae9bf9f33674d4973a6ee`.
+
+**Continuation state:** PR #51 must remain Draft and unmerged. Next safe work is read-only reconciliation of PR base drift and review of the current main-branch continuity document; do not update/rebase the PR branch without explicit owner direction.
