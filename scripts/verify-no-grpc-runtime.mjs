@@ -8,7 +8,7 @@ if (roots.length === 0) {
 }
 
 const forbidden = [
-  /@grpc\\/grpc-js/i,
+  new RegExp('@grpc/grpc-js', 'i'),
   /requireClientCertificate/i,
   /getAuthContext/i,
   /ServerCredentials/i
