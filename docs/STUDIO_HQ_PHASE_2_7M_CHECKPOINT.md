@@ -213,3 +213,13 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Read the new main-branch continuity record. It establishes GitHub repository state as the primary source of truth, reiterates project boundaries and explicit approval gates, and records a separate dated Phase 2.7L / PR #49 deployment-readiness audit. That document's dated PR #49 and deployment findings must be independently refreshed before use; do not substitute its 14 November snapshot for current live state or conflate PR #49 with PR #51.
 - No branch update, rebase, merge, or cherry-pick was performed. PR #51 remains Draft and unmerged. Do not attempt to make it mergeable automatically; first determine why GitHub reports `mergeable: false` and review the new main commit's context.
 - The current docs-only commits have no associated workflow runs returned by the PR-triggered workflow-run endpoint. Do not claim new CI coverage for these documentation commits.
+
+
+### Analytics script diagnosis and bounded CI proposal — 15 November 2026
+
+- Re-fetched PR #51 current head and full repository tree. PR remains open, Draft, unmerged, mergeable; current head at start of this task was `f39f7ca92c88da2bba70ec96e906ea7882148021`.
+- Located the exact analytics source at `assets/js/analytics.js` and confirmed `index.html` references it as a classic deferred script. Source-level review confirms it uses `window.dataLayer`, `window.gtag`, `window.jawedTrack`, a one-time guard, and delayed/idle injection of the external Google tag. The Vite warning is consistent with a classic external script not being bundled as a module; no evidence yet of a runtime defect. Do not convert it to `type=module` just to silence the warning. Full diagnosis and acceptance criteria are in `docs/ci-and-bundle-maintenance-review.md`.
+- Prepared a bounded CI maintenance proposal: update only the five Studio HQ workflow files from checkout v4.2.2/setup-node v4.4.0 to the already-used immutable checkout v5.1.0/setup-node v7.0.0 pins, keeping runtime, scripts, permissions, triggers and job behavior unchanged. Handle TWA Node 20 to Node 24.12.0 as a separate validated change. No workflow files changed.
+- Documentation update commit: `fcbef1ee086020b524f3f09bb680f50907264261`.
+- No build or browser tests were run; no analytics network request was made; no workflows were triggered; no application/workflow code changed. Docs-only CI is not claimed.
+- Next: inspect live Studio HQ Worker/D1 status read-only only if a safe current query can clarify the existing release-readiness blockers; continue to keep PR #51 Draft/unmerged and avoid Cloudflare/D1 mutations. A separate CI maintenance branch/PR is deferred until the current PR disposition is decided.
