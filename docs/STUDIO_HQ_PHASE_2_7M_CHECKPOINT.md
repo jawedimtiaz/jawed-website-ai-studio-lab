@@ -62,7 +62,7 @@ The following observations were obtained after the original checkpoint was writt
 
 ### Code safeguard committed
 
-- Updated `functions/lib/hqRateLimit.js`: if `ENVIRONMENT` is `lab` or `production` and no supported limiter binding is present, the request now fails closed with HTTP 503 `RATE_LIMIT_UNAVAILABLE`. Isolated local/test environments without those deployed environment values retain the existing pass-through behavior.
+- Updated `functions/lib/hqRateLimit.js`: if `ENVIRONMENT` is `lab` or `production` and no supported limiter binding is present, the request now fails closed with HTTP 503 `RATE_LIMIT_UNAVAILABLE`. A subsequent hardening commit makes explicit `ENVIRONMENT=test` the only no-binding pass-through case; missing or unexpected environment values also fail closed.
 - Added a regression test in `functions/lib/hqRateLimit.test.js` for missing bindings in both deployed environments.
 - Commits: `36760f52d1988376351f6ad5184b07581c19520c` (middleware) and `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03` (test).
 - On exact head `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03`, all 14 listed GitHub Actions workflow runs completed successfully. The `hq-auth-unit-tests` job reports 131 tests, and its TypeScript/production build step succeeded.
@@ -82,3 +82,13 @@ The following observations were obtained after the original checkpoint was writt
 - CI success validates the repository checks; it does not activate the bindings or prove the live Worker has the PR's source.
 - Do not inspect or modify the Kaushal Worker to establish namespace uniqueness. Resolve the account-wide uniqueness question through an authorized account-level inventory that does not disclose or alter customer configuration, or choose a safe account-wide namespace allocation with explicit owner approval.
 - PR #51 remains Draft, open, unmerged. No merge or deployment is authorized by this checkpoint.
+
+
+### Follow-up fail-closed default hardening — 15 November 2026
+
+- Review identified that checking only for `ENVIRONMENT=lab` or `production` could still allow a missing or unexpected environment value to bypass rate limiting.
+- Tightened `functions/lib/hqRateLimit.js`: no supported binding now returns 503 by default. Pass-through is permitted only when `ENVIRONMENT` is explicitly `test`.
+- Updated `functions/lib/hqRateLimit.test.js` to cover missing, null, unrelated, staging, lab, and production environment cases, and to mark the relevant isolated fixtures explicitly as test environments.
+- Commits: `64eb9232e85d1ce2017e2976380a802f68408349` (fail-closed default) and `7e4b914b60af3be694c8f9cd72ea089d01e03d59` (regression tests).
+- The 14/14 CI result reported above applies to the earlier head `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03`, not these follow-up changes.
+- CI for the new head must complete before the strengthened behavior is considered verified. No deployment, merge, Cloudflare settings write, or D1 operation was performed.
