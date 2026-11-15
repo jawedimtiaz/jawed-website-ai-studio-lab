@@ -233,3 +233,12 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Worker deployment GET still shows 13 records. Latest active deployment `739b15b1-22b5-499c-a738-7830cb394579` routes 100% to version 13 `cf1dba45-c28c-4865-9571-dc508f6863d2`, created 2026-11-13T17:51:34.266866Z. Version 13 still has no source commit SHA annotation; exact source provenance remains unverified. Version 12 has commit annotation `590d562b8f2a5547929a5f0132d5988c53836b9b` (PR #43).
 - Full metadata interpretation and limitations documented in `docs/ci-and-bundle-maintenance-review.md` (commit `9b3148d247725d3ab2554f047cc7dd825f6feb31`).
 - No Cloudflare writes, D1 query/export/import/restore/migration, Worker upload or deployment occurred. Kaushal and personal website resources were not inspected.
+
+
+### Live D1 schema / migration / integrity recheck — 15 November 2026
+
+- Read-only D1 catalog query returned 25 tables (including `_cf_KV` and `d1_migrations`) and two audit-log append-only triggers. The table names include `assets`, `activity_notes`, CRM, projects, approvals/QA, and financial-management structures.
+- Live migration ledger still lists exactly `0001_studio_hq_schema.sql` (2026-11-06 05:02:32) and `0002_financial_management.sql` (2026-11-11 06:10:07). The separate root-level `0002_hq_owner_authorization_hardening.sql` is not recorded as applied; do not run it without compatibility review.
+- `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows. Each query's Cloudflare metadata reported `changed_db: false` and `rows_written: 0`.
+- No application/customer/financial row contents were queried. No writes, export, backup, restore or migration performed. This does not count as a backup/restore drill.
+- Full result and scope limitations documented in `docs/ci-and-bundle-maintenance-review.md` (commit `f117c8e0e815afcdda43dcf83193598eda2045b6`).
