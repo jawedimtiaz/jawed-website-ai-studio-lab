@@ -50,6 +50,40 @@ jobs:
           node-version: 24.12.0
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Report dependency audit findings
+        shell: bash
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit-report.json" || true
+          node --input-type=commonjs - "$RUNNER_TEMP/npm-audit-report.json" <<'NODE'
+          const fs = require('node:fs');
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          } catch (error) {
+            console.error('Dependency audit report could not be parsed:', error.message);
+            process.exit(0);
+          }
+          const counts = report.metadata?.vulnerabilities || {};
+          console.log('Dependency audit summary:', JSON.stringify(counts));
+          const vulnerabilities = Object.entries(report.vulnerabilities || {});
+          if (vulnerabilities.length === 0) {
+            console.log('No package-level vulnerabilities were reported.');
+          }
+          for (const [name, item] of vulnerabilities) {
+            const via = (item.via || []).map(entry =>
+              typeof entry === 'string' ? entry : entry.name || entry.title || 'advisory'
+            );
+            console.log(JSON.stringify({
+              package: name,
+              severity: item.severity,
+              direct: item.isDirect,
+              range: item.range,
+              via,
+              fixAvailable: item.fixAvailable
+            }));
+          }
+          NODE
       - name: Run HQ authentication tests
         run: npm run test:hq-auth
       - name: TypeScript and production build
