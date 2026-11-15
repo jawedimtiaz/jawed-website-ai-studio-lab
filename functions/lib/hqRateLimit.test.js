@@ -326,7 +326,7 @@ test('clients endpoint enforces UID rate limiting on mutations but permits reads
     db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
       .run(identity.uid, identity.email);
     const limiter = makeLimiter(false);
-    const env = { HQ_DB: db, HQ_WRITE_LIMITER: limiter };
+    const env = { ENVIRONMENT: 'test', HQ_DB: db, HQ_WRITE_LIMITER: limiter };
 
     // Read should pass through without calling write limiter
     const getRes = await handleAuthorizedHqClients({
@@ -355,6 +355,7 @@ test('clients endpoint enforces UID rate limiting on mutations but permits reads
 
     // Mutation should fail closed with 503 when write limiter throws
     const failingEnv = {
+      ENVIRONMENT: 'test',
       HQ_DB: db,
       HQ_WRITE_LIMITER: {
         limit: async () => {
@@ -377,6 +378,7 @@ test('clients endpoint enforces UID rate limiting on mutations but permits reads
 
     // Mutation should fail closed with 503 when write limiter binding is null
     const nullLimiterEnv = {
+      ENVIRONMENT: 'test',
       HQ_DB: db,
       HQ_WRITE_LIMITER: null
     };
@@ -403,7 +405,7 @@ test('projects and release endpoints enforce UID write rate limiting', async () 
     db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
       .run(identity.uid, identity.email);
     const limiter = makeLimiter(false);
-    const env = { HQ_DB: db, HQ_WRITE_LIMITER: limiter };
+    const env = { ENVIRONMENT: 'test', HQ_DB: db, HQ_WRITE_LIMITER: limiter };
 
     const projRes = await handleAuthorizedHqProjects({
       request: new Request('https://lab.jawed.co.in/api/hq/projects', {
