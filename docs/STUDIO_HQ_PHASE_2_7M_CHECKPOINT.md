@@ -92,3 +92,57 @@ The following observations were obtained after the original checkpoint was writt
 - Commits: `64eb9232e85d1ce2017e2976380a802f68408349` (fail-closed default) and `7e4b914b60af3be694c8f9cd72ea089d01e03d59` (regression tests).
 - The 14/14 CI result reported above applies to the earlier head `cd6c5da738f08447c6bfcdd33efc8ccb1d407b03`, not these follow-up changes.
 - CI for the new head must complete before the strengthened behavior is considered verified. No deployment, merge, Cloudflare settings write, or D1 operation was performed.
+
+
+## Phase 2.7N — latest-head CI verification and continuation checkpoint — 15 November 2026
+
+### GitHub PR state rechecked
+
+- PR [#51](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/51) remains open, Draft, mergeable, and unmerged.
+- Branch: `fix/phase-2-7m-canonical-d1-compatibility-20261114`.
+- Exact PR head inspected: `90040797cca8e26234446e207f51d180efbeb342`.
+- The PR description still contains historical status notes from earlier commits. This section records the latest evidence and supersedes older pending-CI statements where they refer to earlier heads.
+
+### Latest-head CI evidence
+
+- The commit-scoped GitHub Actions query returned 13 pull-request workflow runs for this exact head; all 13 returned runs were completed with conclusion `success`. No returned run was pending or failed.
+- Studio HQ Firebase Auth Tests run: [43738084618](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43738084618).
+- Studio HQ job: `hq-auth-unit-tests`, job ID `132885017632`, completed successfully.
+- The downloaded job log confirms **131 tests, 131 passed, 0 failed**.
+- TypeScript and production build step completed successfully.
+- Wrangler Worker configuration validation completed using `npx wrangler deploy --dry-run --outdir .wrangler-dry-run`; the log ended with `--dry-run: exiting now.`. This did not publish a Worker version.
+- The gRPC artifact regression check inspected 45 text build artifacts and found no `@grpc/grpc-js` or gRPC server-auth markers. The workflow itself correctly warns that this is not proof that every upstream advisory scenario is inapplicable.
+- Career Match Browser Runtime Gate completed successfully.
+- Combined-status endpoint returned no status entries; workflow-run and job evidence above are the evidence used here.
+
+### Non-blocking CI warnings observed
+
+- Vite reports that `/assets/js/analytics.js` cannot be bundled without a `type="module"` attribute.
+- Vite reports large chunks (including WorkPage and the main bundle).
+- GitHub Actions warns that the pinned checkout/setup-node actions target Node.js 20 and are being forced to run on Node.js 24.
+- Node emits a `punycode` deprecation warning and experimental SQLite warnings during tests.
+- These warnings did not fail this run. Keep them as separate maintenance work; do not mix unrelated changes into the current security/remediation patch without a scoped review.
+
+### Current release blockers remain unchanged
+
+- The live Worker was previously observed without `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER`. The PR code fails closed if required bindings are absent, so deploying before the live bindings are configured would cause protected HQ requests to return HTTP 503.
+- Account-wide uniqueness of namespace IDs `620261114`, `620261115`, and `620261116` remains unverified. Do not inspect the Kaushal customer Worker to answer this.
+- The active Cloudflare Worker version's exact source commit remains unverified; its metadata had no source SHA annotation.
+- GitHub `main` remains unprotected based on the last read-only branch metadata check. No branch protection settings were changed.
+- The Firebase/gRPC dependency advisory exception remains narrowly scoped; no forced override, major Firebase downgrade, or automatic dependency upgrade was applied.
+- D1 backup/export and restore have not been tested. The observed Time Travel bookmark is not evidence of a tested recovery procedure.
+- These are release-readiness issues, not failures in the latest PR CI run.
+
+### Actions and safety
+
+- This checkpoint update is documentation-only and is being committed to the existing PR branch.
+- No merge, deployment, Worker settings change, D1 migration/write, branch-protection change, personal-site change, or Kaushal-project inspection/change is authorized or performed.
+- Keep PR #51 Draft and unmerged pending separate owner approval and resolution of release prerequisites.
+
+### Next continuation tasks
+
+1. Prepare a documented, no-write D1 backup/recovery runbook and clearly mark the restore drill as not yet performed.
+2. Review the existing workflow action pins and Node 20 deprecation warning as a separate maintenance proposal; do not modify workflow pins until compatibility is checked.
+3. Review Vite chunk composition and propose targeted code-splitting only if it can be done without broad unrelated refactoring.
+4. Continue read-only release-readiness reconciliation. Recheck live evidence before any future release recommendation.
+5. Stop before any merge, deployment, live Cloudflare configuration change, D1 write/migration, or branch-protection mutation unless the user explicitly approves that specific action.
