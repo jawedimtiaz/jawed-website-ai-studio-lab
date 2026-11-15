@@ -206,3 +206,30 @@ Official references:
 - The summary is a configuration inventory, not a runtime test of all workflows. It does not prove every scheduled workflow currently succeeds or that every browser dependency works on a different Node runtime.
 - No GitHub Actions workflow was edited or triggered manually for this review.
 - PR #51 remains Draft and unmerged.
+
+
+## 9. Nested Three.js lazy-loading design review — 15 November 2026
+
+Additional source inspection confirms:
+
+- `src/App.tsx` already lazy-loads `WorkPage` and wraps route rendering in `Suspense` with an accessible page loading fallback.
+- The route tree is also wrapped in `RouteErrorBoundary` and a top-level `ErrorBoundary`; the shared error boundary explicitly detects failed dynamic imports/chunk loads and provides refresh/retry UI.
+- `src/pages/WorkPage.tsx` imports `HardwareShowcase3D` at module scope but only renders it inside the overview-tab branch. Experience, skills, certifications, and projects tabs do not render the showcase.
+- `HardwareShowcase3D.tsx` imports Three.js, `RoomEnvironment`, and `OrbitControls` plus the icon package. The Three.js dependencies therefore enter the Work route's module graph before the user opens the showcase.
+
+### Proposed bounded implementation (not applied)
+
+1. Replace the static import in `WorkPage.tsx` with a nested `React.lazy(() => import(...))` import.
+2. Wrap only the showcase element in a local `Suspense` boundary, with a compact, accessible fallback that preserves the section's approximate layout and clearly says the interactive 3D model is loading. Avoid showing the full-page fallback for a nested component load.
+3. Keep the existing route-level `WorkPage` lazy import unchanged.
+4. Rely on the existing route error boundary for chunk-load/render failures, but verify the exact boundary nesting and reset behavior during implementation. Do not add duplicate global error handlers.
+5. Ensure the dynamic import occurs only in the overview-tab render branch; navigation to Experience, Skills, Certifications, and Projects should not fetch the Three.js chunk.
+
+### Required evidence before acceptance
+
+- Run the same production build before and after and record exact output sizes for the Work route chunk, Three.js/vendor chunk, main entry, and gzip sizes if available.
+- Inspect the generated manifest/chunk graph to prove Three.js is no longer in the initial Work route chunk and the 3D module is a separate deferred chunk.
+- Use a browser runtime check on desktop and mobile: load each Work subroute, verify no 3D chunk request for non-overview tabs, open overview and verify the 3D scene renders, exercise rack/motherboard controls, resize, and simulate a failed dynamic import if feasible.
+- Verify fallback accessibility (status announcement, readable text, no layout collapse) and error recovery (refresh/retry). Confirm no regression to route navigation or page-level error boundary.
+
+This remains a design review only. No local build was executed, no before/after measurements exist, and no source code was changed. The optimization is not yet validated and must be a separate change from PR #51.
