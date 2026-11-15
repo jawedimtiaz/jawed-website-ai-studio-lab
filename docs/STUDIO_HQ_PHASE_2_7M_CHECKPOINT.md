@@ -223,3 +223,13 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Documentation update commit: `fcbef1ee086020b524f3f09bb680f50907264261`.
 - No build or browser tests were run; no analytics network request was made; no workflows were triggered; no application/workflow code changed. Docs-only CI is not claimed.
 - Next: inspect live Studio HQ Worker/D1 status read-only only if a safe current query can clarify the existing release-readiness blockers; continue to keep PR #51 Draft/unmerged and avoid Cloudflare/D1 mutations. A separate CI maintenance branch/PR is deferred until the current PR disposition is decided.
+
+
+### Fresh Cloudflare Worker / D1 metadata check — 15 November 2026
+
+- Read-only Cloudflare GETs rechecked only the Studio HQ Worker and its dedicated D1 database. Worker settings returned exactly five bindings: AI, ASSETS, CANONICAL_ORIGIN, ENVIRONMENT and HQ_DB. The HQ_DB ID matches the dedicated D1 database ID `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- The current Worker settings response does not list HQ_SESSION_LIMITER, HQ_WRITE_LIMITER or HQ_RATE_LIMITER. Rate-limit binding absence is confirmed in current metadata; live request enforcement was not tested.
+- D1 metadata: `jawed-studio-hq`, APAC, production version, 401408 bytes, read replication disabled. No SQL, schema rows, migration ledger or customer data was read in this pass.
+- Worker deployment GET still shows 13 records. Latest active deployment `739b15b1-22b5-499c-a738-7830cb394579` routes 100% to version 13 `cf1dba45-c28c-4865-9571-dc508f6863d2`, created 2026-11-13T17:51:34.266866Z. Version 13 still has no source commit SHA annotation; exact source provenance remains unverified. Version 12 has commit annotation `590d562b8f2a5547929a5f0132d5988c53836b9b` (PR #43).
+- Full metadata interpretation and limitations documented in `docs/ci-and-bundle-maintenance-review.md` (commit `9b3148d247725d3ab2554f047cc7dd825f6feb31`).
+- No Cloudflare writes, D1 query/export/import/restore/migration, Worker upload or deployment occurred. Kaushal and personal website resources were not inspected.
