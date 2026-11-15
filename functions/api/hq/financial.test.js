@@ -136,8 +136,9 @@ test('financial APIs reject unsupported currency and unknown fields',async()=>{
 });
 
 test('Worker routes financial endpoints through Studio HQ authorization and security headers',async()=>{
+  const env = { HQ_RATE_LIMITER: { limit: async () => ({ success: true }) } };
   for(const path of ['/api/hq/quotations','/api/hq/invoices','/api/hq/payments']) {
-    const response=await worker.fetch(new Request('https://lab.jawed.co.in'+path),{}, {});
+    const response=await worker.fetch(new Request('https://lab.jawed.co.in'+path),env, {});
     assert.equal(response.status,401);
     assert.equal(response.headers.get('cache-control'),'no-store, private, max-age=0');
     assert.equal(response.headers.get('x-frame-options'),'DENY');
