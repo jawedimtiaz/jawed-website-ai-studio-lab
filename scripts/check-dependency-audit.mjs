@@ -46,9 +46,9 @@ for (const [packageName, item] of entries) {
     .filter(Boolean);
   const dependencyLinks = via.filter(value => typeof value === 'string');
 
-  if (advisoryIds.includes(allowedAdvisory)) observedAllowedAdvisory = true;
+  if (advisoryIds.some(id => id.toLowerCase() === allowedAdvisory.toLowerCase())) observedAllowedAdvisory = true;
 
-  const onlyExpectedAdvisory = advisoryIds.every(id => id.toUpperCase() === allowedAdvisory);
+  const onlyExpectedAdvisory = advisoryIds.every(id => id.toLowerCase() === allowedAdvisory.toLowerCase());
   const onlyExpectedDependencyLinks = dependencyLinks.every(name => expectedPackages.has(name));
 
   if (
