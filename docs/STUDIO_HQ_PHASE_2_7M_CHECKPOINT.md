@@ -242,3 +242,15 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - `PRAGMA quick_check` returned `ok`; `PRAGMA foreign_key_check` returned no rows. Each query's Cloudflare metadata reported `changed_db: false` and `rows_written: 0`.
 - No application/customer/financial row contents were queried. No writes, export, backup, restore or migration performed. This does not count as a backup/restore drill.
 - Full result and scope limitations documented in `docs/ci-and-bundle-maintenance-review.md` (commit `f117c8e0e815afcdda43dcf83193598eda2045b6`).
+
+
+### Rate-limit dry-run vs active Worker version reconciliation — 15 November 2026
+
+- Retrieved the exact successful GitHub Actions job log for run `43738084618`, job `hq-auth-unit-tests` (job ID `132885017632`) on application-code commit `90040797cca8e26234446e207f51d180efbeb342`.
+- The actual `npx wrangler deploy --dry-run --outdir .wrangler-dry-run` output listed all three rate-limit bindings with intended limits: HQ_SESSION_LIMITER 10/60s, HQ_WRITE_LIMITER 30/60s, HQ_RATE_LIMITER 120/60s, then exited with `--dry-run: exiting now.` This proves source config recognition in dry-run only; it does not upload or deploy bindings.
+- Fetched the exact active Cloudflare version 13 resource `cf1dba45-c28c-4865-9571-dc508f6863d2`. Its API `resources.bindings` array and current settings response both list only AI, ASSETS, CANONICAL_ORIGIN, ENVIRONMENT and HQ_DB. All three rate-limit binding names are absent from the active-version response. 100% traffic remains on version 13.
+- Cloudflare docs (updated 2026-11-12) say rate-limit bindings are not currently visible in the dashboard. The evidence here is from the Cloudflare API active-version resource, not dashboard UI. API omission remains a discrepancy, not proof of exact runtime behavior; no live endpoint request or controlled deployment was performed.
+- Current branch code inspection confirms session limiter is checked before owner auth; general limiter after owner auth; CRM/project/release/financial handlers apply general limits after auth and write limits on POST/PATCH. Missing bindings fail closed by default except explicit test environment fixtures.
+- Account-wide uniqueness of namespace IDs `620261114`, `620261115`, `620261116` remains unverified. Do not inspect Kaushal customer Worker configuration. Keep this as an owner-level pre-deployment prerequisite.
+- Full evidence, limitations and conclusion documented in `docs/ci-and-bundle-maintenance-review.md` (commit `beae3b39978e7d7a528859a00371781b26611d81`).
+- No Worker upload/deployment/settings write, D1 write/migration, or live HQ API request was performed.
