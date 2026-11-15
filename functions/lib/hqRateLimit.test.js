@@ -116,6 +116,17 @@ test('checkHqRateLimit passes through safely when no binding is present', async 
   assert.equal(writeResult.ok, true);
 });
 
+test('checkHqRateLimit fails closed when deployed environment has no supported binding', async () => {
+  const req = new Request('https://lab.jawed.co.in/api/hq/session');
+
+  for (const environment of ['lab', 'production']) {
+    const result = await checkHqRateLimit(req, { ENVIRONMENT: environment }, { type: 'session' });
+    assert.equal(result.ok, false, environment + ' must not silently bypass rate limiting');
+    assert.equal(result.response.status, 503);
+    assert.deepEqual(await result.response.json(), { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
+  }
+});
+
 test('checkHqRateLimit returns 503 RATE_LIMIT_UNAVAILABLE when binding is explicitly null', async () => {
   const req = new Request('https://lab.jawed.co.in/api/hq/session');
   const result = await checkHqRateLimit(req, { HQ_SESSION_LIMITER: null }, { type: 'session' });
