@@ -54,7 +54,9 @@ jobs:
           node-version: 24.12.0
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-      - name: Install dependencies from committed lockfile
+      - name: Update Vite to the latest compatible patched release
+        run: bun update vite --lockfile-only
+      - name: Install dependencies from generated lockfile candidate
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Capture dependency audit report from committed lockfile
         shell: bash
@@ -64,7 +66,6 @@ jobs:
             echo "bun audit did not produce a report (exit ${audit_exit:-0})."
             exit 1
           fi
-          node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log("Bun audit JSON keys:", Object.keys(r)); console.log("Bun audit top-level sample:", JSON.stringify(r).slice(0,1800));' "$RUNNER_TEMP/bun-audit-report.json"
           node scripts/check-dependency-audit.mjs "$RUNNER_TEMP/bun-audit-report.json"
       - name: Report resolved Firebase and gRPC dependency versions
         shell: bash
@@ -78,3 +79,11 @@ jobs:
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
       - name: Verify gRPC server-auth code is absent from production artifacts
         run: node scripts/verify-no-grpc-runtime.mjs dist .wrangler-dry-run
+      - name: Upload generated lockfile candidate for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: studio-hq-bun-lock-candidate
+          path: bun.lock
+          if-no-files-found: error
+          retention-days: 1
