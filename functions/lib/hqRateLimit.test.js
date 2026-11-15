@@ -504,8 +504,9 @@ test('zero-row updates in CRM and projects do not create phantom audit logs', as
 });
 
 test('Worker routes /api/hq/approvals and /api/hq/qa directly to HQ authorization', async () => {
+  const env = { HQ_RATE_LIMITER: { limit: async () => ({ success: true }) } };
   for (const path of ['/api/hq/approvals', '/api/hq/qa']) {
-    const res = await worker.fetch(new Request('https://lab.jawed.co.in' + path), {}, {});
+    const res = await worker.fetch(new Request('https://lab.jawed.co.in' + path), env, {});
     assert.equal(res.status, 401);
     assert.equal(res.headers.get('content-type'), 'application/json; charset=utf-8');
     assert.equal(res.headers.get('cache-control'), 'no-store, private, max-age=0');
