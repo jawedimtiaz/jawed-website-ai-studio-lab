@@ -103,25 +103,27 @@ test('hqRateLimitUnavailableResponse builds RFC-compliant HTTP 503 response', as
 
 test('checkHqRateLimit passes through safely when no binding is present', async () => {
   const req = new Request('https://lab.jawed.co.in/api/hq/session');
-  const result = await checkHqRateLimit(req, {}, { type: 'session' });
+  const result = await checkHqRateLimit(req, { ENVIRONMENT: 'test' }, { type: 'session' });
   assert.equal(result.ok, true);
 
   const resultNull = await checkHqRateLimit(req, null, { type: 'session' });
-  assert.equal(resultNull.ok, true);
+  assert.equal(resultNull.ok, false);
+  assert.equal(resultNull.response.status, 503);
 
-  const resultUnrelated = await checkHqRateLimit(req, { OTHER_VAR: 'val' }, { type: 'session' });
+  const resultUnrelated = await checkHqRateLimit(req, { ENVIRONMENT: 'test', OTHER_VAR: 'val' }, { type: 'session' });
   assert.equal(resultUnrelated.ok, true);
 
-  const writeResult = await checkHqRateLimit(req, {}, { type: 'write', uid: 'owner-1' });
+  const writeResult = await checkHqRateLimit(req, { ENVIRONMENT: 'test' }, { type: 'write', uid: 'owner-1' });
   assert.equal(writeResult.ok, true);
 });
 
 test('checkHqRateLimit fails closed when deployed environment has no supported binding', async () => {
   const req = new Request('https://lab.jawed.co.in/api/hq/session');
 
-  for (const environment of ['lab', 'production']) {
-    const result = await checkHqRateLimit(req, { ENVIRONMENT: environment }, { type: 'session' });
-    assert.equal(result.ok, false, environment + ' must not silently bypass rate limiting');
+  for (const environment of ['lab', 'production', undefined, 'staging']) {
+    const env = environment ? { ENVIRONMENT: environment } : {};
+    const result = await checkHqRateLimit(req, env, { type: 'session' });
+    assert.equal(result.ok, false, String(environment) + ' must not silently bypass rate limiting');
     assert.equal(result.response.status, 503);
     assert.deepEqual(await result.response.json(), { ok: false, error: 'RATE_LIMIT_UNAVAILABLE' });
   }
@@ -436,7 +438,7 @@ test('unsupported HTTP methods return 405 with accurate Allow header across HQ e
   try {
     db.sqlite.prepare("INSERT INTO hq_users (uid, email, status) VALUES (?, ?, 'active')")
       .run(identity.uid, identity.email);
-    const env = { HQ_DB: db };
+    const env = { ENVIRONMENT: 'test', HQ_DB: db };
 
     const clientRes = await handleAuthorizedHqClients({
       request: new Request('https://lab.jawed.co.in/api/hq/clients', { method: 'DELETE' }),
@@ -482,7 +484,7 @@ test('zero-row updates in CRM and projects do not create phantom audit logs', as
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: 'New Name' })
       }),
-      env: { HQ_DB: db },
+      env: { ENVIRONMENT: 'test', HQ_DB: db },
       segments: ['missing-id'],
       identity
     });
