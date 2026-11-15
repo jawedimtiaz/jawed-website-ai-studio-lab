@@ -289,3 +289,53 @@ This first-pass proposal intentionally uses the same immutable action pins alrea
 - Do not apply any of these workflow edits to PR #51; create a separate maintenance branch/PR after the current PR's intended disposition is decided.
 
 No workflow files have been edited and no workflow was manually triggered. This section is a proposal, not an implementation or test result.
+
+
+## 12. Live Lab Worker / D1 metadata recheck — 15 November 2026 (read-only)
+
+A fresh Cloudflare API GET was made against only the Studio HQ Worker `jawed-website-ai-studio-lab` and its dedicated D1 database. No other Worker was inspected. All operations in this section were GET requests; no writes, uploads, deployments, SQL queries, migrations, exports, restores or configuration changes were made.
+
+### Current Worker settings response
+
+The settings API returned exactly these five bindings:
+
+- `AI`
+- `ASSETS`
+- `CANONICAL_ORIGIN = https://lab.jawed.co.in`
+- `ENVIRONMENT = lab`
+- `HQ_DB` → D1 database ID `d9ec83ea-7114-4179-af8e-a22ba5494508`
+
+The response did **not** contain `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, or `HQ_RATE_LIMITER`. Thus rate-limit bindings remain absent from the current active settings response. This is a live metadata observation, not a test of rate-limit request behavior.
+
+### Current D1 metadata
+
+GET database metadata confirms:
+- Name: `jawed-studio-hq`
+- ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`
+- Created: `2026-11-06T04:59:09.004Z`
+- Version: `production`
+- Running region: `APAC`
+- File size: `401408` bytes
+- Read replication: disabled
+
+This confirms the Worker `HQ_DB` binding and D1 database metadata still refer to the same database. It does not inspect schema rows, migration state or customer/business records.
+
+### Deployment/version metadata recheck
+
+GET deployments returned 13 deployment records. The latest deployment remains:
+- Deployment ID `739b15b1-22b5-499c-a738-7830cb394579`
+- Created `2026-11-13T17:51:34.266866Z`
+- Version `cf1dba45-c28c-4865-9571-dc508f6863d2` (version number 13)
+- Traffic allocation: 100%
+
+The latest version metadata still has no source commit SHA annotation. Version 12 remains annotated with commit `590d562b8f2a5547929a5f0132d5988c53836b9b` (PR #43). Therefore the exact source commit serving the active version 13 remains unproven. No deployment corresponding to PR #51 has been identified.
+
+### Release-readiness interpretation
+
+1. D1 is still attached to the live Lab Worker, despite the previously observed repository configuration drift; do not assume the live binding has disappeared.
+2. Rate-limit bindings are absent from the current settings response, so the current production/lab configuration does not yet match the rate-limit binding declarations in the reviewed branch. This is a release-readiness discrepancy to resolve before any future deployment.
+3. The latest active Worker version is still not traceable to a source commit from metadata alone. Establishing source provenance requires a separate controlled process; do not upload code or deploy merely to attach annotations.
+4. The D1 database metadata is consistent with the Worker binding ID. No D1 SQL/schema or migration-ledger recheck was performed in this pass.
+5. The Kaushal Worker and personal website were not inspected.
+
+No configuration was changed and no deployment was triggered. PR #51 remains Draft and unmerged.
