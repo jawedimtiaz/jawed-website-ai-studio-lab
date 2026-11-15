@@ -7,6 +7,10 @@ import { onRequestPost as hqSessionPost, onRequestOptions as hqSessionOptions } 
 import { handleAuthorizedHqClients } from '../api/hq/clients.js';
 import { handleAuthorizedHqProjects } from '../api/hq/projects.js';
 import { handleAuthorizedHqRelease } from '../api/hq/release.js';
+import { handleHqFinancial } from '../api/hq/financial.js';
+import { handleHqClients } from '../api/hq/clients.js';
+import { handleHqProjects } from '../api/hq/projects.js';
+import { handleHqRelease } from '../api/hq/release.js';
 import worker from '../../worker.js';
 
 class TestD1 {
@@ -516,6 +520,41 @@ test('Worker generic API 404 response includes security headers and no-store', a
   assert.equal(res.headers.get('x-frame-options'), 'DENY');
 });
 
+
+test('all protected API entry points apply the IP general limiter before token verification', async () => {
+  const routes = [
+    ['CRM clients', handleHqClients, []],
+    ['Projects', handleHqProjects, []],
+    ['Approvals and QA', handleHqRelease, ['projects', 'project-1', 'approvals']],
+    ['Financial', handleHqFinancial, ['invoices']]
+  ];
+
+  for (const [name, handler, segments] of routes) {
+    const limiter = makeLimiter(true);
+    const request = new Request('https://lab.jawed.co.in/api/hq/protected', {
+      headers: { 'cf-connecting-ip': '203.0.113.42' }
+    });
+    const response = await handler({
+      request,
+      env: { HQ_RATE_LIMITER: limiter },
+      segments
+    });
+    assert.equal(response.status, 401, name + ' should reach authentication only after IP limiting');
+    assert.deepEqual(limiter.calls, ['general:ip:203.0.113.42'], name + ' should consume the IP bucket first');
+  }
+
+  const limiter = makeLimiter(false);
+  const request = new Request('https://lab.jawed.co.in/api/hq/protected', {
+    headers: { 'cf-connecting-ip': '203.0.113.43' }
+  });
+  const response = await handleHqFinancial({
+    request,
+    env: { HQ_RATE_LIMITER: limiter },
+    segments: ['invoices']
+  });
+  assert.equal(response.status, 429, 'the IP limiter must reject before Firebase token verification');
+  assert.deepEqual(limiter.calls, ['general:ip:203.0.113.43']);
+});
 
 test('All authenticated Studio HQ API groups enforce the general request limiter', () => {
   const files = [
