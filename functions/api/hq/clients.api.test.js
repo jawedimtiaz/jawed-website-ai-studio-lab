@@ -43,7 +43,7 @@ class TestD1 {
 }
 
 const identity = { uid: 'owner-test-uid', email: 'jawedimtiaz@gmail.com' };
-const envFor = db => ({ HQ_DB: db });
+const envFor = db => ({ ENVIRONMENT: 'test', HQ_DB: db });
 const request = (path, method = 'GET', body) => new Request('https://lab.jawed.co.in' + path, {
   method,
   headers: body === undefined ? {} : { 'content-type': 'application/json' },
