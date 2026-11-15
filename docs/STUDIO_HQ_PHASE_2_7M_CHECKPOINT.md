@@ -264,3 +264,94 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Review document commit: `b40356301d8f3116c3eae9bf9f33674d4973a6ee`.
 
 **Continuation state:** PR #51 must remain Draft and unmerged. Next safe work is read-only reconciliation of PR base drift and review of the current main-branch continuity document; do not update/rebase the PR branch without explicit owner direction.
+
+## 17. Current GitHub verification and release-readiness continuation — 15 November 2026
+
+This section supersedes earlier PR-head and behind-count values in prior sections where they conflict with the live GitHub state recorded below.
+
+### Exact PR and branch state (fresh GitHub reads)
+
+- PR #51 remains **open, Draft, unmerged**.
+- Branch: `fix/phase-2-7m-canonical-d1-compatibility-20261114`.
+- Exact current PR head: `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`.
+- Exact current base/main head: `355341935a8ba87011e52d0c862852900aefe9db`.
+- Compare result: `diverged`; PR branch is **157 commits ahead and 3 commits behind** current main. Merge base: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- GitHub PR metadata reports `mergeable: false`. This is consistent with the branch divergence and must not be interpreted as a request to update/rebase.
+- The branch API reports `protected: false`; main branch API also reports `protected: false`, and required status checks are disabled in the returned branch metadata.
+- No submitted PR reviews, review threads, or PR conversation comments were returned.
+- No branch update, merge, PR conversion, review request, or protection mutation was performed.
+
+### Latest-head CI verification
+
+For exact head `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`, the commit-scoped GitHub Actions query returned 13 pull-request workflow runs. All 13 completed with conclusion `success`; none of the returned runs was pending or failed:
+
+- AdSense Readiness Gate
+- Accessibility Document Contract
+- AI Regression Gate
+- PWA Reliability Gate
+- Deployment Runtime Reliability Gate
+- Security Baseline Gate
+- Studio HQ D1 Schema Validation
+- Site Integrity Gate
+- Security Supply Chain Gate
+- Core Web Vitals Protection Gate
+- Performance Baseline Gate
+- Studio HQ Firebase Auth Tests
+- Career Match Browser Runtime Gate
+
+The combined commit-status endpoint returned an empty status list; workflow-run records are the supporting CI evidence.
+
+The exact Studio HQ Firebase Auth job is run `43741854105`, job `hq-auth-unit-tests`, job ID `132896529919`. Its steps all completed successfully: frozen Bun lockfile installation, dependency-audit report capture, dependency version report, HQ test command, TypeScript/production build, Wrangler dry-run, and gRPC artifact scan. The log records that the audit exception matched only the two documented `@grpc/grpc-js` advisory IDs and that the production artifact scan inspected 45 text artifacts without finding gRPC server-auth markers. The job log contains `fail 0`; the workflow succeeded.
+
+This does not mean the upstream dependency advisories are fixed. The exception remains limited to GHSA-m9gg-hp2v-232j (high) and GHSA-f596-whhp-79r4 (low), both in `@grpc/grpc-js`. No dependency override, downgrade, or package change was made during this review.
+
+### D1 backup/recovery runbook review
+
+Read `docs/studio-hq-d1-backup-recovery-runbook.md` from this PR branch.
+
+- It correctly distinguishes a Time Travel bookmark from a separately stored SQL export.
+- It warns that export can temporarily block database requests and a Time Travel restore overwrites the live database in place.
+- It requires explicit approval, a maintenance window, secure backup handling, verification/checksum evidence, and a second reviewer for destructive restore.
+- It explicitly records that no SQL export, import, restore, or disposable-database recovery drill has been performed.
+- RTO and RPO are not established; backup/restore must not be described as tested.
+- The runbook prohibits testing a restore against the live Studio HQ database.
+- The current D1 integrity observations (`quick_check=ok`, empty foreign-key check) do not establish recoverability.
+
+No export, import, restore, D1 write, migration, or Cloudflare operation was performed in this continuation.
+
+### CI and bundle maintenance review
+
+Read `docs/ci-and-bundle-maintenance-review.md` from the PR branch.
+
+- The repository workflow inventory is recorded as 34 files, individually reviewed.
+- Five Studio HQ workflows still use older checkout/setup-node immutable pins that produce Node 20 action-runtime deprecation warnings despite Node 24.12.0 being selected for the job.
+- The recommended action-pin refresh is a separate CI-maintenance PR; no workflow pins were changed.
+- The TWA workflow's Node 20 application runtime requires a separate compatibility-validated update.
+- The Work page's static import of `HardwareShowcase3D` brings Three.js into its route chunk. A nested lazy import is a candidate, but no before/after build or browser experiment has yet been performed.
+- `assets/js/analytics.js` is an intentional classic IIFE copied into `dist/assets`; it relies on browser globals. Do not convert it to an ES module merely to suppress the Vite warning.
+- Punycode and experimental SQLite messages remain non-blocking warnings.
+
+These are separate maintenance workstreams and must not be folded into PR #51 without a deliberate scope decision.
+
+### Current release-readiness decision
+
+**HOLD — PR #51 remains Draft and unmerged.**
+
+Latest CI is green, but that alone is insufficient for approval:
+
+1. PR branch has diverged from current main by 3 commits; current mergeability is false. Do not update/rebase until a deliberate reconciliation plan is reviewed.
+2. Account-wide uniqueness of the three configured Rate Limiting namespace IDs remains unverified; do not inspect the Kaushal customer Worker to resolve it.
+3. Earlier read-only Cloudflare metadata did not expose the three rate-limit bindings on the currently active Worker version/settings. Wrangler dry-run proves source-config parsing only, not live activation.
+4. Active Worker version source commit remains unverified.
+5. D1 export and disposable-database restore drill remain unperformed; RTO/RPO unknown.
+6. A deployment rollback plan and explicit deployment approval are not recorded.
+7. The two Firebase/gRPC dependency advisories remain an explicitly documented exception, not a patched dependency.
+8. No independent PR review is present in the current GitHub review list.
+
+### Actions and scope
+
+This update is documentation-only on the existing PR branch. It records current GitHub state and reconciles stale head/behind-count information. No application code, workflow, package, migration, D1 data, Cloudflare setting, Worker version, traffic allocation, personal website, or Kaushal customer project was changed or inspected. No merge or deployment was performed. PR #51 remains Draft and unmerged.
+
+### Next action
+
+Do not rebase/update PR #51 yet. First prepare a read-only reconciliation plan for the three commits now on main, comparing their exact changed paths/content against the PR branch and identifying any overlap or conflict risk. Present a merge-base-aware recommendation before any branch mutation. Continue to keep all release prerequisites separate from CI success.
