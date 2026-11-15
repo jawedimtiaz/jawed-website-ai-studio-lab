@@ -171,3 +171,14 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - The Vite warning for classic deferred `/assets/js/analytics.js` requires script-behavior review before any module conversion.
 - No workflow, application, analytics, Worker, D1, personal-site, or Kaushal changes were made. These are separate maintenance recommendations, not edits to the current remediation.
 - Review document commit: `54a46baeb7eb1ac32d49aec6b7a92cf620f4b437`.
+
+
+### Workflow and analytics source inspection — 15 November 2026
+
+- Follow-up findings are recorded in `docs/ci-and-bundle-maintenance-review.md`; update commit: `3574cfbb2fdab2be28d19ed015c657e793ab2916`.
+- Inspected `.github/workflows/studio-hq-auth-tests.yml`: Ubuntu runner, Node 24.12.0, Bun frozen-lockfile install, `contents: read`, immutable action SHAs, HQ tests/build/Wrangler dry-run/artifact scan, push branch filters, and PR base/path filters. The file does not define `workflow_dispatch`.
+- This is not the full workflow inventory. The available GitHub file-fetch interface did not provide an authoritative directory/tree listing, so other workflow filenames and their configuration remain unverified. Do not claim all workflows have been inventoried.
+- Confirmed `index.html` references classic deferred `/assets/js/analytics.js`; the source is `assets/js/analytics.js`, a browser-global IIFE. `scripts/prepare-dist.mjs` copies the root `assets` directory into `dist/assets`, preserving the static script in the build output. Do not convert it to a module based only on Vite's warning.
+- Confirmed `WorkPage.tsx` statically imports `HardwareShowcase3D`, which imports Three.js and add-ons. A nested lazy import remains a candidate, but no before/after build or browser validation has been run.
+- No workflow/application source changes, live Cloudflare changes, D1 operations, merge, or deployment were performed.
+- Next: obtain an authoritative workflow directory listing, finish the inventory and verify candidate immutable action SHAs; then treat bundle lazy-loading as a separate measured experiment. Keep PR #51 Draft and unmerged.
