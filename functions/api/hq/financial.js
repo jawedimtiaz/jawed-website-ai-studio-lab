@@ -333,6 +333,8 @@ export async function handleAuthorizedHqFinancial({request,env,segments,identity
   const dbResult=requireHqDatabase(env); if(!dbResult.ok)return dbResult.response;
   const db=dbResult.db;
   try {
+    const generalLimit=await checkHqRateLimit(request,env,{type:'general',uid:identity.uid});
+    if(!generalLimit.ok)return generalLimit.response;
     if(['POST','PATCH'].includes(request.method)) { const limit=await checkHqRateLimit(request,env,{type:'write',uid:identity.uid}); if(!limit.ok)return limit.response; }
     const [resource,id,action]=segments;
     if(resource==='quotations') {
