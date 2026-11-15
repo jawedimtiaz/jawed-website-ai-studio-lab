@@ -508,3 +508,45 @@ This is stronger evidence that PR #51's canonical migration lineage matches the 
 PR #51 remains Draft and unmerged. The 13 successful application-code checks and fresh D1 column/type/integrity comparison are positive evidence, but they do not resolve the 3-commit main drift, active Worker binding mismatch, account-wide rate-limit namespace uniqueness, untested D1 restore drill, or deployment approval requirement.
 
 No merge, rebase, deployment, remote D1 migration, database write, Cloudflare settings mutation, or customer/personal website change was performed.
+
+
+## 22. Phase 2.7O — final main-branch documentation reconciliation — 15 November 2026
+
+### Fresh comparison
+
+A fresh GitHub compare of `main` against this branch returned:
+- Status: diverged.
+- Feature branch ahead: 165 commits.
+- Feature branch behind: 3 commits.
+- Common ancestor: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- PR #51: open, Draft, unmerged, currently reported not mergeable; current head `b5d39d413f112266a3e573040e4bcc52c7bcfc80`.
+- The PR metadata still reports base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`; this does not change the direct compare's common-ancestor result.
+
+### Three main-side commits reviewed
+
+The three commits after the common ancestor are:
+1. `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` — adds `docs/STUDIO_HQ_CONTINUITY.md`.
+2. `5c78a3e7bbb171b5d1cbc5534c1f043ec0e20022` — adds `docs/ci-and-bundle-maintenance-review.md`.
+3. `355341935a8ba87011e52d0c862852900aefe9db` — adds `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`.
+
+All three commit patches are documentation-only; no application source, workflow, package, migration, or Worker configuration changes are present in those three patches.
+
+### Content-level reconciliation result
+
+- The branch copy of `docs/ci-and-bundle-maintenance-review.md` contains Sections 1–16. Section 16 carries the main-side PR #49 deployment-source findings and refreshed PR status. The shared Sections 1–15 were confirmed substantively identical to main; only trailing-newline formatting differed in two places.
+- The branch copy of `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` contains the later Sections 17–21, including the PR #49 reconciliation, continuity-document adoption decision, live D1 schema verification, and final PR/CI evidence. It is the more current checkpoint than the shorter main-side copy.
+- Main's `docs/STUDIO_HQ_CONTINUITY.md` is a main-only document. It contains useful historical findings on schema compatibility, Firebase signature verification and the Firebase project ID mismatch, but its header and initial handover state are dated 14 November 2026. Its current repository/PR instructions are stale. Section 20 already records the decision not to copy it unchanged; the relevant security and architecture findings are represented in the current branch's implementation notes/checkpoint.
+
+### Documentation correction
+
+- Added a supersession note to Section 18 so its initial comparison figures and intermediate file-presence assessment are not mistaken for current state. Sections 20–21 and this Section 22 are the later reconciliation records.
+- Documentation-only commit: `b5d39d413f112266a3e573040e4bcc52c7bcfc80`.
+- GitHub returned no PR-triggered workflow runs for this documentation-only commit. No tests were executed as part of this documentation correction.
+
+### Reconciliation decision and safety
+
+**Do not copy the three main commits wholesale, and do not automatically merge, rebase, cherry-pick, or force-push the 165-commit branch.** The substantive CI review and checkpoint information is already incorporated in the branch's later versions. The remaining main-only continuity file is historical and should only be adopted after a deliberate refresh, not copied unchanged.
+
+The branch remains 3 commits behind main. A future integration should be separately planned and reviewed against the full source diff, then CI must run on the exact resulting head. This documentation comparison does not resolve the branch's not-mergeable state or any outstanding deployment blockers.
+
+No merge, rebase, cherry-pick, force-push, deployment, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal project change was performed.
