@@ -172,3 +172,39 @@ Record these fields in the approved change/incident system (not in a public repo
 - [Cloudflare D1 limits](https://developers.cloudflare.com/d1/platform/limits/)
 
 Cloudflare documentation reviewed on 15 November 2026. Recheck the current documentation and Wrangler version before executing any procedure.
+
+
+## 11. Native D1 manual backups — additional recovery option
+
+Cloudflare's current D1 documentation also provides native manual backups, separate from SQL export and Time Travel.
+
+Documented Wrangler commands:
+
+```bash
+# READ-ONLY: list available backup IDs for the named database.
+npx wrangler d1 backup list jawed-studio-hq
+
+# DATA OPERATION: create a manual backup; obtain approval and schedule first.
+npx wrangler d1 backup create jawed-studio-hq
+
+# DATA DOWNLOAD: download a selected backup to the current working directory.
+# Choose an approved encrypted destination and protect the resulting SQLite file.
+npx wrangler d1 backup download jawed-studio-hq <approved-backup-id>
+```
+
+Cloudflare documents the downloaded artifact as a native SQLite3 database file. A native backup can be useful as a separate recovery artifact; do not assume it is equivalent to an SQL dump or that it has been restore-tested.
+
+**Destructive restore warning:** Cloudflare documents `wrangler d1 backup restore <database_name> <backup_id>` as overwriting the existing database in place. Tables and data absent from the selected backup are removed from the current database. Never use this command against the live Studio HQ database as a test.
+
+A manual backup create, download, or restore was **not** performed during this review. Listing backups through Wrangler was also not performed because the connected Cloudflare API does not expose a corresponding native-backup list endpoint in the API specification reviewed. Use the documented Wrangler CLI in an approved operator environment if a read-only backup inventory is required.
+
+## 12. Updated export compatibility caution
+
+Cloudflare's 12 November 2026 documentation update adds a special SQL export compatibility mode for databases containing virtual tables. The `sqlite3_cli_only` compatibility output is intended for SQLite CLI use and **cannot be imported back into D1**. Do not use that compatibility mode for a D1-to-D1 recovery artifact. Before a standard export, inspect the schema for virtual tables and select the documented export mode appropriate to the intended restore target.
+
+References:
+- [Cloudflare D1 backups](https://developers.cloudflare.com/d1/reference/backups/)
+- [Cloudflare D1 import and export](https://developers.cloudflare.com/d1/best-practices/import-export-data/)
+- [Cloudflare D1 export virtual tables update — 12 November 2026](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/)
+
+Cloudflare documentation rechecked 16 November 2026.
