@@ -704,3 +704,44 @@ Account-wide namespace uniqueness remains **unverified**. The currently availabl
 Treat these bindings as approximate per-location abuse controls, not strict global quotas. Keep deployment gated until the owner has an authoritative account-wide uniqueness check or explicitly approves a documented namespace allocation process with adequate evidence.
 
 No Worker settings, bindings, namespace IDs, deployments, D1 data, or Cloudflare resources were changed during this review.
+
+
+## 27. Phase 2.7S — deployed Worker version and binding reconciliation — 16 November 2026
+
+### Active deployment evidence (read-only Cloudflare API)
+
+The Cloudflare Worker deployment inventory for `jawed-website-ai-studio-lab` returned the latest deployment:
+- Deployment ID: `739b15b1-22b5-499c-a738-7830cb394579`.
+- Created: `2026-11-13T17:51:34.266866Z`.
+- Source: Wrangler.
+- Traffic allocation: 100% to version `cf1dba45-c28c-4865-9571-dc508f6863d2`.
+- Version number: 13.
+- Version metadata created: `2026-11-13T17:51:32.972576Z`.
+- Version metadata contains no PR #51 / current feature-branch commit annotation. Its source commit cannot be established from this metadata alone.
+
+### Deployed version bindings
+
+The detailed read-only version record lists:
+- `AI` — present.
+- `ASSETS` — present.
+- `CANONICAL_ORIGIN` — present.
+- `ENVIRONMENT` — present.
+- `HQ_DB` — present, database UUID `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- `HQ_SESSION_LIMITER` — absent.
+- `HQ_WRITE_LIMITER` — absent.
+- `HQ_RATE_LIMITER` — absent.
+
+The current script settings endpoint independently returned the same binding inventory. The deployed version record confirms that the latest 100%-traffic version does not include the three rate-limiting bindings declared by the current PR #51 `wrangler.jsonc`.
+
+### Operational interpretation
+
+- The current live Worker is version 13, not the current PR #51 branch head; no evidence ties it to PR #51's code/test commit.
+- The latest deployed version has no rate-limiting bindings. Do not deploy code that requires those bindings until the account-wide namespace allocation and exact deployment plan are approved.
+- If a Worker version using the new fail-closed rate-limit checks were deployed without these bindings, protected HQ API calls would return HTTP 503. This is a source/runtime compatibility consequence, not a live endpoint test.
+- This is stronger evidence than the earlier generic script-settings check because it identifies the active 100%-traffic deployment and inspects its exact version resources.
+
+### Safety
+
+Only GET operations were used. No script upload, settings patch, version upload, deployment, D1 operation, or Cloudflare resource mutation was performed. The production/live Worker was not changed.
+
+This closes the factual question of whether the currently deployed Worker already has the new rate-limit bindings: **it does not**. It does not close namespace uniqueness, deployment approval, backup/restore, or PR mergeability gates.
