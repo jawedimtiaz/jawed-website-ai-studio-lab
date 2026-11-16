@@ -111,6 +111,19 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     const refundReplay=await call(db,refundReq(),['payments',payment.id,'refunds']);
     assert.equal(refundReplay.status,200);
     assert.equal((await refundReplay.json()).replayed,true);
+
+    // Omitted refunded_at is generated once for storage, but must not change the
+    // idempotency fingerprint between retries of the same caller request.
+    const refundWithoutDateReq=()=>request('/api/hq/payments/'+payment.id+'/refunds','POST',{
+      amount_minor:5000,reason:'Refund without supplied timestamp'
+    },{'idempotency-key':'refund-no-date-key-0001'});
+    const refundWithoutDate=await call(db,refundWithoutDateReq(),['payments',payment.id,'refunds']);
+    assert.equal(refundWithoutDate.status,201);
+    const refundWithoutDateReplay=await call(db,refundWithoutDateReq(),['payments',payment.id,'refunds']);
+    assert.equal(refundWithoutDateReplay.status,200);
+    assert.equal((await refundWithoutDateReplay.json()).replayed,true);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM refund_idempotency_keys WHERE idempotency_key='refund-no-date-key-0001'").get().n,1);
+
     const shortReason=await call(db,request('/api/hq/payments/'+payment.id+'/refunds','POST',{amount_minor:1000,reason:'x'},{'idempotency-key':'refund-test-key-0002'}),['payments',payment.id,'refunds']);
     assert.equal(shortReason.status,400);
 
@@ -118,10 +131,10 @@ test('quotation lifecycle converts once, invoices snapshot items, accepts paymen
     assert.equal(excessive.status,409);
 
     const finalInvoice=db.sqlite.prepare('SELECT amount_paid_minor,status FROM invoices WHERE id=?').get(invoice.id);
-    assert.equal(finalInvoice.amount_paid_minor,50000);
+    assert.equal(finalInvoice.amount_paid_minor,45000);
     assert.equal(finalInvoice.status,'partially-paid');
-    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_refunds').get().n,1);
-    assert.ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('quotation','invoice','payment','payment_refund')").get().n>=5);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_refunds').get().n,2);
+    assert.ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE entity_type IN ('quotation','invoice','payment','payment_refund')").get().n>=6);
   } finally {db.close();}
 });
 test('financial APIs reject unsupported currency and unknown fields',async()=>{
