@@ -202,3 +202,47 @@ References:
 - [Cloudflare D1 export virtual tables update — 12 November 2026](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/)
 
 Cloudflare documentation rechecked 16 November 2026.
+
+
+## 13. SQL import compatibility and controlled recovery target
+
+Cloudflare documents importing a SQL dump with Wrangler:
+
+```bash
+# DESTRUCTIVE TO THE TARGET DATABASE — never point this at jawed-studio-hq.
+npx wrangler d1 execute <DISPOSABLE_RECOVERY_DATABASE> --remote --file=<APPROVED_BACKUP_FILE.sql>
+```
+
+This command executes the SQL file against the named remote D1 database. It is a write operation. The documented Wrangler import limit is 5 GiB per SQL file; larger imports need to be split and validated. Do not use `--yes` to bypass confirmation during a recovery drill.
+
+### Virtual-table compatibility review
+
+A source review of the two canonical HQ migration files in this repository found no `CREATE VIRTUAL TABLE` statements:
+- `0001_studio_hq_schema.sql`: 17 table declarations, 20 index declarations, 2 trigger declarations; no virtual-table declaration.
+- `0002_financial_management.sql`: 6 table declarations, 7 index declarations; no virtual-table declaration.
+
+This is evidence about the canonical migration source only. It is not a fresh inspection of every object in the live database and does not prove that no virtual tables exist there. Before export, perform an approved read-only inspection of the live schema for virtual tables. If none exist, use the standard D1 SQL export format intended for D1 import. Do not use `sqlite3_cli_only`: Cloudflare explicitly states that this special output cannot be imported back into D1.
+
+### Recovery target and data-handling controls
+
+- The recovery target must be a separately created disposable D1 database, not the live HQ database and not a customer's database.
+- Database creation and importing any production-derived customer/financial data require separate explicit approval.
+- Prefer synthetic data for the initial schema/import rehearsal. If production-derived data is necessary, approve a sanitization and access-control plan first.
+- Keep the SQL dump outside Git and outside this repository. Encrypt the artifact before transfer/storage using an owner-approved encryption method and key custody process; platform encryption alone does not establish user-controlled key management.
+- Restrict access to the smallest necessary operator group, log access, define retention/deletion, and verify the SHA-256 checksum after transfer.
+- After import, validate schema objects, migration ledger, foreign keys, triggers, and application-level invariants. Do not enable a Worker or application against the recovery target until validation is accepted.
+
+### RTO/RPO measurement plan
+
+RTO and RPO have not been selected by the business owner and must not be guessed. Before a drill, agree:
+- RPO: maximum acceptable data-loss interval.
+- RTO: maximum acceptable service-restoration interval.
+
+During an approved drill, record the recovery point timestamp/bookmark, incident simulation start, export/import start and completion, validation completion, and service-ready time. Calculate observed data-loss interval and total restore duration. Repeat the drill under realistic conditions before adopting targets. Until then, mark both objectives as **not established**.
+
+References:
+- [Cloudflare D1 import/export](https://developers.cloudflare.com/d1/best-practices/import-export-data/) — standard export and `d1 execute --file` import, including the 5 GiB file limit.
+- [Wrangler D1 commands](https://developers.cloudflare.com/workers/wrangler/commands/d1/) — `d1 execute` and `d1 export` flags.
+- [D1 virtual-table export update, 12 November 2026](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/) — `sqlite3_cli_only` output is not importable into D1.
+
+Cloudflare import/export guidance reviewed 16 November 2026. No import, export, database creation, or live write was performed while adding this section.
