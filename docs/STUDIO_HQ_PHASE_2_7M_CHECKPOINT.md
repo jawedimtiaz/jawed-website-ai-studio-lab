@@ -865,3 +865,46 @@ Combined with the two account Worker Scripts and their active versions, no exist
 It is still not a formal account-wide namespace registry check: Cloudflare documents uniqueness as account-wide but does not expose a namespace-list endpoint in the API specification reviewed. Treat the IDs as **inventory-clear candidates, not formally reserved or owner-approved**. Do not deploy or change bindings on the basis of this inventory alone.
 
 No code, customer project, Pages project, Worker configuration, secrets, or deployment was modified.
+
+
+## 32. Phase 2.7V — D1 backup readiness review — 16 November 2026
+
+### CI carry-forward
+
+The preceding checkpoint head `438c1dc614ebce4e5851514642db5fa93918105d` completed the Studio HQ Firebase Auth Tests workflow successfully:
+- Run: [43801999079](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43801999079)
+- Conclusion: success.
+
+### Current read-only D1 metadata
+
+Cloudflare API read-only checks against database `jawed-studio-hq` returned:
+- UUID: `d9ec83ea-7114-4179-af8e-a22ba5494508` (matches the repository binding).
+- Storage version: `production`.
+- Reported file size: 401,408 bytes.
+- Current Time Travel bookmark was returned. The bookmark is an opaque recovery-point reference; no restore was attempted.
+- API database metadata returned `num_tables: 24`; this API metadata count is not treated as the prior SQL-level application table count.
+
+No table rows or customer/owner/financial values were selected.
+
+### Documentation changes
+
+Updated `docs/studio-hq-d1-backup-recovery-runbook.md`:
+- Added Cloudflare native manual backup list/create/download commands.
+- Explicitly documented that native backup restore overwrites the target database in place and is not a live-database test.
+- Added the 12 November 2026 export virtual-table compatibility warning: `sqlite3_cli_only` output is SQLite CLI-only and cannot be imported back into D1.
+- Clarified that no backup create, download, export, import, restore, or recovery drill was performed.
+
+### Readiness status
+
+- Current production-storage metadata and a current Time Travel bookmark were observed.
+- Native manual backup inventory was not queried because the connected Cloudflare API specification exposes no corresponding list endpoint; Wrangler CLI is the documented path.
+- No SQL export or native backup was created/downloaded.
+- No restore/import or disposable database drill was performed.
+- RTO/RPO remain unestablished; recovery is not tested or certified.
+- Customer and financial data remain sensitive; any export/download and any disposable copy require explicit approval and approved encrypted storage.
+
+### Next safe step
+
+Prepare a non-destructive backup inventory checklist and confirm approved backup storage, operator environment, and maintenance window. Do not create/download a backup or create a disposable D1 database until explicitly authorized.
+
+No live D1 writes, schema changes, migrations, exports, imports, restores, Worker changes, or deployments occurred.
