@@ -982,3 +982,88 @@ This section supersedes conflicting backup-method statements in earlier checkpoi
 No export, download, import, restore, database creation, D1 write, Worker setting change, deployment, merge, or production code change was performed. The runbook now documents the supported import command and target safety boundary. Recovery remains **planned, not tested**.
 
 Sources: [Cloudflare D1 import/export](https://developers.cloudflare.com/d1/best-practices/import-export-data/), [Wrangler D1 commands](https://developers.cloudflare.com/workers/wrangler/commands/d1/), [D1 virtual-table export update](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/).
+
+
+## 35. PR #52 main-based reconciliation and release-readiness recheck — 16 November 2026
+
+### Reconciliation result
+
+- Fresh branch: `reconcile/phase-2-7m-from-main-20261116`.
+- Base: current `main` at `355341935a8ba87011e52d0c862852900aefe9db`.
+- PR: [#52 — reconcile(hq): restore canonical Studio HQ on current main](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/52).
+- Reconciled head before this checkpoint update: `9cd8d8cc2c4bf153ca99e99025b3585284ee7c51`.
+- GitHub compare: 2 commits ahead, 0 behind; PR reported `mergeable: true`, Draft, open, and unmerged.
+- The current main-only `docs/STUDIO_HQ_CONTINUITY.md` was preserved. PR #51's canonical HQ application, migration, and Phase 2.7M–2.7X documentation changes were retained. No PR #51 merge/rebase or main mutation occurred.
+
+### Exact-head CI result
+
+All 14 GitHub Actions check runs on reconciled application head `9cd8d8cc2c4bf153ca99e99025b3585284ee7c51` completed successfully:
+- HQ authentication tests: 132 passed, 0 failed, 0 skipped.
+- TypeScript and production build: passed.
+- Wrangler Worker deploy dry-run: passed; printed the expected `HQ_DB`, `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER` bindings.
+- gRPC artifact regression scan: passed; no gRPC package/server-auth markers in inspected build artifacts.
+- D1 schema contract, AI production regression matrix, site integrity, security/supply-chain, performance, PWA, accessibility, AdSense privacy, deployment runtime reliability, and Career Match browser runtime: passed.
+- Career Match browser smoke loaded at 1440x1100, 390x844, and 320x800.
+- CI run links include [Studio HQ auth/build/dry-run](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720478), [AI regression](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720473), and [Career Match browser runtime](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720273).
+
+These results validate the reconciled source at that exact commit. They do not validate a live Worker deployment or D1 recovery.
+
+### AI knowledge review-date correction
+
+The first PR #52 CI run caught that `index.html` changed after the AI knowledge review date. The changed HTML only removed the self-closing slash from the manifest link and added a deferred classic analytics script; it did not change AI grounding content. The knowledge review date was refreshed to `2026-11-16` in `assets/data/ai-knowledge.json` and the generated `functions/lib/ai-knowledge-data.js` copy was synchronized. The subsequent AI regression matrix passed.
+
+### Current read-only Cloudflare inventory
+
+- Account Worker Scripts inventory returned two scripts. Their current script settings contained no rate-limit bindings.
+- The active Studio HQ deployment is still deployment `739b15b1-22b5-499c-a738-7830cb394579`, directing 100% traffic to version 13 `cf1dba45-c28c-4865-9571-dc508f6863d2`, created 13 November 2026.
+- The active version's resource bindings remain `AI`, `ASSETS`, `CANONICAL_ORIGIN`, `ENVIRONMENT`, and `HQ_DB`. The three HQ rate-limit bindings are absent from the active version metadata. No version upload or deployment occurred.
+- Account Pages inventory returned `jawed-website` and `advocate-kaushal-kishor`; both report `uses_functions: false`. No Pages source or customer data was accessed.
+- Cloudflare's Rate Limiting documentation says namespace IDs must be positive integer strings unique within the account. No existing rate-limit binding was found in the inspected active Worker/Pages surfaces for IDs `620261114`, `620261115`, and `620261116`. Treat them as **inventory-clear candidates**, not formally reserved IDs or deployment approval. Cloudflare does not expose a namespace registry endpoint in the reviewed API.
+- Cloudflare docs also state these rate limits are approximate and eventually consistent, not strict global limits. Do not describe them as strict account-wide request caps.
+
+### Current read-only D1 checks
+
+Against only `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`):
+- Storage version: `production`; reported file size: 401,408 bytes.
+- Current Time Travel bookmark was returned; it is a recovery-point reference, not a separately retained export.
+- `PRAGMA quick_check` returned `ok`.
+- `PRAGMA foreign_key_check` returned no rows.
+- Live catalog: 25 tables (including `_cf_KV` and `d1_migrations`), 27 indexes, 2 audit-log triggers.
+- Applied migration ledger still lists only `0001_studio_hq_schema.sql` and `0002_financial_management.sql`.
+- Live catalog query found no virtual tables.
+- No customer, owner, project, invoice, payment, refund, quotation, or audit-log row contents were selected. No export, import, restore, database creation, migration, or D1 write occurred.
+
+These are read-only integrity/schema observations, not backup evidence or a recovery drill. RTO/RPO remain unestablished.
+
+### Dependency advisory recheck
+
+- The current lockfile still resolves `@grpc/grpc-js@1.9.16` through Firestore's `~1.9.0` dependency range.
+- Firebase's official JavaScript SDK release notes show Firebase `13.3.0` released on 11 November 2026. The published Firestore `4.19.1` metadata still lists `@grpc/grpc-js` among its dependencies, and the open Firebase SDK issue [#10400](https://github.com/firebase/firebase-js-sdk/issues/10400) continues to report the `~1.9.0` pin blocking patched gRPC releases (issue last updated 10 November 2026).
+- The two reviewed gRPC advisories are fixed upstream in later 1.13.x/1.14.x versions, but the Firestore range still excludes them. Do not apply an override: it would not satisfy Firestore's declared range and can produce a duplicate nested gRPC dependency.
+- The existing CI exception remains temporary and narrow. It is not an upstream patch and is not a claim that every advisory scenario is impossible. Recheck after Firebase/Firestore changes the dependency range.
+
+### Deployment workflow / PR separation
+
+- Current `main` and PR #52 do not contain a manual Studio HQ Worker deployment workflow; the only workflow filename containing “deploy” is the non-deploying deployment-runtime reliability test.
+- PR #49 remains open, non-draft, unmerged. Its deployment workflow is not part of current `main` or PR #52. Do not dispatch PR #49's workflow; its previously reviewed hard-coded source SHA is stale relative to the reconciled Studio HQ source.
+- PR #51 remains open, Draft, unmerged, and not mergeable. PR #52 is the new reconciliation candidate; it does not supersede or close PR #51 automatically.
+
+### Release decision and remaining gates
+
+**PR #52 is CI-green and mergeable, but Studio HQ is not release-ready.** Outstanding gates:
+1. Resolve the upstream Firebase/Firestore gRPC dependency pin or retain a documented temporary exception with periodic review.
+2. Obtain an explicit account-level namespace allocation attestation or a safe owner-approved allocation process for the three unique IDs.
+3. Complete an approved, secure D1 SQL export and a separate disposable-target recovery drill; no such export or drill has been performed. Agree RTO/RPO first.
+4. Reconcile a new manual-only deployment workflow to the exact approved PR #52 source SHA, validate all three rate-limit bindings and thresholds, include source provenance and rollback, and obtain separate deployment approval.
+5. Establish a tested runtime verification plan for the three limiter bindings before exposing HQ routes.
+
+**Explicitly not performed:** no merge, deployment, Worker settings mutation, D1 export/import/restore/migration/write, database creation, PR #49 dispatch, personal website modification, or Kaushal customer project modification.
+
+Sources:
+- [Firebase JavaScript SDK release notes](https://firebase.google.com/support/release-notes/js).
+- [Firebase SDK issue #10400](https://github.com/firebase/firebase-js-sdk/issues/10400).
+- [gRPC advisory GHSA-M9GG-HP2V-232J](https://github.com/advisories/GHSA-M9GG-HP2V-232J).
+- [gRPC advisory GHSA-F596-WHHP-79R4](https://github.com/advisories/GHSA-F596-WHHP-79R4).
+- [Cloudflare Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+
+This checkpoint records read-only findings and CI evidence only. It does not authorize release operations.
