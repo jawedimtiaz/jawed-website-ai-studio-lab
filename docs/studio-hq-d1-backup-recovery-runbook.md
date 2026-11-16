@@ -174,29 +174,23 @@ Record these fields in the approved change/incident system (not in a public repo
 Cloudflare documentation reviewed on 15 November 2026. Recheck the current documentation and Wrangler version before executing any procedure.
 
 
-## 11. Native D1 manual backups — additional recovery option
+## 11. Native D1 manual backups — applicability warning
 
-Cloudflare's current D1 documentation also provides native manual backups, separate from SQL export and Time Travel.
+**Do not use `wrangler d1 backup create/list/download/restore` for this Studio HQ database.**
 
-Documented Wrangler commands:
+The current database metadata reports `version: production`. Cloudflare's current documentation says:
+- Production-storage D1 databases use Time Travel point-in-time recovery.
+- Snapshot-based `d1 backup` commands belong to the legacy alpha storage subsystem.
+- Time Travel replaces snapshot-based backups for production-storage databases.
+- The legacy alpha backup API was removed on 1 July 2025.
 
-```bash
-# READ-ONLY: list available backup IDs for the named database.
-npx wrangler d1 backup list jawed-studio-hq
+Therefore, the native manual backup commands described in Cloudflare's legacy Backups page are **not an applicable backup workflow for `jawed-studio-hq`**. The earlier draft of this runbook incorrectly described those commands as an additional recovery option; this section supersedes that advice.
 
-# DATA OPERATION: create a manual backup; obtain approval and schedule first.
-npx wrangler d1 backup create jawed-studio-hq
+For this production database, the supported documented recovery mechanisms to plan around are:
+1. D1 Time Travel for point-in-time restore (destructive, in-place).
+2. A standard D1 SQL export using `wrangler d1 export <name> --remote --output=<path>`, retained in an approved secure destination and validated for intended import compatibility.
 
-# DATA DOWNLOAD: download a selected backup to the current working directory.
-# Choose an approved encrypted destination and protect the resulting SQLite file.
-npx wrangler d1 backup download jawed-studio-hq <approved-backup-id>
-```
-
-Cloudflare documents the downloaded artifact as a native SQLite3 database file. A native backup can be useful as a separate recovery artifact; do not assume it is equivalent to an SQL dump or that it has been restore-tested.
-
-**Destructive restore warning:** Cloudflare documents `wrangler d1 backup restore <database_name> <backup_id>` as overwriting the existing database in place. Tables and data absent from the selected backup are removed from the current database. Never use this command against the live Studio HQ database as a test.
-
-A manual backup create, download, or restore was **not** performed during this review. Listing backups through Wrangler was also not performed because the connected Cloudflare API does not expose a corresponding native-backup list endpoint in the API specification reviewed. Use the documented Wrangler CLI in an approved operator environment if a read-only backup inventory is required.
+No native backup command was executed. No export, download, import, or restore was performed.
 
 ## 12. Updated export compatibility caution
 
