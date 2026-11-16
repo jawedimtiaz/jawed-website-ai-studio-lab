@@ -847,3 +847,21 @@ This is metadata-only inspection. No Kaushal source, settings, deployment, secre
 Before binding activation, complete a final account-surface inventory for Pages Functions and any other deployed Worker configurations, then record an explicit owner-approved namespace allocation. Do not patch live settings or deploy as part of this preflight.
 
 No Cloudflare resources were mutated. No Worker was deployed, no rate-limit binding was created, and no Kaushal or personal website configuration was changed.
+
+
+## 31. Phase 2.7U — Pages-generated Worker inventory extension — 16 November 2026
+
+The account Pages Projects inventory returned two projects:
+- `jawed-website` (personal site; `uses_functions: false`).
+- `advocate-kaushal-kishor` (separate customer project; `uses_functions: false`).
+
+Only binding metadata for the generated Pages Worker scripts was checked; no Pages source, deployment files, environment values, or application data were read:
+- `pages-worker--10525077-production`: settings endpoint returned no `ratelimit` bindings.
+- `pages-worker--10525077-preview`: settings endpoint returned no `ratelimit` bindings.
+- The generated Worker script names for the Kaushal Pages project were not present at the expected script-settings endpoints (HTTP 404). The Pages project itself reports `uses_functions: false`, so it does not currently expose Pages Functions requiring a runtime function binding inventory.
+
+Combined with the two account Worker Scripts and their active versions, no existing `ratelimit` binding was found in the inspected account Worker/Pages surfaces. This materially improves confidence that the proposed IDs `620261114`, `620261115`, and `620261116` do not collide with currently visible deployed bindings.
+
+It is still not a formal account-wide namespace registry check: Cloudflare documents uniqueness as account-wide but does not expose a namespace-list endpoint in the API specification reviewed. Treat the IDs as **inventory-clear candidates, not formally reserved or owner-approved**. Do not deploy or change bindings on the basis of this inventory alone.
+
+No code, customer project, Pages project, Worker configuration, secrets, or deployment was modified.
