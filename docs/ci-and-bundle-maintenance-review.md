@@ -539,3 +539,33 @@ Before any deployment workflow can be approved, one consolidated deployment cand
 5. Include a reviewed rollback procedure, source SHA annotation, and post-deployment binding verification.
 
 No files in PR #49, PR #51 application code, main, Cloudflare configuration, D1 schema/data, or secrets were changed. No workflow was dispatched, no deployment was run, and no PR was merged.
+
+
+## 17. Main-only PR #49 status and deployment workflow details carried forward — 16 November 2026
+
+This section preserves the unique PR #49 facts from the current-main copy of the continuity/checkpoint documentation while retaining the more extensive Phase 2.7 review already present in this file.
+
+### Refreshed GitHub state
+
+- PR #49: open, non-draft, unmerged, GitHub reports mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base snapshot `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct comparison against current main: 3 ahead / 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- PR #49 has two PR-triggered checks: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are validation runs, not deployment runs.
+- PR #51: open, Draft, unmerged, not mergeable. Current head `9645e08f4d4b65e7ca8205ef8bf339283b0fed83`; base snapshot `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`. Direct comparison against current main: 191 ahead / 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f).
+- PR #52 is the new main-based reconciliation branch and is the only candidate currently under active validation.
+
+### Exact PR #49 deployment workflow source behavior
+
+File: `.github/workflows/manual-studio-hq-worker-deploy.yml` on PR #49 head.
+
+- Trigger: `workflow_dispatch` only; the deploy job additionally requires `github.ref == 'refs/heads/main'`.
+- It checks out hard-coded source commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, not the current main commit or the reconciled PR #52 source.
+- It builds and invokes `bunx wrangler deploy --config wrangler.jsonc` with Cloudflare secrets.
+- Its pre-deploy validator checks only `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER`. It does not validate `HQ_RATE_LIMITER`, which is required by the newer reconciled application code.
+- The workflow's source pin and incomplete limiter validation make it unsuitable for PR #52. Do not dispatch it.
+
+### Current repository presence and safety
+
+The manual deployment workflow is not present in current `main` or PR #52. The current main and PR #52 workflow inventories include deployment-runtime reliability checks, not a manual deployment workflow. PR #49's workflow remains isolated on its unmerged branch.
+
+**Decision:** do not merge PR #49 or dispatch its deployment workflow. A future manual-only deployment workflow must be newly reviewed against the exact approved source SHA and validate all three limiter bindings and thresholds, D1 identity/migration directory, provenance, and rollback requirements. Separate explicit deployment approval remains mandatory.
+
+No workflow was dispatched, no secrets accessed, no Worker uploaded/deployed, and no Cloudflare or D1 configuration changed.

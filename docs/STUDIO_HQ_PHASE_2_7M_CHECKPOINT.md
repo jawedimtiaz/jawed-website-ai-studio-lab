@@ -1067,3 +1067,29 @@ Sources:
 - [Cloudflare Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
 This checkpoint records read-only findings and CI evidence only. It does not authorize release operations.
+
+
+## 36. Three-way documentation reconciliation details — 16 November 2026
+
+The common ancestor used for reconciliation was `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. A direct GitHub comparison showed current main had exactly three main-only commits, and their changed paths were documentation-only:
+- `docs/STUDIO_HQ_CONTINUITY.md`
+- `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`
+- `docs/ci-and-bundle-maintenance-review.md`
+
+Reconciliation treatment:
+1. `docs/STUDIO_HQ_CONTINUITY.md` was copied from current main verbatim into the fresh branch because it was absent from PR #51.
+2. The PR #51 versions of `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` and `docs/ci-and-bundle-maintenance-review.md` were retained because they contain the later Phase 2.7M–2.7X and deployment-source review material. The main versions were not allowed to overwrite that later material.
+3. The unique main-only PR #49 status/review facts were compared line-by-line and carried forward as refreshed reconciliation sections in both documents. This retains the main-only information without discarding the more extensive PR #51 history.
+4. No application source or migration file was selected from the main-only commits because GitHub's three-commit main delta contained only those three documentation files.
+
+### PR #49 status refreshed against current main
+
+- PR #49 is open, non-draft, unmerged, and GitHub reports it mergeable.
+- Head remains `8ba814c23e51c6182309cff5d22184084f7a1745`; base snapshot remains `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Direct comparison against current main reports 3 commits ahead and 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Its two PR-triggered checks (Security Supply Chain Gate and Site Integrity Gate) completed successfully. Neither is a deployment run.
+- The deployment workflow remains confined to PR #49's branch and is not present in current main or PR #52. Its manual dispatch remains unauthorized and unsafe for this source reconciliation: it checks out fixed commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, then validates only `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER`; it does not validate the newer `HQ_RATE_LIMITER` required by PR #51/PR #52 code.
+- PR #51 is still open, Draft, unmerged, and not mergeable; its current head is `9645e08f4d4b65e7ca8205ef8bf339283b0fed83`, and direct comparison against current main is 191 commits ahead / 3 behind with the same common ancestor.
+- PR #52 remains the clean main-based reconciliation candidate; it does not close or merge PR #49 or PR #51.
+
+This section preserves the unique main-only status details while keeping PR #51's later checkpoint history. No PR was merged, no workflow dispatched, and no deployment performed.
