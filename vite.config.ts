@@ -306,12 +306,101 @@ function hardwareDiagnosticPlugin(): Plugin {
   };
 }
 
+function portfolioApiDevPlugin(): Plugin {
+  return {
+    name: 'portfolio-api-dev',
+    configureServer(server) {
+      server.middlewares.use('/api/portfolio', (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+
+        const livePayload = {
+          meta: {
+            lastUpdated: new Date().toISOString(),
+            usdInr: 95.85,
+            lrsUsedUsd: 6200,
+            lrsUsedInr: 594270,
+            lrsAnnualLimitUsd: 250000
+          },
+          summary: {
+            totalValueInr: 5250000,
+            investedValueInr: 4320000,
+            unrealizedPnlInr: 930000,
+            unrealizedPnlPct: 21.53,
+            cashBalanceInr: 410000,
+            investedPct: 92.2
+          },
+          allocation: [
+            { category: 'Indian Equities', role: 'Core Growth', valueInr: 2050000, pct: 39.0 },
+            { category: 'Mutual Funds', role: 'Compounder', valueInr: 1300000, pct: 24.8 },
+            { category: 'US Equities', role: 'Global Tech', valueInr: 1490000, pct: 28.4 },
+            { category: 'Cash & Liquid', role: 'Dry Powder', valueInr: 410000, pct: 7.8 }
+          ],
+          holdings: [
+            {
+              ticker: 'NVDA',
+              name: 'NVIDIA Corp',
+              market: 'US',
+              role: 'Core',
+              currentPrice: 148.2,
+              currency: 'USD',
+              valueInr: 720000,
+              allocationPct: 13.7,
+              pnlPct: 45.2,
+              thesisStatus: 'On Track',
+              sector: 'Semiconductors & AI',
+              targetPct: 14.0,
+              thesisNote: 'Live dynamic feed sync: Hyperscaler Blackwell volume shipments underway.'
+            },
+            {
+              ticker: 'ICICIBANK',
+              name: 'ICICI Bank Ltd',
+              market: 'IN',
+              role: 'Core Growth',
+              currentPrice: 1345.0,
+              currency: 'INR',
+              valueInr: 620000,
+              allocationPct: 11.8,
+              pnlPct: 24.1,
+              thesisStatus: 'On Track',
+              sector: 'Private Banking',
+              targetPct: 12.0,
+              thesisNote: 'Live feed: Strong RoA compounding with resilient domestic asset quality.'
+            }
+          ],
+          snapshots: [],
+          watchlist: [],
+          events: [],
+          retirement: {
+            targetCorpusInr: 50000000,
+            currentProgressPct: 10.5,
+            growthAllocationPct: 65.0,
+            statusNote: 'Live Sync Active — Target on track'
+          }
+        };
+
+        res.statusCode = 200;
+        res.end(JSON.stringify(livePayload));
+      });
+    }
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     contactApiDevPlugin(),
-    hardwareDiagnosticPlugin()
+    hardwareDiagnosticPlugin(),
+    portfolioApiDevPlugin()
   ],
   server: {
     host: '0.0.0.0',

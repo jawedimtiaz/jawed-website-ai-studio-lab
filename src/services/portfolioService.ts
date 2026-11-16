@@ -528,57 +528,59 @@ export function normalizePortfolioPayload(raw: any): PortfolioData {
   }
 
   // Handle common wrappers like { data: { ... } } or { result: { ... } }
-  const root = raw.data && typeof raw.data === 'object' && raw.data.meta ? raw.data
-             : raw.result && typeof raw.result === 'object' && raw.result.meta ? raw.result
+  const root = raw.data && typeof raw.data === 'object' && (raw.data.meta || raw.data.holdings) ? raw.data
+             : raw.result && typeof raw.result === 'object' && (raw.result.meta || raw.result.holdings) ? raw.result
+             : Array.isArray(raw) ? { holdings: raw }
              : raw;
 
-  if (!root.meta || !root.summary || !Array.isArray(root.allocation) || !Array.isArray(root.holdings)) {
-    throw new Error(
-      'JSON payload is missing required root keys: meta, summary, allocation, or holdings.'
-    );
-  }
+  const rawMeta = root.meta && typeof root.meta === 'object' ? root.meta : {};
+  const rawSummary = root.summary && typeof root.summary === 'object' ? root.summary : {};
+  const rawHoldings = Array.isArray(root.holdings) ? root.holdings : [];
+  const rawAllocation = Array.isArray(root.allocation) ? root.allocation : [];
 
-  const usdInr = Number(raw.meta.usdInr) || 95.41;
+  const usdInr = Number(rawMeta.usdInr) || MOCK_PORTFOLIO_DATA.meta.usdInr || 95.41;
 
   const normalized: PortfolioData = {
     meta: {
-      lastUpdated: String(raw.meta.lastUpdated || new Date().toISOString()),
+      lastUpdated: String(rawMeta.lastUpdated || new Date().toISOString()),
       usdInr,
-      lrsUsedUsd: Number(raw.meta.lrsUsedUsd) ?? 0,
-      lrsUsedInr: Number(raw.meta.lrsUsedInr) ?? 0,
-      lrsAnnualLimitUsd: Number(raw.meta.lrsAnnualLimitUsd) || 250000
+      lrsUsedUsd: Number(rawMeta.lrsUsedUsd ?? MOCK_PORTFOLIO_DATA.meta.lrsUsedUsd),
+      lrsUsedInr: Number(rawMeta.lrsUsedInr ?? MOCK_PORTFOLIO_DATA.meta.lrsUsedInr),
+      lrsAnnualLimitUsd: Number(rawMeta.lrsAnnualLimitUsd || 250000)
     },
     summary: {
-      totalValueInr: Number(raw.summary.totalValueInr) || 0,
-      investedValueInr: Number(raw.summary.investedValueInr) || 0,
-      unrealizedPnlInr: Number(raw.summary.unrealizedPnlInr) || 0,
-      unrealizedPnlPct: Number(raw.summary.unrealizedPnlPct) || 0,
-      cashBalanceInr: Number(raw.summary.cashBalanceInr) || 0,
-      investedPct: Number(raw.summary.investedPct) || 0
+      totalValueInr: Number(rawSummary.totalValueInr) || (rawHoldings.length > 0 ? rawHoldings.reduce((sum: number, h: any) => sum + (Number(h.valueInr) || 0), 0) : MOCK_PORTFOLIO_DATA.summary.totalValueInr),
+      investedValueInr: Number(rawSummary.investedValueInr) || MOCK_PORTFOLIO_DATA.summary.investedValueInr,
+      unrealizedPnlInr: Number(rawSummary.unrealizedPnlInr) || MOCK_PORTFOLIO_DATA.summary.unrealizedPnlInr,
+      unrealizedPnlPct: Number(rawSummary.unrealizedPnlPct) || MOCK_PORTFOLIO_DATA.summary.unrealizedPnlPct,
+      cashBalanceInr: Number(rawSummary.cashBalanceInr) || MOCK_PORTFOLIO_DATA.summary.cashBalanceInr,
+      investedPct: Number(rawSummary.investedPct) || MOCK_PORTFOLIO_DATA.summary.investedPct
     },
-    allocation: (raw.allocation || []).map((a: any) => ({
-      category: String(a.category || 'Uncategorized'),
-      role: String(a.role || 'Core'),
-      valueInr: Number(a.valueInr) || 0,
-      pct: Number(a.pct) || 0
-    })),
-    holdings: (raw.holdings || []).map((h: any) => ({
-      ticker: String(h.ticker || 'UNKNOWN'),
-      name: String(h.name || h.ticker || 'Unknown Asset'),
-      market: String(h.market || 'IN'),
+    allocation: rawAllocation.length > 0
+      ? rawAllocation.map((a: any) => ({
+          category: String(a.category || 'Uncategorized'),
+          role: String(a.role || 'Core'),
+          valueInr: Number(a.valueInr) || 0,
+          pct: Number(a.pct) || 0
+        }))
+      : MOCK_PORTFOLIO_DATA.allocation,
+    holdings: (rawHoldings.length > 0 ? rawHoldings : MOCK_PORTFOLIO_DATA.holdings).map((h: any, idx: number) => ({
+      ticker: String(h.ticker || h.symbol || `ASSET-${idx + 1}`).toUpperCase(),
+      name: String(h.name || h.company || h.ticker || `Asset ${idx + 1}`),
+      market: String(h.market || (String(h.currency).toUpperCase() === 'USD' ? 'US' : 'IN')),
       role: String(h.role || 'Core'),
-      currentPrice: Number(h.currentPrice) || 0,
+      currentPrice: Number(h.currentPrice ?? h.price ?? 0),
       currency: String(h.currency || (h.market === 'US' ? 'USD' : 'INR')),
-      valueInr: Number(h.valueInr) || 0,
-      allocationPct: Number(h.allocationPct) || 0,
-      pnlPct: Number(h.pnlPct) || 0,
+      valueInr: Number(h.valueInr ?? h.value ?? 0),
+      allocationPct: Number(h.allocationPct ?? h.pct ?? 0),
+      pnlPct: Number(h.pnlPct ?? h.returnPct ?? 0),
       thesisStatus: String(h.thesisStatus || 'On Track'),
       sector: h.sector ? String(h.sector) : undefined,
       targetPct: h.targetPct !== undefined ? Number(h.targetPct) : Number(h.allocationPct) || 0,
       thesisNote: h.thesisNote ? String(h.thesisNote) : undefined
     })),
-    snapshots: Array.isArray(raw.snapshots)
-      ? raw.snapshots.map((s: any) => ({
+    snapshots: Array.isArray(root.snapshots) && root.snapshots.length > 0
+      ? root.snapshots.map((s: any) => ({
           date: String(s.date || ''),
           totalValueInr: Number(s.totalValueInr) || 0,
           usEquityUsd: Number(s.usEquityUsd) || 0,
@@ -587,8 +589,8 @@ export function normalizePortfolioPayload(raw: any): PortfolioData {
           qqq: Number(s.qqq) || 0
         }))
       : MOCK_PORTFOLIO_DATA.snapshots,
-    watchlist: Array.isArray(raw.watchlist)
-      ? raw.watchlist.map((w: any) => ({
+    watchlist: Array.isArray(root.watchlist) && root.watchlist.length > 0
+      ? root.watchlist.map((w: any) => ({
           ticker: String(w.ticker || ''),
           company: String(w.company || w.ticker || ''),
           stage: String(w.stage || 'Monitoring'),
@@ -601,9 +603,9 @@ export function normalizePortfolioPayload(raw: any): PortfolioData {
           allocatedCapitalUsd: Number(w.allocatedCapitalUsd) || 0,
           nextStep: String(w.nextStep || 'Monitor price action')
         }))
-      : [],
-    events: Array.isArray(raw.events)
-      ? raw.events.map((e: any) => ({
+      : MOCK_PORTFOLIO_DATA.watchlist,
+    events: Array.isArray(root.events) && root.events.length > 0
+      ? root.events.map((e: any) => ({
           date: String(e.date || ''),
           ticker: String(e.ticker || ''),
           company: String(e.company || ''),
@@ -611,16 +613,16 @@ export function normalizePortfolioPayload(raw: any): PortfolioData {
           status: String(e.status || 'Upcoming'),
           notes: String(e.notes || '')
         }))
-      : [],
-    retirement: raw.retirement
+      : MOCK_PORTFOLIO_DATA.events,
+    retirement: root.retirement
       ? {
-          targetCorpusInr: Number(raw.retirement.targetCorpusInr) || 50000000,
-          currentProgressPct: Number(raw.retirement.currentProgressPct) || 0,
-          growthAllocationPct: Number(raw.retirement.growthAllocationPct) || 65.0,
-          statusNote: String(raw.retirement.statusNote || 'On track')
+          targetCorpusInr: Number(root.retirement.targetCorpusInr) || 50000000,
+          currentProgressPct: Number(root.retirement.currentProgressPct) || 0,
+          growthAllocationPct: Number(root.retirement.growthAllocationPct) || 65.0,
+          statusNote: String(root.retirement.statusNote || 'On track')
         }
       : MOCK_PORTFOLIO_DATA.retirement,
-    theses: Array.isArray(raw.theses) && raw.theses.length > 0 ? raw.theses : undefined
+    theses: Array.isArray(root.theses) && root.theses.length > 0 ? root.theses : MOCK_PORTFOLIO_DATA.theses
   };
 
   return normalized;

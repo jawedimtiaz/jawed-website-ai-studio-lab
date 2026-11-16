@@ -86,6 +86,7 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
       setErrorMsg(msg);
       // Persist the user-provided URL in state and storage even if network test fails
       onSaveUrlOnly?.(trimmedUrl, tokenInput.trim());
+      onClose();
     } finally {
       setIsTesting(false);
     }

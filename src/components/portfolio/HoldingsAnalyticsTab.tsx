@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   ArrowUpDown,
@@ -11,32 +11,78 @@ import {
   CheckCircle2,
   AlertTriangle,
   Eye,
-  X
+  X,
+  Filter
 } from 'lucide-react';
 import { PortfolioData, HoldingItem, CurrencyCode } from '../../types/portfolio';
 import { formatPortfolioValue, formatAssetPrice } from '../../services/portfolioService';
+
+export type SortKey = 'ticker' | 'valueInr' | 'allocationPct' | 'pnlPct' | 'currentPrice' | 'sector' | 'thesisStatus';
+export type SortOrder = 'asc' | 'desc';
 
 interface HoldingsAnalyticsTabProps {
   data: PortfolioData;
   currency: CurrencyCode;
   onAddHolding: (newHolding: HoldingItem) => void;
+  selectedSector?: string;
+  selectedThesisStatus?: string;
+  assetSortKey?: SortKey;
+  assetSortOrder?: SortOrder;
+  onSectorChange?: (sector: string) => void;
+  onThesisStatusChange?: (status: string) => void;
+  onSortChange?: (key: SortKey) => void;
+  onResetFilters?: () => void;
 }
-
-type SortKey = 'ticker' | 'valueInr' | 'allocationPct' | 'pnlPct' | 'currentPrice';
-type SortOrder = 'asc' | 'desc';
 
 export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
   data,
   currency,
-  onAddHolding
+  onAddHolding,
+  selectedSector,
+  selectedThesisStatus,
+  assetSortKey,
+  assetSortOrder,
+  onSectorChange,
+  onThesisStatusChange,
+  onSortChange,
+  onResetFilters
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [marketFilter, setMarketFilter] = useState<'ALL' | 'IN' | 'MF' | 'US'>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'On Track' | 'Watch' | 'Review'>('ALL');
-  const [sortKey, setSortKey] = useState<SortKey>('valueInr');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sectorFilter, setSectorFilter] = useState<string>(() => selectedSector || 'ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'On Track' | 'Watch' | 'Review'>(
+    () => (selectedThesisStatus as any) || 'ALL'
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(() => assetSortKey || 'valueInr');
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => assetSortOrder || 'desc');
   const [expandedTicker, setExpandedTicker] = useState<string | null>('NVDA');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+
+  // Synchronize with external filter & sort props from parent page
+  useEffect(() => {
+    if (selectedSector !== undefined) {
+      setSectorFilter(selectedSector);
+    }
+  }, [selectedSector]);
+
+  useEffect(() => {
+    if (selectedThesisStatus !== undefined) {
+      setStatusFilter(selectedThesisStatus as any);
+    }
+  }, [selectedThesisStatus]);
+
+  useEffect(() => {
+    if (assetSortKey !== undefined) {
+      setSortKey(assetSortKey);
+    }
+  }, [assetSortKey]);
+
+  useEffect(() => {
+    if (assetSortOrder !== undefined) {
+      setSortOrder(assetSortOrder);
+    }
+  }, [assetSortOrder]);
 
   // Add Position Form State
   const [newTicker, setNewTicker] = useState('');
@@ -51,13 +97,23 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
 
   const usdInr = data.meta.usdInr || 95.41;
 
+  // Extract unique available sectors dynamically
+  const availableSectors = useMemo(() => {
+    const set = new Set<string>();
+    data.holdings.forEach((h) => {
+      if (h.sector) set.add(h.sector);
+    });
+    return Array.from(set).sort();
+  }, [data.holdings]);
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortKey(key);
-      setSortOrder('desc');
+      setSortOrder(key === 'sector' || key === 'thesisStatus' || key === 'ticker' ? 'asc' : 'desc');
     }
+    onSortChange?.(key);
   };
 
   const filteredAndSortedHoldings = useMemo(() => {
@@ -65,8 +121,42 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
 
     const filtered = data.holdings.filter((h) => {
       const matchesMarket = marketFilter === 'ALL' || h.market.toUpperCase() === marketFilter;
-      const matchesStatus =
-        statusFilter === 'ALL' || h.thesisStatus.toLowerCase() === statusFilter.toLowerCase();
+
+      const matchesSector = (() => {
+        if (sectorFilter === 'ALL') return true;
+        const sLower = sectorFilter.toLowerCase().trim();
+        const hSec = (h.sector || '').toLowerCase();
+        const hMarket = (h.market || '').toUpperCase();
+
+        if (hSec === sLower) return true;
+        if (sLower === 'us tech' || sLower === 'us technology') {
+          return (
+            hMarket === 'US' ||
+            hSec.includes('tech') ||
+            hSec.includes('ai') ||
+            hSec.includes('cloud') ||
+            hSec.includes('semiconductor')
+          );
+        }
+        if (sLower === 'indian banking' || sLower === 'banking') {
+          return (hMarket === 'IN' || h.currency === 'INR') && (hSec.includes('bank') || hSec.includes('banking'));
+        }
+        return hSec.includes(sLower);
+      })();
+
+      const matchesStatus = (() => {
+        if (statusFilter === 'ALL') return true;
+        const stLower = statusFilter.toLowerCase().trim();
+        const hStatus = (h.thesisStatus || '').toLowerCase().trim();
+
+        if (hStatus === stLower) return true;
+        if (stLower === 'on track' && (hStatus.includes('track') || hStatus.includes('valid'))) return true;
+        if (stLower === 'watch' && hStatus.includes('watch')) return true;
+        if (stLower === 'review' && hStatus.includes('review')) return true;
+
+        return hStatus.includes(stLower);
+      })();
+
       const matchesSearch =
         !q ||
         h.ticker.toLowerCase().includes(q) ||
@@ -74,19 +164,23 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
         h.role.toLowerCase().includes(q) ||
         (h.sector && h.sector.toLowerCase().includes(q));
 
-      return matchesMarket && matchesStatus && matchesSearch;
+      return matchesMarket && matchesSector && matchesStatus && matchesSearch;
     });
 
     return [...filtered].sort((a, b) => {
       let comparison = 0;
       if (sortKey === 'ticker') {
         comparison = a.ticker.localeCompare(b.ticker);
+      } else if (sortKey === 'sector') {
+        comparison = (a.sector || '').localeCompare(b.sector || '');
+      } else if (sortKey === 'thesisStatus') {
+        comparison = a.thesisStatus.localeCompare(b.thesisStatus);
       } else {
         comparison = (a[sortKey] as number) - (b[sortKey] as number);
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [data.holdings, searchQuery, marketFilter, statusFilter, sortKey, sortOrder]);
+  }, [data.holdings, searchQuery, marketFilter, sectorFilter, statusFilter, sortKey, sortOrder]);
 
   // Filtered Sub-Totals
   const filteredMetrics = useMemo(() => {
@@ -266,29 +360,121 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
           </div>
         </div>
 
-        {/* Secondary Filter Bar: Thesis Status & Active Summary */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800/80 text-xs">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-slate-400">Thesis Filter:</span>
-            {(['ALL', 'On Track', 'Watch', 'Review'] as const).map((st) => (
+        {/* Secondary Filter Bar: Sector Filter, Thesis Status & Sort Options */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-slate-800/80 text-xs">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Sector Filter Select */}
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="holdings-sector-filter" className="text-slate-400 font-medium">
+                Sector:
+              </label>
+              <select
+                id="holdings-sector-filter"
+                value={sectorFilter}
+                onChange={(e) => {
+                  setSectorFilter(e.target.value);
+                  onSectorChange?.(e.target.value);
+                }}
+                data-testid="sector-filter"
+                data-testid-alt="holdings-sector-filter"
+                aria-label="Filter by Sector"
+                className="px-2.5 py-1 bg-[#0b1120] border border-slate-700 rounded-md text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+              >
+                <option value="ALL">All Sectors ({availableSectors.length})</option>
+                <option value="US Tech">US Tech (AI, Cloud, Semis)</option>
+                <option value="Indian Banking">Indian Banking (Private Banks)</option>
+                {availableSectors.map((sec) => (
+                  <option key={sec} value={sec}>
+                    {sec}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Thesis Status Filter Select / Buttons */}
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="holdings-status-filter" className="text-slate-400 font-medium">
+                Thesis Status:
+              </label>
+              <select
+                id="holdings-status-filter"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as any);
+                  onThesisStatusChange?.(e.target.value);
+                }}
+                data-testid="thesis-status-filter"
+                data-testid-alt="holdings-status-filter"
+                aria-label="Filter by Thesis Status"
+                className="px-2.5 py-1 bg-[#0b1120] border border-slate-700 rounded-md text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="On Track">On Track</option>
+                <option value="Watch">Watch</option>
+                <option value="Review">Review</option>
+              </select>
+            </div>
+
+            {/* Sort Action Buttons */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Sort:</span>
               <button
-                key={st}
                 type="button"
-                onClick={() => setStatusFilter(st)}
-                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-                  statusFilter === st
-                    ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                onClick={() => handleSort('sector')}
+                data-testid="btn-sort-sector"
+                data-testid-alt="sort-by-sector-btn"
+                aria-label="Sort by Sector"
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  sortKey === 'sector'
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 font-semibold'
                     : 'text-slate-400 hover:text-slate-200 bg-[#0b1120] border border-slate-800'
                 }`}
               >
-                {st === 'ALL' ? 'All Statuses' : st}
+                <span>Sort by Sector</span>
+                {renderSortIcon('sector')}
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => handleSort('thesisStatus')}
+                data-testid="btn-sort-thesis-status"
+                data-testid-alt="sort-by-status-btn"
+                aria-label="Sort by Thesis Status"
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  sortKey === 'thesisStatus'
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 bg-[#0b1120] border border-slate-800'
+                }`}
+              >
+                <span>Sort by Thesis Status</span>
+                {renderSortIcon('thesisStatus')}
+              </button>
+            </div>
+
+            {/* Reset Button */}
+            {(sectorFilter !== 'ALL' || statusFilter !== 'ALL' || sortKey !== 'valueInr' || searchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setMarketFilter('ALL');
+                  setSectorFilter('ALL');
+                  setStatusFilter('ALL');
+                  setSortKey('valueInr');
+                  setSortOrder('desc');
+                  onResetFilters?.();
+                }}
+                data-testid="reset-filters-btn"
+                aria-label="Reset All Filters"
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-sky-400 hover:text-sky-300 bg-[#0b1120] hover:bg-[#1e293b] border border-slate-700 rounded-md font-medium cursor-pointer transition-colors"
+              >
+                Reset
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-slate-400 font-mono tabular-nums">
             <span>
-              Showing <strong className="text-slate-100">{filteredAndSortedHoldings.length}</strong> of{' '}
+              Showing <strong className="text-slate-100" data-testid="holdings-filtered-count">{filteredAndSortedHoldings.length}</strong> of{' '}
               {data.holdings.length} positions
             </span>
             <span>·</span>
@@ -305,21 +491,227 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
 
       {/* Holdings Table */}
       <div className="bg-[#0f172a] border border-slate-800 rounded-xl overflow-hidden">
+        {/* Filter Dropdown Menu Bar directly above Holdings Table */}
+        <div
+          data-testid="holdings-table-filter-bar"
+          className="px-4 sm:px-5 py-3 border-b border-slate-800 bg-[#0b1120]/80 flex flex-wrap items-center justify-between gap-3 text-xs"
+        >
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-100 m-0 flex items-center gap-2">
+              <span>Holdings Table</span>
+              <span className="text-slate-400 font-mono text-xs font-normal tabular-nums">
+                ({filteredAndSortedHoldings.length} {filteredAndSortedHoldings.length === 1 ? 'asset' : 'assets'})
+              </span>
+            </h3>
+            {(sectorFilter !== 'ALL' || statusFilter !== 'ALL') && (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold">
+                Filtered
+              </span>
+            )}
+          </div>
+
+          {/* Filter Dropdown Menus above Holdings Table */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Sector Filter Dropdown Menu */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="table-sector-filter"
+                className="text-slate-400 font-medium whitespace-nowrap flex items-center gap-1"
+              >
+                <Filter className="w-3 h-3 text-sky-400" />
+                <span>Sector:</span>
+              </label>
+              <select
+                id="table-sector-filter"
+                data-testid="table-sector-filter"
+                aria-label="Filter assets by sector"
+                value={sectorFilter}
+                onChange={(e) => {
+                  setSectorFilter(e.target.value);
+                  onSectorChange?.(e.target.value);
+                }}
+                className="px-2.5 py-1.5 bg-[#0b1120] border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+              >
+                <option value="ALL">All Sectors ({availableSectors.length})</option>
+                <option value="US Tech">US Tech (e.g. Semis, Cloud AI)</option>
+                <option value="Indian Banking">Indian Banking (e.g. Private Banks)</option>
+                {availableSectors.map((sec) => (
+                  <option key={sec} value={sec}>
+                    {sec}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Thesis Status Filter Dropdown Menu */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="table-thesis-status-filter"
+                className="text-slate-400 font-medium whitespace-nowrap"
+              >
+                Thesis Status:
+              </label>
+              <select
+                id="table-thesis-status-filter"
+                data-testid="table-thesis-status-filter"
+                aria-label="Filter assets by thesis status"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as any);
+                  onThesisStatusChange?.(e.target.value);
+                }}
+                className="px-2.5 py-1.5 bg-[#0b1120] border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="On Track">On Track</option>
+                <option value="Watch">Watch</option>
+                <option value="Review">Review</option>
+              </select>
+            </div>
+
+            {/* Filter Dropdown Menu Button & Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
+                data-testid="filter-dropdown-menu"
+                aria-label="Filter dropdown menu"
+                aria-haspopup="true"
+                aria-expanded={isFilterDropdownOpen}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                  isFilterDropdownOpen || sectorFilter !== 'ALL' || statusFilter !== 'ALL'
+                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/40 font-semibold'
+                    : 'bg-[#0b1120] text-slate-300 hover:text-white border-slate-700'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5 text-sky-400" />
+                <span>Filter Menu</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isFilterDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isFilterDropdownOpen && (
+                <div
+                  role="menu"
+                  aria-label="Filter holdings by sector and thesis status"
+                  className="absolute right-0 top-full mt-1.5 w-64 p-3 bg-[#0b1120] border border-slate-700 rounded-xl shadow-2xl z-40 space-y-3 text-xs"
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Filter className="w-3.5 h-3.5 text-sky-400" />
+                      Filter Holdings
+                    </span>
+                    {(sectorFilter !== 'ALL' || statusFilter !== 'ALL') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSectorFilter('ALL');
+                          setStatusFilter('ALL');
+                          onResetFilters?.();
+                        }}
+                        className="text-[11px] text-sky-400 hover:text-sky-300 cursor-pointer"
+                      >
+                        Reset All
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Filter by Sector
+                    </span>
+                    <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                      {[
+                        { id: 'ALL', label: 'All Sectors' },
+                        { id: 'US Tech', label: 'US Tech (Semis, Cloud AI)' },
+                        { id: 'Indian Banking', label: 'Indian Banking (Private)' },
+                        ...availableSectors.map((s) => ({ id: s, label: s }))
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setSectorFilter(item.id);
+                            onSectorChange?.(item.id);
+                          }}
+                          className={`w-full text-left px-2 py-1 rounded-md text-xs transition-colors cursor-pointer flex items-center justify-between ${
+                            sectorFilter === item.id
+                              ? 'bg-sky-500/20 text-sky-300 font-semibold'
+                              : 'text-slate-300 hover:bg-[#1e293b]'
+                          }`}
+                        >
+                          <span className="truncate">{item.label}</span>
+                          {sectorFilter === item.id && <span className="text-sky-400 font-bold">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Filter by Thesis Status
+                    </span>
+                    <div className="space-y-1">
+                      {['ALL', 'On Track', 'Watch', 'Review'].map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => {
+                            setStatusFilter(st as any);
+                            onThesisStatusChange?.(st);
+                          }}
+                          className={`w-full text-left px-2 py-1 rounded-md text-xs transition-colors cursor-pointer flex items-center justify-between ${
+                            statusFilter === st
+                              ? 'bg-sky-500/20 text-sky-300 font-semibold'
+                              : 'text-slate-300 hover:bg-[#1e293b]'
+                          }`}
+                        >
+                          <span>{st === 'ALL' ? 'All Statuses' : st}</span>
+                          {statusFilter === st && <span className="text-sky-400 font-bold">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Clear shortcut if filtered */}
+            {(sectorFilter !== 'ALL' || statusFilter !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSectorFilter('ALL');
+                  setStatusFilter('ALL');
+                  onResetFilters?.();
+                }}
+                className="text-xs text-sky-400 hover:text-sky-300 px-2 py-1 rounded hover:bg-[#1e293b] cursor-pointer transition-colors"
+                title="Reset sector and thesis status filters"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
         {filteredAndSortedHoldings.length === 0 ? (
           <div className="p-12 text-center">
             <p className="text-sm font-semibold text-slate-200 mb-1">
               No holdings match your active filter criteria
             </p>
             <p className="text-xs text-slate-400 mb-4">
-              Try clearing your search query or switching market and thesis filters back to All.
+              Try clearing your search query or switching sector, market, and thesis filters back to All.
             </p>
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setMarketFilter('ALL');
+                setSectorFilter('ALL');
                 setStatusFilter('ALL');
+                setSortKey('valueInr');
+                setSortOrder('desc');
               }}
+              data-testid="reset-filters-btn"
               className="px-4 py-2 bg-[#1e293b] hover:bg-slate-700 text-sky-400 text-xs font-medium rounded-lg border border-slate-700 cursor-pointer"
             >
               Reset All Filters
@@ -327,7 +719,7 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse" data-testid="holdings-table">
               <thead>
                 <tr className="border-b border-slate-800 bg-[#0b1120]/60 text-[11px] text-slate-400 font-medium">
                   <th className="py-3.5 pl-5 pr-3">
@@ -340,7 +732,18 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
                       {renderSortIcon('ticker')}
                     </button>
                   </th>
-                  <th className="py-3.5 px-3">Market · Role</th>
+                  <th className="py-3.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('sector')}
+                      className="inline-flex items-center gap-1.5 hover:text-slate-200 cursor-pointer"
+                      data-testid="sort-sector-column"
+                      aria-label="Sort by Sector"
+                    >
+                      <span>Market · Sector · Role</span>
+                      {renderSortIcon('sector')}
+                    </button>
+                  </th>
                   <th className="py-3.5 px-3 text-right">
                     <button
                       type="button"
@@ -381,7 +784,18 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
                       {renderSortIcon('pnlPct')}
                     </button>
                   </th>
-                  <th className="py-3.5 pl-3 pr-5 text-right">Thesis Status</th>
+                  <th className="py-3.5 pl-3 pr-5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('thesisStatus')}
+                      className="inline-flex items-center justify-end gap-1.5 hover:text-slate-200 cursor-pointer ml-auto"
+                      data-testid="sort-thesis-status-column"
+                      aria-label="Sort by Thesis Status"
+                    >
+                      <span>Thesis Status</span>
+                      {renderSortIcon('thesisStatus')}
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-xs">

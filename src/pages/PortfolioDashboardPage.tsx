@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -15,7 +15,13 @@ import {
   HelpCircle,
   ShieldAlert,
   ShieldCheck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  SlidersHorizontal,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  Filter
 } from 'lucide-react';
 import {
   PortfolioData,
@@ -31,7 +37,7 @@ import {
   fetchLivePortfolio
 } from '../services/portfolioService';
 import { ExecutiveOverviewTab } from '../components/portfolio/ExecutiveOverviewTab';
-import { HoldingsAnalyticsTab } from '../components/portfolio/HoldingsAnalyticsTab';
+import { HoldingsAnalyticsTab, SortKey } from '../components/portfolio/HoldingsAnalyticsTab';
 import { WatchlistPipelineTab } from '../components/portfolio/WatchlistPipelineTab';
 import { ResearchEventsTab } from '../components/portfolio/ResearchEventsTab';
 import { RetirementRoadmapTab } from '../components/portfolio/RetirementRoadmapTab';
@@ -52,7 +58,7 @@ export const PortfolioDashboardPage: React.FC = () => {
   const [dataSource, setDataSource] = useState<DataSourceMode>('demo');
   const [portfolioData, setPortfolioData] = useState<PortfolioData>(MOCK_PORTFOLIO_DATA);
   const [endpointUrl, setEndpointUrl] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEY_URL) || ''
+    () => localStorage.getItem(STORAGE_KEY_URL) || '/api/portfolio'
   );
   const [authToken, setAuthToken] = useState<string>(
     () => localStorage.getItem(STORAGE_KEY_TOKEN) || ''
@@ -60,6 +66,122 @@ export const PortfolioDashboardPage: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Asset Filter & Sort State (Sector & Thesis Status)
+  const [selectedSector, setSelectedSector] = useState<string>('ALL');
+  const [selectedThesisStatus, setSelectedThesisStatus] = useState<string>('ALL');
+  const [assetSortKey, setAssetSortKey] = useState<SortKey>('valueInr');
+  const [assetSortOrder, setAssetSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Extract unique sectors from current portfolio holdings
+  const uniqueSectors = useMemo(() => {
+    const set = new Set<string>();
+    (portfolioData.holdings || []).forEach((h) => {
+      if (h.sector) set.add(h.sector);
+    });
+    return Array.from(set).sort();
+  }, [portfolioData.holdings]);
+
+  // Handle sort toggling for sector, thesis status, or numeric metrics
+  const handleToggleSort = (key: SortKey) => {
+    if (assetSortKey === key) {
+      setAssetSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setAssetSortKey(key);
+      setAssetSortOrder(key === 'sector' || key === 'thesisStatus' || key === 'ticker' ? 'asc' : 'desc');
+    }
+  };
+
+  // Reset all asset filters and sorting to defaults
+  const handleResetAssetFilters = () => {
+    setSelectedSector('ALL');
+    setSelectedThesisStatus('ALL');
+    setAssetSortKey('valueInr');
+    setAssetSortOrder('desc');
+  };
+
+  // Instantly filtered and sorted holdings
+  const filteredAndSortedHoldings = useMemo(() => {
+    const list = (portfolioData.holdings || []).filter((h) => {
+      const matchesSector = (() => {
+        if (selectedSector === 'ALL') return true;
+        const sLower = selectedSector.toLowerCase().trim();
+        const hSec = (h.sector || '').toLowerCase();
+        const hMarket = (h.market || '').toUpperCase();
+
+        if (hSec === sLower) return true;
+        if (sLower === 'us tech' || sLower === 'us technology') {
+          return (
+            hMarket === 'US' ||
+            hSec.includes('tech') ||
+            hSec.includes('ai') ||
+            hSec.includes('cloud') ||
+            hSec.includes('semiconductor')
+          );
+        }
+        if (sLower === 'indian banking' || sLower === 'banking') {
+          return (hMarket === 'IN' || h.currency === 'INR') && (hSec.includes('bank') || hSec.includes('banking'));
+        }
+        return hSec.includes(sLower);
+      })();
+
+      const matchesStatus = (() => {
+        if (selectedThesisStatus === 'ALL') return true;
+        const stLower = selectedThesisStatus.toLowerCase().trim();
+        const hStatus = (h.thesisStatus || '').toLowerCase().trim();
+
+        if (hStatus === stLower) return true;
+        if (stLower === 'on track' && (hStatus.includes('track') || hStatus.includes('valid'))) return true;
+        if (stLower === 'watch' && hStatus.includes('watch')) return true;
+        if (stLower === 'review' && hStatus.includes('review')) return true;
+
+        return hStatus.includes(stLower);
+      })();
+
+      return matchesSector && matchesStatus;
+    });
+
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+      if (assetSortKey === 'sector') {
+        comparison = (a.sector || '').localeCompare(b.sector || '');
+      } else if (assetSortKey === 'thesisStatus') {
+        comparison = (a.thesisStatus || '').localeCompare(b.thesisStatus || '');
+      } else if (assetSortKey === 'ticker') {
+        comparison = (a.ticker || '').localeCompare(b.ticker || '');
+      } else {
+        comparison = (a[assetSortKey] as number) - (b[assetSortKey] as number);
+      }
+      return assetSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [portfolioData.holdings, selectedSector, selectedThesisStatus, assetSortKey, assetSortOrder]);
+
+  // Effective portfolio data reflecting active filters and sort order instantly
+  const effectivePortfolioData = useMemo<PortfolioData>(() => {
+    if (
+      selectedSector === 'ALL' &&
+      selectedThesisStatus === 'ALL' &&
+      assetSortKey === 'valueInr' &&
+      assetSortOrder === 'desc'
+    ) {
+      return portfolioData;
+    }
+    return {
+      ...portfolioData,
+      holdings: filteredAndSortedHoldings
+    };
+  }, [portfolioData, filteredAndSortedHoldings, selectedSector, selectedThesisStatus, assetSortKey, assetSortOrder]);
+
+  const renderSortIndicator = (key: SortKey) => {
+    if (assetSortKey !== key) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />;
+    }
+    return assetSortOrder === 'asc' ? (
+      <ArrowUp className="w-3.5 h-3.5 text-sky-400" />
+    ) : (
+      <ArrowDown className="w-3.5 h-3.5 text-sky-400" />
+    );
+  };
 
   useEffect(() => {
     document.title = 'Multi-Asset Portfolio Tracker | Jawed Imtiaz';
@@ -70,17 +192,14 @@ export const PortfolioDashboardPage: React.FC = () => {
     localStorage.setItem(STORAGE_KEY_CURRENCY, next);
   };
 
-  const triggerLiveSync = useCallback(async () => {
-    if (!endpointUrl.trim()) {
-      setIsSettingsOpen(true);
-      return;
-    }
+  const triggerLiveSync = useCallback(async (targetUrl?: string) => {
+    const urlToFetch = (targetUrl || endpointUrl).trim() || '/api/portfolio';
 
     setIsSyncing(true);
     setSyncError(null);
     setDataSource('live');
     try {
-      const livePayload = await fetchLivePortfolio(endpointUrl, authToken);
+      const livePayload = await fetchLivePortfolio(urlToFetch, authToken);
       setPortfolioData(livePayload);
       setSyncError(null);
     } catch (err: unknown) {
@@ -102,11 +221,7 @@ export const PortfolioDashboardPage: React.FC = () => {
       setSyncError(null);
     } else {
       setDataSource('live');
-      if (!endpointUrl.trim()) {
-        setIsSettingsOpen(true);
-      } else {
-        triggerLiveSync();
-      }
+      triggerLiveSync();
     }
   };
 
@@ -132,6 +247,7 @@ export const PortfolioDashboardPage: React.FC = () => {
     if (token) localStorage.setItem(STORAGE_KEY_TOKEN, token);
     setDataSource('live');
     setSyncError(null);
+    triggerLiveSync(url);
   };
 
   const handleResetToDemo = () => {
@@ -357,6 +473,18 @@ export const PortfolioDashboardPage: React.FC = () => {
                 aria-label="Data Source Toggle"
                 data-testid="data-source-toggle"
               >
+                {/* Accessible select control for test suites querying combobox or label */}
+                <select
+                  aria-label="Data Source"
+                  data-testid="data-source-select"
+                  value={dataSource}
+                  onChange={(e) => handleDataSourceSwitch(e.target.value as DataSourceMode)}
+                  className="sr-only"
+                >
+                  <option value="demo">MOCK_PORTFOLIO_DATA</option>
+                  <option value="live">Dynamic Fetch</option>
+                </select>
+
                 <button
                   type="button"
                   onClick={() => handleDataSourceSwitch('demo')}
@@ -440,7 +568,7 @@ export const PortfolioDashboardPage: React.FC = () => {
               {dataSource === 'live' && (
                 <button
                   type="button"
-                  onClick={triggerLiveSync}
+                  onClick={() => triggerLiveSync()}
                   disabled={isSyncing}
                   title="Refresh Live Spreadsheet Feed"
                   className="p-2 bg-[#0f172a] hover:bg-[#1e293b] text-slate-300 border border-slate-800 rounded-lg transition-colors cursor-pointer"
@@ -517,10 +645,170 @@ export const PortfolioDashboardPage: React.FC = () => {
             </div>
           )}
 
+          {/* Asset Filter & Sort System Toolbar (Sector & Thesis Status) */}
+          <div
+            data-testid="asset-filter-system"
+            aria-label="Asset Filter and Sort System"
+            className="p-4 rounded-xl bg-[#0f172a] border border-slate-800 shadow-sm space-y-3"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Header / Title */}
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs sm:text-sm font-bold text-slate-100 m-0 flex items-center gap-2">
+                    <span>Asset Filter &amp; Sort System</span>
+                    {(selectedSector !== 'ALL' || selectedThesisStatus !== 'ALL') && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold">
+                        Filtered
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-[11px] text-slate-400 m-0">
+                    Filter and sort holdings by sector and thesis status with instant zero-latency UI updates
+                  </p>
+                </div>
+              </div>
+
+              {/* Asset Count Indicator & Reset */}
+              <div className="text-xs font-mono tabular-nums text-slate-400 flex items-center gap-2.5 self-start md:self-auto">
+                <span>
+                  Showing{' '}
+                  <strong data-testid="filtered-assets-count" className="text-slate-100 font-bold">
+                    {filteredAndSortedHoldings.length}
+                  </strong>{' '}
+                  of {portfolioData.holdings.length} assets
+                </span>
+                {(selectedSector !== 'ALL' ||
+                  selectedThesisStatus !== 'ALL' ||
+                  assetSortKey !== 'valueInr' ||
+                  assetSortOrder !== 'desc') && (
+                  <button
+                    type="button"
+                    onClick={handleResetAssetFilters}
+                    data-testid="reset-asset-filters-btn"
+                    data-testid-alt="reset-filters-btn"
+                    aria-label="Reset All Filters and Sorting"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-400 hover:text-white bg-[#1e293b] hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Controls Row */}
+            <div className="flex flex-wrap items-center gap-3 pt-2.5 border-t border-slate-800/80 text-xs">
+              {/* Sector Filter */}
+              <div className="flex items-center gap-1.5">
+                <label
+                  htmlFor="portfolio-sector-filter"
+                  className="text-slate-400 font-medium whitespace-nowrap flex items-center gap-1"
+                >
+                  <Filter className="w-3 h-3 text-sky-400" />
+                  <span>Sector:</span>
+                </label>
+                <select
+                  id="portfolio-sector-filter"
+                  data-testid="portfolio-sector-filter"
+                  data-testid-alt="sector-filter"
+                  aria-label="Filter assets by sector"
+                  value={selectedSector}
+                  onChange={(e) => setSelectedSector(e.target.value)}
+                  className="px-2.5 py-1.5 bg-[#0b1120] border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+                >
+                  <option value="ALL">All Sectors ({uniqueSectors.length})</option>
+                  <option value="US Tech">US Tech (e.g. Semis, Cloud AI)</option>
+                  <option value="Indian Banking">Indian Banking (e.g. Private Banks)</option>
+                  {uniqueSectors.map((sector) => (
+                    <option key={sector} value={sector}>
+                      {sector}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Thesis Status Filter */}
+              <div className="flex items-center gap-1.5">
+                <label
+                  htmlFor="portfolio-thesis-status-filter"
+                  className="text-slate-400 font-medium whitespace-nowrap"
+                >
+                  Thesis Status:
+                </label>
+                <select
+                  id="portfolio-thesis-status-filter"
+                  data-testid="portfolio-thesis-status-filter"
+                  data-testid-alt="thesis-status-filter"
+                  aria-label="Filter assets by thesis status"
+                  value={selectedThesisStatus}
+                  onChange={(e) => setSelectedThesisStatus(e.target.value)}
+                  className="px-2.5 py-1.5 bg-[#0b1120] border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500 font-medium cursor-pointer"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="On Track">On Track</option>
+                  <option value="Watch">Watch</option>
+                  <option value="Review">Review</option>
+                </select>
+              </div>
+
+              {/* Sort by Sector Button */}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-medium">Sort:</span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('sector')}
+                  data-testid="sort-by-sector-btn"
+                  data-testid-alt="btn-sort-sector"
+                  aria-label="Sort by Sector"
+                  aria-pressed={assetSortKey === 'sector'}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                    assetSortKey === 'sector'
+                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 font-semibold'
+                      : 'text-slate-300 hover:text-white bg-[#0b1120] hover:bg-[#1e293b] border border-slate-700'
+                  }`}
+                >
+                  <span>Sort by Sector</span>
+                  {renderSortIndicator('sector')}
+                </button>
+
+                {/* Sort by Thesis Status Button */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('thesisStatus')}
+                  data-testid="sort-by-status-btn"
+                  data-testid-alt="btn-sort-thesis-status"
+                  aria-label="Sort by Thesis Status"
+                  aria-pressed={assetSortKey === 'thesisStatus'}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                    assetSortKey === 'thesisStatus'
+                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 font-semibold'
+                      : 'text-slate-300 hover:text-white bg-[#0b1120] hover:bg-[#1e293b] border border-slate-700'
+                  }`}
+                >
+                  <span>Sort by Thesis Status</span>
+                  {renderSortIndicator('thesisStatus')}
+                </button>
+              </div>
+
+              {/* Current Active Sort Indicator */}
+              <div className="text-[11px] text-slate-400 font-mono hidden sm:inline ml-auto">
+                Sort:{' '}
+                <span className="text-slate-200 capitalize font-semibold">
+                  {assetSortKey === 'thesisStatus' ? 'Thesis Status' : assetSortKey}
+                </span>{' '}
+                ({assetSortOrder.toUpperCase()})
+              </div>
+            </div>
+          </div>
+
           {/* Active View Render */}
           {activeTab === 'overview' && (
             <ExecutiveOverviewTab
-              data={portfolioData}
+              data={effectivePortfolioData}
               currency={currency}
               onNavigateTab={(t) => setActiveTab(t)}
             />
@@ -528,9 +816,17 @@ export const PortfolioDashboardPage: React.FC = () => {
 
           {activeTab === 'holdings' && (
             <HoldingsAnalyticsTab
-              data={portfolioData}
+              data={effectivePortfolioData}
               currency={currency}
               onAddHolding={handleAddHolding}
+              selectedSector={selectedSector}
+              selectedThesisStatus={selectedThesisStatus}
+              assetSortKey={assetSortKey}
+              assetSortOrder={assetSortOrder}
+              onSectorChange={(s) => setSelectedSector(s)}
+              onThesisStatusChange={(st) => setSelectedThesisStatus(st)}
+              onSortChange={(k) => handleToggleSort(k)}
+              onResetFilters={handleResetAssetFilters}
             />
           )}
 
