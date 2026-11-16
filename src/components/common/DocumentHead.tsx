@@ -58,7 +58,7 @@ export const DocumentHead: React.FC = () => {
     } else if (cleanPath === '/tools') {
       title = 'Interactive Browser Utilities & Tools | Jawed Imtiaz';
       description =
-        'A suite of 14 privacy-preserving, client-side browser utilities across IT Support, Apple/Jamf, Microsoft 365, Career, and Planning.';
+        'A suite of 16 privacy-preserving, client-side browser utilities across IT Support, Apple/Jamf, Microsoft 365, Career, and Planning.';
     } else if (cleanPath.startsWith('/tools/')) {
       const slug = cleanPath.replace('/tools/', '');
       const tool = toolsList.find((t) => t.slug === slug);

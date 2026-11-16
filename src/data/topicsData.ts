@@ -119,7 +119,8 @@ export const topicsList: TopicItem[] = [
       'inflation-goal-planning-calculator',
       'personal-finance-snapshot',
       'retirement-planning-calculator',
-      'finance-planning-workspace'
+      'finance-planning-workspace',
+      'portfolio-tracker'
     ]
   }
 ];

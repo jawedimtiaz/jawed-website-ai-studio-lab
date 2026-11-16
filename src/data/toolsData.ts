@@ -498,6 +498,41 @@ export const toolsList: ToolItem[] = [
     ],
     relatedSlugs: ['personal-finance-snapshot', 'retirement-planning-calculator', 'compound-growth-sip-calculator']
   },
+  {
+    slug: 'portfolio-tracker',
+    title: 'Multi-Asset Portfolio Tracker',
+    category: 'Finance & Planning',
+    eyebrow: 'Tool · Finance & Planning · Institutional Portfolio',
+    benefit: 'Track Indian equities, mutual funds, US stocks, LRS limits, and watchlist theses via Demo Mode or live Google Sheets sync',
+    description: 'Track Indian equities, mutual funds, US stocks, LRS limits, and watchlist theses via Demo Mode or live Google Sheets sync',
+    tags: ['Portfolio Tracker', 'US Equities', 'Mutual Funds', 'LRS Limits', 'Asset Allocation', 'Watchlist', 'Investment Thesis'],
+    estimatedTime: '3 min',
+    path: '/tools/portfolio-tracker/',
+    purpose: 'Provide institutional-grade portfolio analytics, benchmark comparison against S&P 500 and QQQ, LRS limit monitoring, and investment thesis documentation for multi-asset investors.',
+    steps: [
+      'Select Demo Mode to explore sample multi-asset data or connect your Google Sheet / Cloudflare Worker JSON endpoint.',
+      'Toggle currency between ₹ INR and $ USD to view asset values and exchange rate impacts.',
+      'Analyze asset allocation across Indian stocks, mutual funds, US equities, and cash reserves.',
+      'Inspect individual holdings, filter by market sleeve or thesis status, and sort by weight or P&L.',
+      'Monitor deployment pipeline targets, drawdown from 52-week highs, and upcoming catalyst events.'
+    ],
+    exampleOutput: {
+      title: 'Portfolio Executive Summary',
+      description: 'Key metrics displayed in the dashboard:',
+      content: `Total Portfolio: ₹48,50,000 ($50.8K) | Invested: 93.4%\nUnrealized P&L: +₹7,30,000 (+17.72%)\nAsset Allocation: Indian Equities 38.1% | Mutual Funds 24.7% | US Equities 30.5% | Cash 6.6%\nLRS Utilization: $5,817 / $250,000 annual cap (Remitted: ₹5.55L)`
+    },
+    faq: [
+      {
+        question: 'Does this tool connect directly to brokerage accounts?',
+        answer: 'No. The tool supports instant offline Demo Mode and private live synchronization via a custom Cloudflare Worker or Google Apps Script JSON endpoint.'
+      },
+      {
+        question: 'How is foreign exchange calculated for US equities?',
+        answer: 'US stocks are tracked natively in USD and converted to INR using the real-time or configured USD/INR reference rate (e.g. ₹95.41).'
+      }
+    ],
+    relatedSlugs: ['finance-planning-workspace', 'personal-finance-snapshot', 'retirement-planning-calculator']
+  },
 
   // 6. AI & Productivity
   {

@@ -18,6 +18,7 @@ import { PersonalFinanceSnapshot } from '../components/tools/PersonalFinanceSnap
 import { RetirementPlanningCalculator } from '../components/tools/RetirementPlanningCalculator';
 import { FinancePlanningWorkspace } from '../components/tools/FinancePlanningWorkspace';
 import { HardwareDiagnosticPage } from './HardwareDiagnosticPage';
+import { PortfolioDashboardPage } from './PortfolioDashboardPage';
 
 export const ToolDetailPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -76,6 +77,8 @@ export const ToolDetailPage: React.FC = () => {
         return <RetirementPlanningCalculator />;
       case 'finance-planning-workspace':
         return <FinancePlanningWorkspace />;
+      case 'portfolio-tracker':
+        return <PortfolioDashboardPage />;
       default:
         return <div>Tool implementation pending</div>;
     }
@@ -230,7 +233,7 @@ export const ToolDetailPage: React.FC = () => {
         {/* Contextual Hub Links */}
         <section style={{ borderTop: '1px solid var(--line)', paddingTop: '1.5rem', marginTop: '2rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <Link to="/tools/" className="button button-secondary" style={{ fontSize: '0.85rem' }}>
-            ← All 14 Interactive Tools
+            ← All 16 Interactive Tools
           </Link>
           <Link to="/notes/" className="button button-secondary" style={{ fontSize: '0.85rem' }}>
             📖 Troubleshooting Notes

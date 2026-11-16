@@ -28,7 +28,7 @@ export const HomePage: React.FC = () => {
             My Work &amp; Experience →
           </Link>
           <Link className="button button-secondary" to="/tools/">
-            Browse 14 Tools →
+            Browse 16 Tools →
           </Link>
           <Link className="button button-secondary" to="/ai/">
             Ask Jawed AI 🤖
@@ -45,7 +45,7 @@ export const HomePage: React.FC = () => {
             <span>Hands-on macOS, Windows, Jamf &amp; SaaS support</span>
           </div>
           <div className="stat">
-            <strong>14 Interactive Tools</strong>
+            <strong>16 Interactive Tools</strong>
             <span>Client-side, privacy-first IT &amp; career utilities</span>
           </div>
           <div className="stat">
@@ -67,7 +67,7 @@ export const HomePage: React.FC = () => {
             <h2 style={{ margin: 0 }}>Most Useful Tools</h2>
           </div>
           <Link to="/tools/" className="button button-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.9rem' }}>
-            View All 14 Tools →
+            View All 16 Tools →
           </Link>
         </div>
         <p className="text-muted" style={{ marginBottom: '1.5rem' }}>
@@ -214,7 +214,7 @@ export const HomePage: React.FC = () => {
             Work With Me / Send a Message →
           </Link>
           <Link to="/tools/" className="button button-secondary" style={{ padding: '0.65rem 1.25rem', fontSize: '1rem' }}>
-            Browse All 14 Interactive Tools →
+            Browse All 16 Interactive Tools →
           </Link>
           <Link to="/ai/" className="button button-secondary" style={{ padding: '0.65rem 1.25rem', fontSize: '1rem' }}>
             Ask Jawed AI 🤖

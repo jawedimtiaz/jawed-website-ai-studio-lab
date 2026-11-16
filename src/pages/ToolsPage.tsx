@@ -42,7 +42,7 @@ export const ToolsPage: React.FC = () => {
       <p className="eyebrow">Interactive Browser Utilities</p>
       <h1>Interactive Tools</h1>
       <p className="lead" style={{ maxWidth: '52rem', marginBottom: '2rem' }}>
-        A collection of 14 practical, privacy-first browser utilities designed for IT Service Desk analysts, Apple &amp; Windows workplace technicians, career builders, and financial planners. All calculations and text processing run strictly inside your browser—no user data is logged or sent to any server.
+        A collection of 16 practical, privacy-first browser utilities designed for IT Service Desk analysts, Apple &amp; Windows workplace technicians, career builders, and financial planners. All calculations and text processing run strictly inside your browser—no user data is logged or sent to any server.
       </p>
 
       {/* Search and Category Filters */}
@@ -148,7 +148,11 @@ export const ToolsPage: React.FC = () => {
           {filteredTools.map((tool) => (
             <article
               key={tool.slug}
-              className="card"
+              className="card tool-card"
+              data-testid={`tool-card-${tool.slug}`}
+              data-tool-slug={tool.slug}
+              data-tool-title={tool.title}
+              data-title={tool.title}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -167,14 +171,23 @@ export const ToolsPage: React.FC = () => {
                 </div>
 
                 <h3 style={{ fontSize: '1.2rem', margin: '0.2rem 0 0.4rem', lineHeight: 1.3 }}>
-                  <Link to={tool.path} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <Link to={tool.path} style={{ textDecoration: 'none', color: 'inherit' }} data-testid={`tool-link-${tool.slug}`}>
                     {tool.title}
                   </Link>
                 </h3>
 
-                {/* One-Line Benefit */}
-                <p style={{ fontSize: '0.92rem', color: 'var(--text)', margin: '0 0 0.75rem', lineHeight: 1.5, fontWeight: 500 }}>
-                  {tool.benefit}
+                {/* Tool Description */}
+                <p
+                  className="tool-description description"
+                  style={{
+                    fontSize: '0.92rem',
+                    color: 'var(--text)',
+                    margin: '0 0 0.75rem',
+                    lineHeight: 1.5,
+                    fontWeight: 500
+                  }}
+                >
+                  {tool.description}
                 </p>
 
                 {/* Tags */}
@@ -219,7 +232,7 @@ export const ToolsPage: React.FC = () => {
           <div className="card">
             <h3>🔒 Complete Client-Side Privacy</h3>
             <p style={{ fontSize: '0.92rem', lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-              All 14 utilities execute purely in client memory via HTML5, React, and Web APIs. Your input notes, resumes, financial scenarios, and device identifiers are never transmitted to external APIs or stored in cookies.
+              All 16 utilities execute purely in client memory via HTML5, React, and Web APIs. Your input notes, resumes, financial scenarios, and device identifiers are never transmitted to external APIs or stored in cookies.
             </p>
           </div>
           <div className="card">
