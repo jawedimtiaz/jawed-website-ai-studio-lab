@@ -264,16 +264,832 @@ For a new chat, start in the Jawed Web Studio — Business & Development HQ proj
 - Review document commit: `b40356301d8f3116c3eae9bf9f33674d4973a6ee`.
 
 **Continuation state:** PR #51 must remain Draft and unmerged. Next safe work is read-only reconciliation of PR base drift and review of the current main-branch continuity document; do not update/rebase the PR branch without explicit owner direction.
-### PR #49 deployment-source reconciliation — 15 November 2026
 
-- Re-fetched PR #49 and PR #51 metadata. PR #49 remains open, non-draft, unmerged, mergeable; head `8ba814c23e51c6182309cff5d22184084f7a1745`, base snapshot `f432865d33e30d988f070ccf0b7b8b68e9442f7f`, three commits ahead / one behind current main. Its head returned two PR workflow runs (Security Supply Chain Gate and Site Integrity Gate), both successful; no deployment was run.
-- PR #51 remains open, Draft, unmerged, mergeable; current docs head before this checkpoint `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`, base current main `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`, 157 ahead / one behind. Its latest docs-only commit has no workflow runs; the 13 successful application-code workflow runs are from the prior application commit.
-- Inspected PR #49 workflow `.github/workflows/manual-studio-hq-worker-deploy.yml`. It is manual-only and runs only from main, but explicitly checks out fixed source commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6` (PR #46 merge), not PR #49 head/current main/PR #51. It deploys that checked-out source using `bunx wrangler deploy`.
-- The exact pinned source `wrangler.jsonc` has HQ_DB plus only two rate limiters: HQ_SESSION_LIMITER namespace `8726111401` at 60/60s, and HQ_WRITE_LIMITER namespace `8726111402` at 30/60s. It has no HQ_RATE_LIMITER. The workflow's pre-deploy validation checks only the two old limiter names, so it would not detect the missing general limiter required by PR #51.
-- PR #51 `wrangler.jsonc` instead declares canonical HQ_DB plus three bindings: session 10/60s (`620261114`), write 30/60s (`620261115`), and general 120/60s (`620261116`). These are materially different namespaces/thresholds from PR #49's pinned source. The active deployment workflow must not deploy the older source if the intent is to release PR #51.
-- Current main and PR #49 branch `wrangler.jsonc` both omit D1 and rate-limit declarations; PR #49's workflow bypasses that branch config by checking out the hard-coded PR #46 commit. PR #51 restores the canonical config.
-- Current main also contains a legacy root migration `migrations/0002_hq_owner_authorization_hardening.sql` defining parallel `hq_*` tables. It is absent from PR #51 and not in the live D1 migration ledger. The live DB instead has canonical `migrations/hq/0001_studio_hq_schema.sql` and `0002_financial_management.sql`. Do not apply the legacy root migration or mix the two schema families.
-- PR #49's security validator exception is narrowly limited to the two Cloudflare deployment secrets and exact deployment workflow; that exception is not itself the issue. The stale source pin and incomplete limiter validation are the blockers.
-- Recommendation: do not merge or manually dispatch PR #49 in current form. Any future deployment workflow must pin the exact approved post-remediation commit, validate all three limiter names and thresholds, verify canonical D1 identity/migration directory, retain the narrow secret exception, and include source provenance and rollback.
-- Full evidence and recommendation recorded in `docs/ci-and-bundle-maintenance-review.md` (review commit `5c78a3e7bbb171b5d1cbc5534c1f043ec0e20022`).
-- No PR #49/PR #51 application files, main files, Cloudflare settings, Worker versions, D1 schema/data, or secrets were changed. No workflow dispatch, deployment, migration or merge occurred.
+## 17. Current GitHub verification and release-readiness continuation — 15 November 2026
+
+This section supersedes earlier PR-head and behind-count values in prior sections where they conflict with the live GitHub state recorded below.
+
+### Exact PR and branch state (fresh GitHub reads)
+
+- PR #51 remains **open, Draft, unmerged**.
+- Branch: `fix/phase-2-7m-canonical-d1-compatibility-20261114`.
+- Exact current PR head: `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`.
+- Exact current base/main head: `355341935a8ba87011e52d0c862852900aefe9db`.
+- Compare result: `diverged`; PR branch is **157 commits ahead and 3 commits behind** current main. Merge base: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- GitHub PR metadata reports `mergeable: false`. This is consistent with the branch divergence and must not be interpreted as a request to update/rebase.
+- The branch API reports `protected: false`; main branch API also reports `protected: false`, and required status checks are disabled in the returned branch metadata.
+- No submitted PR reviews, review threads, or PR conversation comments were returned.
+- No branch update, merge, PR conversion, review request, or protection mutation was performed.
+
+### Latest-head CI verification
+
+For exact head `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`, the commit-scoped GitHub Actions query returned 13 pull-request workflow runs. All 13 completed with conclusion `success`; none of the returned runs was pending or failed:
+
+- AdSense Readiness Gate
+- Accessibility Document Contract
+- AI Regression Gate
+- PWA Reliability Gate
+- Deployment Runtime Reliability Gate
+- Security Baseline Gate
+- Studio HQ D1 Schema Validation
+- Site Integrity Gate
+- Security Supply Chain Gate
+- Core Web Vitals Protection Gate
+- Performance Baseline Gate
+- Studio HQ Firebase Auth Tests
+- Career Match Browser Runtime Gate
+
+The combined commit-status endpoint returned an empty status list; workflow-run records are the supporting CI evidence.
+
+The exact Studio HQ Firebase Auth job is run `43741854105`, job `hq-auth-unit-tests`, job ID `132896529919`. Its steps all completed successfully: frozen Bun lockfile installation, dependency-audit report capture, dependency version report, HQ test command, TypeScript/production build, Wrangler dry-run, and gRPC artifact scan. The log records that the audit exception matched only the two documented `@grpc/grpc-js` advisory IDs and that the production artifact scan inspected 45 text artifacts without finding gRPC server-auth markers. The job log contains `fail 0`; the workflow succeeded.
+
+This does not mean the upstream dependency advisories are fixed. The exception remains limited to GHSA-m9gg-hp2v-232j (high) and GHSA-f596-whhp-79r4 (low), both in `@grpc/grpc-js`. No dependency override, downgrade, or package change was made during this review.
+
+### D1 backup/recovery runbook review
+
+Read `docs/studio-hq-d1-backup-recovery-runbook.md` from this PR branch.
+
+- It correctly distinguishes a Time Travel bookmark from a separately stored SQL export.
+- It warns that export can temporarily block database requests and a Time Travel restore overwrites the live database in place.
+- It requires explicit approval, a maintenance window, secure backup handling, verification/checksum evidence, and a second reviewer for destructive restore.
+- It explicitly records that no SQL export, import, restore, or disposable-database recovery drill has been performed.
+- RTO and RPO are not established; backup/restore must not be described as tested.
+- The runbook prohibits testing a restore against the live Studio HQ database.
+- The current D1 integrity observations (`quick_check=ok`, empty foreign-key check) do not establish recoverability.
+
+No export, import, restore, D1 write, migration, or Cloudflare operation was performed in this continuation.
+
+### CI and bundle maintenance review
+
+Read `docs/ci-and-bundle-maintenance-review.md` from the PR branch.
+
+- The repository workflow inventory is recorded as 34 files, individually reviewed.
+- Five Studio HQ workflows still use older checkout/setup-node immutable pins that produce Node 20 action-runtime deprecation warnings despite Node 24.12.0 being selected for the job.
+- The recommended action-pin refresh is a separate CI-maintenance PR; no workflow pins were changed.
+- The TWA workflow's Node 20 application runtime requires a separate compatibility-validated update.
+- The Work page's static import of `HardwareShowcase3D` brings Three.js into its route chunk. A nested lazy import is a candidate, but no before/after build or browser experiment has yet been performed.
+- `assets/js/analytics.js` is an intentional classic IIFE copied into `dist/assets`; it relies on browser globals. Do not convert it to an ES module merely to suppress the Vite warning.
+- Punycode and experimental SQLite messages remain non-blocking warnings.
+
+These are separate maintenance workstreams and must not be folded into PR #51 without a deliberate scope decision.
+
+### Current release-readiness decision
+
+**HOLD — PR #51 remains Draft and unmerged.**
+
+Latest CI is green, but that alone is insufficient for approval:
+
+1. PR branch has diverged from current main by 3 commits; current mergeability is false. Do not update/rebase until a deliberate reconciliation plan is reviewed.
+2. Account-wide uniqueness of the three configured Rate Limiting namespace IDs remains unverified; do not inspect the Kaushal customer Worker to resolve it.
+3. Earlier read-only Cloudflare metadata did not expose the three rate-limit bindings on the currently active Worker version/settings. Wrangler dry-run proves source-config parsing only, not live activation.
+4. Active Worker version source commit remains unverified.
+5. D1 export and disposable-database restore drill remain unperformed; RTO/RPO unknown.
+6. A deployment rollback plan and explicit deployment approval are not recorded.
+7. The two Firebase/gRPC dependency advisories remain an explicitly documented exception, not a patched dependency.
+8. No independent PR review is present in the current GitHub review list.
+
+### Actions and scope
+
+This update is documentation-only on the existing PR branch. It records current GitHub state and reconciles stale head/behind-count information. No application code, workflow, package, migration, D1 data, Cloudflare setting, Worker version, traffic allocation, personal website, or Kaushal customer project was changed or inspected. No merge or deployment was performed. PR #51 remains Draft and unmerged.
+
+### Next action
+
+Do not rebase/update PR #51 yet. First prepare a read-only reconciliation plan for the three commits now on main, comparing their exact changed paths/content against the PR branch and identifying any overlap or conflict risk. Present a merge-base-aware recommendation before any branch mutation. Continue to keep all release prerequisites separate from CI success.
+
+
+## 18. Merge-base-aware comparison of current main commits — 15 November 2026
+
+> **Historical snapshot — superseded by Sections 20–21 below.** This section records the initial comparison before the later documentation reconciliation. Do not use its intermediate file-length, section-presence, or PR-head figures as the current state. The later Section 20 records that the PR branch already incorporated main's CI review Section 16 and explains why the main-only continuity document was not copied unchanged. Section 21 is the later exact-head PR/CI status checkpoint. A fresh compare performed during Phase 2.7O still reports this branch 164 commits ahead and 3 behind `main`, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`; PR #51 remains Draft, open, unmerged and currently reported not mergeable. No branch history update or integration was performed.
+
+Read-only comparison completed from common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+
+### Commit sequence on main after the common ancestor
+
+The GitHub compare endpoint for `f432865d33e30d988f070ccf0b7b8b68e9442f7f...main` returned exactly three main-side commits, in order:
+
+1. `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` — `docs(hq): record Firebase project ID mismatch`. Adds `docs/STUDIO_HQ_CONTINUITY.md` (392 lines in that commit). Its content establishes an authoritative continuity record, project separation rules, prior Phase 2.7L/2.7M findings, and handover instructions.
+2. `5c78a3e7bbb171b5d1cbc5534c1f043ec0e20022` — `docs(hq): reconcile PR49 deployment source with PR51`. Adds `docs/ci-and-bundle-maintenance-review.md` (540 lines at current main), including Section 16, the PR #49 deployment-source reconciliation and explicit recommendation not to merge or manually dispatch PR #49 in its then-current form.
+3. `355341935a8ba87011e52d0c862852900aefe9db` — `docs(hq): checkpoint PR49 deployment source reconciliation`. Adds `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` (279 lines at current main), including the PR #49 reconciliation checkpoint and deployment guardrails.
+
+All three commits are documentation additions on main; no application, workflow, package, migration, or Worker source changes are included in these three commit patches.
+
+### Path-level overlap against the PR #51 branch
+
+The current PR #51 branch is based on the same common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f` and does not contain the three main-side commits. The branch has its own independently created versions of two of the same paths:
+
+| Path | Current main | PR #51 branch | Reconciliation assessment |
+|---|---|---|---|
+| `docs/STUDIO_HQ_CONTINUITY.md` | Exists (393 lines currently) | Not present (404 from branch ref) | Main-only addition; can be added without a same-path conflict, but review for any branch-specific facts before adopting |
+| `docs/ci-and-bundle-maintenance-review.md` | Exists (540 lines; Sections 1–16) | Exists (478 lines; Sections 1–15) | Add/add same-path divergence; content-level reconciliation required |
+| `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` | Exists (279 lines; includes PR #49 reconciliation) | Exists (358 lines; includes this branch's Section 17 and prior branch history) | Add/add same-path divergence; content-level reconciliation required |
+
+The branch's Section 17 is a fresh PR #51/GitHub/CI release-readiness update. Main's checkpoint has a PR #49 deployment-source reconciliation section that is not present in the branch checkpoint, but its substance is recorded in main's maintenance review Section 16. The two checkpoint versions should not be resolved by choosing one entire side: preserve both the branch's latest Section 17 and main's PR #49 reconciliation evidence, then remove stale duplicated status statements or clearly label them historical.
+
+The maintenance review has the same structural issue: main's Section 16 adds the PR #49 reconciliation. Preserve branch Sections 1–15 and add/validate Section 16 from main, while checking any changed wording or dates in the earlier sections before treating the main copy as a wholesale replacement.
+
+### Merge-base and divergence interpretation
+
+- Common ancestor: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Main-side commits after that ancestor: 3 (listed above).
+- The PR #51 branch does not contain those three commits. Its own history contains the Studio HQ remediation and subsequent checkpoint documentation.
+- The PR metadata's recorded base snapshot is `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`, but the direct compare still identifies `f432865d33e30d988f070ccf0b7b8b68e9442f7f` as the actual common ancestor. Do not treat the PR metadata base SHA as proof that the branch contains that commit.
+- The current branch compare against main previously returned 158 commits ahead and 3 behind after the documentation checkpoint update. No branch history was rewritten.
+
+### Recommended reconciliation plan (proposal only)
+
+1. Keep PR #51 Draft and unmerged.
+2. Do not rebase, merge, cherry-pick, force-push, or update the branch automatically.
+3. For a future owner-approved branch update, first create a clean preservation point and reconcile the two overlapping Markdown files by section:
+   - `docs/ci-and-bundle-maintenance-review.md`: preserve Sections 1–15 from the branch and bring in main's Section 16 after checking section dependencies and date/status accuracy.
+   - `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`: preserve branch Section 17 and all valid prior branch evidence; incorporate main's PR #49 reconciliation findings, ensuring PR status/head/base/check counts are refreshed rather than copied as current.
+   - `docs/STUDIO_HQ_CONTINUITY.md`: consider adding the main-only continuity document as a separate documentation file after confirming its dated claims remain clearly historical and do not supersede the current Phase 2.7M checkpoint.
+4. Review the resulting full diff for accidental deletion of Studio HQ security/D1 code, migrations, test fixtures, workflow definitions, or the current release blockers.
+5. Only after the reconciliation diff is approved, perform a separately authorized branch update and rerun required CI on the resulting exact head.
+
+### Conclusion
+
+The three main-side commits are documentation-only, but two paths overlap with independently created branch documents. This is a manageable documentation reconciliation, not evidence that the 157+ commit Studio HQ implementation can be safely rebased without review. Preserve the two document histories and avoid an automatic merge/rebase.
+
+No Git history, source file, branch, PR metadata, workflow, Cloudflare setting, Worker, D1 database, personal website, or Kaushal customer project was modified during this read-only comparison. PR #51 remains Draft and unmerged.
+
+
+## 19. Fresh live D1 schema-to-migration verification — 15 November 2026 (read-only)
+
+### Exact database queried
+
+- Database: `jawed-studio-hq`.
+- Database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- All statements were read-only metadata/catalog/integrity queries. No customer, owner, or financial row contents were selected.
+
+### Schema comparison against PR #51 migration files
+
+- Live `sqlite_master` inventory returned 26 tables: 23 application tables, `d1_migrations`, SQLite `sqlite_sequence`, and Cloudflare internal `_cf_KV`.
+- The combined PR #51 migration files define 23 application tables.
+- Compared the ordered column names and declared SQLite types for all 23 application tables against live `PRAGMA table_info` results. **All 23 tables matched exactly at the column-name/type level; 289 column definitions were compared.**
+- This check did not compare every CHECK constraint, index, trigger, or foreign-key definition. Do not describe it as a complete DDL equivalence proof.
+- The live migration ledger contains exactly `0001_studio_hq_schema.sql` and `0002_financial_management.sql`, matching the PR #51 migration filenames.
+- Fresh `PRAGMA quick_check` returned `ok`.
+- Fresh `PRAGMA foreign_key_check` returned zero rows.
+
+### Documentation correction
+
+- Updated `docs/studio-hq-d1-schema.md` to correct the application table count from 17 to 23 and record the fresh verification scope and limitations.
+- Documentation commit: `cb588cf9bc7e6e5b49793cbb5f20ef163a5fe09b`.
+- No database write, migration, export, restore, Worker deployment, Worker setting change, branch rebase, or merge occurred.
+
+### Interpretation
+
+This is stronger evidence that PR #51's canonical migration lineage matches the live D1 table/column structure. It does not prove that every application query is compatible, that the live Worker runs PR #51, that owner authentication succeeds against the live owner record, or that backup/recovery has been tested. Keep the existing release blockers: account-wide rate-limit namespace uniqueness is unverified; a disposable-D1 restore drill is not performed; active Worker binding state must be reconciled; and explicit deployment approval is still required.
+
+**Next safe action:** complete the documentation content reconciliation proposal, then perform a separate full source/CI review on the exact resulting PR head. Keep PR #51 Draft and unmerged.
+
+
+## 20. PR #49 review document reconciled; continuity-record adoption decision — 15 November 2026
+
+### CI and deployment review reconciliation
+
+- Compared the current-main `docs/ci-and-bundle-maintenance-review.md` with the PR #51 branch copy section by section.
+- Branch Sections 1–15 were already substantively identical to main. The only observed differences in the shared content were trailing newline formatting in two sections.
+- Appended main's Section 16, “PR #49 deployment-source reconciliation against PR #51”, to the branch document.
+- Refreshed the PR state and divergence figures in that imported section rather than copying its older PR #51 head/counts.
+- Fresh PR #49 metadata: open, non-draft, unmerged, mergeable; head `8ba814c23e51c6182309cff5d22184084f7a1745`, base `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct compare to current main: 3 ahead / 3 behind. Its two returned PR workflow runs, Security Supply Chain Gate and Site Integrity Gate, completed successfully. Neither is a deployment run.
+- Fresh PR #51 metadata before this checkpoint update: open, Draft, unmerged, not mergeable; head `a90e1b2d76cc1cfcaf1f377a100449a9543c21f9`. Direct compare to current main: 162 ahead / 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- No PR #49 workflow dispatch, deployment, merge, or Cloudflare/D1 write occurred.
+
+### Main-only continuity document review
+
+- Reviewed `docs/STUDIO_HQ_CONTINUITY.md` on main (blob `9d5612cd5ca266c0c64de3b47c05a4c06b432449`).
+- It contains useful Phase 2.7L/2.7M findings, including the Firebase signature-verification regression, Firebase project-ID mismatch, schema incompatibility, and project separation rules.
+- Its header still says “Last reconciled: 14 November 2026”; its initial repository/PR checkpoint and handover instructions refer to the earlier main SHA and PR #50/PR #49 state. It is therefore a dated historical continuity record, not a current authoritative snapshot.
+- Decision: do not copy it unchanged into PR #51 or allow it to supersede this branch's later Phase 2.7M/2.7N checkpoint. Its still-relevant security and architecture findings are already represented in the current branch's implementation notes and checkpoint. If a canonical continuity record is needed later, refresh its repository/PR/deployment state and explicitly label historical findings before adopting it.
+
+### Latest branch/document status
+
+- The CI maintenance review reconciliation was committed as `a90e1b2d76cc1cfcaf1f377a100449a9543c21f9`.
+- This checkpoint update is documentation-only. No application source, workflow, package, migration, D1 data, Cloudflare setting, Worker version, personal website, or Kaushal customer resource was changed.
+- The PR remains Draft and unmerged. Documentation commits do not prove that application CI has rerun on the latest head.
+
+**Next safe action:** perform a final exact-head review of the PR #51 changed-file set and current required checks, then prepare a separate owner-reviewable proposal for resolving the three-commit main drift. Do not rebase, merge, deploy, or run remote migrations without explicit approval.
+
+
+## 21. Final-head PR and CI evidence recheck — 15 November 2026
+
+### Current PR state
+
+- PR #51 remains open, Draft, and unmerged.
+- Latest head at this check: `47bea3f711f3ee684c72e4d7832ff515788f09b3`.
+- PR metadata base snapshot: `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`.
+- Direct comparison against current main: 163 commits ahead, 3 behind; common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- GitHub reports the PR is not currently mergeable. Do not attempt a merge or automatic rebase.
+- PR changed-file inventory: 63 paths. The recent commits added only documentation updates to the existing checkpoint, schema review, and CI/deployment review; no application source or workflow files were changed by those documentation commits.
+
+### Latest application-code CI evidence
+
+- The latest identified application-code commit before the documentation-only continuation commits is `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`.
+- GitHub returned 13 PR-triggered workflow runs for that exact commit. All 13 completed successfully:
+  - AdSense Readiness Gate
+  - Accessibility Document Contract
+  - AI Regression Gate
+  - PWA Reliability Gate
+  - Deployment Runtime Reliability Gate
+  - Security Baseline Gate
+  - Studio HQ D1 Schema Validation
+  - Site Integrity Gate
+  - Security Supply Chain Gate
+  - Core Web Vitals Protection Gate
+  - Performance Baseline Gate
+  - Studio HQ Firebase Auth Tests
+  - Career Match Browser Runtime Gate
+- The latest documentation-only head `47bea3f711f3ee684c72e4d7832ff515788f09b3` has no associated check runs returned. Do not label the current PR head “13/13 green”; the evidence is 13/13 successful on the preceding application-code commit, with no application-code changes in the subsequent documentation commits.
+- No new tests were executed locally or in Cloudflare during this documentation reconciliation.
+
+### Release decision
+
+PR #51 remains Draft and unmerged. The 13 successful application-code checks and fresh D1 column/type/integrity comparison are positive evidence, but they do not resolve the 3-commit main drift, active Worker binding mismatch, account-wide rate-limit namespace uniqueness, untested D1 restore drill, or deployment approval requirement.
+
+No merge, rebase, deployment, remote D1 migration, database write, Cloudflare settings mutation, or customer/personal website change was performed.
+
+
+## 22. Phase 2.7O — final main-branch documentation reconciliation — 15 November 2026
+
+### Fresh comparison
+
+A fresh GitHub compare of `main` against this branch returned:
+- Status: diverged.
+- Feature branch ahead: 165 commits.
+- Feature branch behind: 3 commits.
+- Common ancestor: `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- PR #51: open, Draft, unmerged, currently reported not mergeable; current head `b5d39d413f112266a3e573040e4bcc52c7bcfc80`.
+- The PR metadata still reports base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`; this does not change the direct compare's common-ancestor result.
+
+### Three main-side commits reviewed
+
+The three commits after the common ancestor are:
+1. `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` — adds `docs/STUDIO_HQ_CONTINUITY.md`.
+2. `5c78a3e7bbb171b5d1cbc5534c1f043ec0e20022` — adds `docs/ci-and-bundle-maintenance-review.md`.
+3. `355341935a8ba87011e52d0c862852900aefe9db` — adds `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`.
+
+All three commit patches are documentation-only; no application source, workflow, package, migration, or Worker configuration changes are present in those three patches.
+
+### Content-level reconciliation result
+
+- The branch copy of `docs/ci-and-bundle-maintenance-review.md` contains Sections 1–16. Section 16 carries the main-side PR #49 deployment-source findings and refreshed PR status. The shared Sections 1–15 were confirmed substantively identical to main; only trailing-newline formatting differed in two places.
+- The branch copy of `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` contains the later Sections 17–21, including the PR #49 reconciliation, continuity-document adoption decision, live D1 schema verification, and final PR/CI evidence. It is the more current checkpoint than the shorter main-side copy.
+- Main's `docs/STUDIO_HQ_CONTINUITY.md` is a main-only document. It contains useful historical findings on schema compatibility, Firebase signature verification and the Firebase project ID mismatch, but its header and initial handover state are dated 14 November 2026. Its current repository/PR instructions are stale. Section 20 already records the decision not to copy it unchanged; the relevant security and architecture findings are represented in the current branch's implementation notes/checkpoint.
+
+### Documentation correction
+
+- Added a supersession note to Section 18 so its initial comparison figures and intermediate file-presence assessment are not mistaken for current state. Sections 20–21 and this Section 22 are the later reconciliation records.
+- Documentation-only commit: `b5d39d413f112266a3e573040e4bcc52c7bcfc80`.
+- GitHub returned no PR-triggered workflow runs for this documentation-only commit. No tests were executed as part of this documentation correction.
+
+### Reconciliation decision and safety
+
+**Do not copy the three main commits wholesale, and do not automatically merge, rebase, cherry-pick, or force-push the 165-commit branch.** The substantive CI review and checkpoint information is already incorporated in the branch's later versions. The remaining main-only continuity file is historical and should only be adopted after a deliberate refresh, not copied unchanged.
+
+The branch remains 3 commits behind main. A future integration should be separately planned and reviewed against the full source diff, then CI must run on the exact resulting head. This documentation comparison does not resolve the branch's not-mergeable state or any outstanding deployment blockers.
+
+No merge, rebase, cherry-pick, force-push, deployment, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal project change was performed.
+
+
+## 23. Phase 2.7P — pre-authentication rate-limit hardening — 15 November 2026
+
+### Source-review finding
+
+A targeted read-only review found that the session endpoint applied an IP-based limiter before Firebase token verification, but the CRM, Projects, Approvals/QA and Financial API wrappers called `authorizeHqOwner()` before any general rate-limit check. Their general limiter was applied only after successful authentication and was keyed by owner UID. Consequently, invalid-token traffic sent directly to those four endpoint groups could reach token verification without first consuming an IP-based request bucket.
+
+### Bounded source correction
+
+Added an IP-keyed `HQ_RATE_LIMITER` check with `type: 'general'` before `authorizeHqOwner()` in:
+- `functions/api/hq/clients.js`
+- `functions/api/hq/projects.js`
+- `functions/api/hq/release.js`
+- `functions/api/hq/financial.js`
+
+The existing post-authentication UID-based general limiter and write limiter remain in place. The session endpoint retains its dedicated pre-authentication `HQ_SESSION_LIMITER`.
+
+Added a regression test in `functions/lib/hqRateLimit.test.js` that exercises all four public handler wrappers with a successful IP limiter and missing token, then confirms a rejected IP bucket returns HTTP 429 before token verification.
+
+### Commits and source verification
+
+The GitHub Contents API updates were committed sequentially to this PR branch:
+- CRM wrapper: `595a19d5303bc7d287dd242474e601ab8faf0d34`
+- Projects wrapper: `283ad5ffc36f373ab4a6df0c2b0123fbe28e13c4`
+- Approvals/QA wrapper: `fc7ecf00868a28fc2b5c802775610e1d513cda9d`
+- Financial wrapper: `7c2deb67eb65867a4c431a42cf00182ed525a46d`
+- Regression test: `6a5f7c8686444463239a9c05a2d21af440662933`
+
+A fresh GitHub fetch confirmed all four wrappers contain the pre-authentication general limiter and the test file contains the new regression test. `package.json` confirms the test is included in `npm run test:hq-auth`.
+
+### CI status and limitations
+
+- Latest application-code head at this check: `6a5f7c8686444463239a9c05a2d21af440662933`.
+- GitHub returned one push-triggered AdSense Readiness Gate run, completed successfully.
+- No Studio HQ Firebase Auth Tests run or PR-triggered workflow run was returned for this head at the time of this checkpoint.
+- No local test suite was executed in this review. The rate-limit correction is therefore **source-reviewed but not yet test-verified**.
+- Do not treat the successful AdSense workflow as evidence that the Studio HQ tests passed.
+
+### Release implications
+
+The new pre-authentication check relies on the configured `HQ_RATE_LIMITER` binding. The live Worker inventory previously returned no rate-limit bindings; the three namespace IDs in the PR's Wrangler config also remain unverified for account-wide uniqueness. This change is not deployable until the binding deployment prerequisite is resolved and the exact resulting PR head passes the required Studio HQ CI.
+
+No deployment, merge, Worker setting change, D1 migration/write, owner enrollment, personal website change, or Kaushal customer-project change was performed.
+
+
+## 24. Phase 2.7P — CI regression correction and successful verification — 15 November 2026
+
+### Test-fixture correction
+
+The first CI run after adding pre-authentication limiting reported 127 passed / 5 failed. All five failures were existing Worker-routing tests that supplied an empty Worker environment and expected authentication to return 401. With the new fail-closed IP limiter, those fixtures correctly received 503 because the test limiter binding was absent.
+
+Updated the Worker test fixtures in:
+- `functions/api/hq/financial.test.js`
+- `functions/lib/hqRateLimit.test.js`
+- `tests/hq-owner-authorization.test.js`
+
+The affected routing tests now supply an explicit successful mock `HQ_RATE_LIMITER`, so they test routing/authentication behavior without disabling the production fail-closed rule.
+
+### CI trigger
+
+Added the current Phase 2.7M feature branch to the `push.branches` list in `.github/workflows/studio-hq-auth-tests.yml`. This ensures the dedicated Studio HQ test workflow runs for future pushes to this branch, in addition to its pull-request trigger.
+
+### Successful exact-head CI evidence
+
+The Studio HQ Firebase Auth Tests workflow ran on exact code/test head:
+`b14a7057bdd2a4379a9ff2ec50ba469212a2b2a1`
+
+- Workflow run: [43744589197](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43744589197)
+- Job `hq-auth-unit-tests`: completed successfully.
+- `npm run test:hq-auth`: **132 passed, 0 failed, 0 skipped**.
+- TypeScript and production build: passed.
+- Wrangler `deploy --dry-run`: passed; log ended with `--dry-run: exiting now.`, so no Worker version was published.
+- gRPC artifact check: inspected 45 text build artifacts; no `@grpc/grpc-js` or gRPC server-auth markers found.
+- Dependency audit step: passed with the existing narrow exception for the two documented `@grpc/grpc-js` advisories; no new advisory was reported by that gate.
+- Workflow and job both report conclusion `success`.
+
+### Interpretation and remaining limits
+
+This verifies the code/test changes and Wrangler configuration dry run on the exact application-code head above. It does not prove the new limiter bindings are active in the live Worker, that namespace IDs are unique account-wide, or that a deployment/rollback has been performed.
+
+The feature branch remains Draft, open, unmerged and not currently mergeable against main. The main-branch three-commit drift, live binding discrepancy, namespace uniqueness, D1 backup/restore drill and separate deployment approval remain release gates.
+
+No Worker deployment, live binding change, D1 migration/write, owner enrollment, merge, personal website change, or Kaushal customer-project change was performed.
+
+
+## 25. Phase 2.7Q — D1 backup runbook review and live metadata recheck — 15 November 2026
+
+### Live D1 metadata (read-only)
+
+Cloudflare's D1 metadata API was queried for the exact database UUID configured by the Lab:
+- Name: `jawed-studio-hq`.
+- UUID: `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- Storage version: `production`.
+- Region: `APAC`.
+- Reported database file size: 401,408 bytes.
+- Current Time Travel bookmark: API returned a bookmark successfully. The bookmark value is not copied into this repository.
+
+This confirms the database is on the production storage backend that supports Time Travel. Actual retention depends on the Cloudflare plan; the account plan was not verified in this check. Cloudflare's current documentation states 30 days for Workers Paid and 7 days for Workers Free.
+
+### Runbook review and correction
+
+Reviewed `docs/studio-hq-d1-backup-recovery-runbook.md` against the current Cloudflare D1 documentation and found its export command wrote to a relative `./secure-backups` path. If run from the repository root, this could place a sensitive SQL export inside the Git working tree, contrary to the runbook's own data-handling rule.
+
+Updated the example to require an approved encrypted absolute backup directory outside the Git repository, create that directory, generate a UTC timestamp, and pass the resulting absolute output path to `wrangler d1 export`.
+
+Official documentation confirms:
+- Time Travel is automatic for supported production-storage D1 databases; it does not need to be enabled manually.
+- Restore overwrites the database in place and is destructive; Cloudflare returns a previous bookmark that can be used to undo the restore.
+- D1 SQL export is supported through `wrangler d1 export`; a running export blocks other database requests.
+- Time Travel retention is 30 days on Workers Paid and 7 days on Workers Free.
+
+### Current backup/recovery status
+
+- No SQL export was performed.
+- No import or restore drill was performed.
+- No live D1 writes, migrations, or configuration changes were performed.
+- RTO/RPO remain unestablished.
+- A disposable D1 restore drill still requires explicit approval and separate data-handling review.
+- The account's actual plan/Time Travel retention window remains unverified.
+
+Documentation correction commit: `66b17151743980760a6fadaefb95bb48bc44bbff`.
+
+This review does not authorize an export or restore. The next safe step is to establish the approved encrypted backup destination and obtain explicit approval for a scheduled export; do not execute it without that approval.
+
+
+## 26. Phase 2.7R — Cloudflare Workers Rate Limiting namespace semantics recheck — 15 November 2026
+
+### Current Cloudflare documentation findings
+
+The Cloudflare Workers Rate Limiting documentation (updated 12 November 2026) confirms:
+- `namespace_id` must be a positive integer represented as a string and must be unique within the Cloudflare account.
+- Two bindings sharing a namespace ID on the same account share counters for a given key within each Cloudflare location, including across different Workers.
+- Distinct independent bindings should use distinct namespace IDs.
+- Rate Limiting bindings are not currently visible in the Cloudflare dashboard.
+- The API specification search returned the legacy zone-level `/zones/{zone_id}/rate_limits` endpoints, but no account-level inventory endpoint for Workers Rate Limiting binding namespace IDs.
+- Counters are approximate and eventually consistent within each Cloudflare location; different locations maintain separate counts. This mechanism is not a strict global quota and requests may exceed the configured threshold.
+
+### PR #51 configuration assessment
+
+The current `wrangler.jsonc` uses three positive integer namespace IDs:
+- `HQ_SESSION_LIMITER`: `620261114`, 10 requests / 60 seconds.
+- `HQ_WRITE_LIMITER`: `620261115`, 30 requests / 60 seconds.
+- `HQ_RATE_LIMITER`: `620261116`, 120 requests / 60 seconds.
+
+The configured 60-second period is supported by the Workers Rate Limiting API. The source configuration alone does not prove the three IDs are unused elsewhere in the account.
+
+### Release decision
+
+Account-wide namespace uniqueness remains **unverified**. The currently available Cloudflare API/dashboard surfaces inspected do not provide an authoritative inventory of Workers Rate Limiting namespace IDs. Do not claim uniqueness based only on the three IDs being distinct within this repository.
+
+Treat these bindings as approximate per-location abuse controls, not strict global quotas. Keep deployment gated until the owner has an authoritative account-wide uniqueness check or explicitly approves a documented namespace allocation process with adequate evidence.
+
+No Worker settings, bindings, namespace IDs, deployments, D1 data, or Cloudflare resources were changed during this review.
+
+
+## 27. Phase 2.7S — deployed Worker version and binding reconciliation — 16 November 2026
+
+### Active deployment evidence (read-only Cloudflare API)
+
+The Cloudflare Worker deployment inventory for `jawed-website-ai-studio-lab` returned the latest deployment:
+- Deployment ID: `739b15b1-22b5-499c-a738-7830cb394579`.
+- Created: `2026-11-13T17:51:34.266866Z`.
+- Source: Wrangler.
+- Traffic allocation: 100% to version `cf1dba45-c28c-4865-9571-dc508f6863d2`.
+- Version number: 13.
+- Version metadata created: `2026-11-13T17:51:32.972576Z`.
+- Version metadata contains no PR #51 / current feature-branch commit annotation. Its source commit cannot be established from this metadata alone.
+
+### Deployed version bindings
+
+The detailed read-only version record lists:
+- `AI` — present.
+- `ASSETS` — present.
+- `CANONICAL_ORIGIN` — present.
+- `ENVIRONMENT` — present.
+- `HQ_DB` — present, database UUID `d9ec83ea-7114-4179-af8e-a22ba5494508`.
+- `HQ_SESSION_LIMITER` — absent.
+- `HQ_WRITE_LIMITER` — absent.
+- `HQ_RATE_LIMITER` — absent.
+
+The current script settings endpoint independently returned the same binding inventory. The deployed version record confirms that the latest 100%-traffic version does not include the three rate-limiting bindings declared by the current PR #51 `wrangler.jsonc`.
+
+### Operational interpretation
+
+- The current live Worker is version 13, not the current PR #51 branch head; no evidence ties it to PR #51's code/test commit.
+- The latest deployed version has no rate-limiting bindings. Do not deploy code that requires those bindings until the account-wide namespace allocation and exact deployment plan are approved.
+- If a Worker version using the new fail-closed rate-limit checks were deployed without these bindings, protected HQ API calls would return HTTP 503. This is a source/runtime compatibility consequence, not a live endpoint test.
+- This is stronger evidence than the earlier generic script-settings check because it identifies the active 100%-traffic deployment and inspects its exact version resources.
+
+### Safety
+
+Only GET operations were used. No script upload, settings patch, version upload, deployment, D1 operation, or Cloudflare resource mutation was performed. The production/live Worker was not changed.
+
+This closes the factual question of whether the currently deployed Worker already has the new rate-limit bindings: **it does not**. It does not close namespace uniqueness, deployment approval, backup/restore, or PR mergeability gates.
+
+
+## 28. Phase 2.7T — HQ API and financial data-handling source review — 16 November 2026
+
+### Scope reviewed (read-only source inspection)
+
+Reviewed the current feature-branch source for:
+- `functions/lib/hqApi.js`: same-origin checks, Firebase bearer authorization handoff, bounded JSON body reader, D1 availability handling, owner guard statements, audit statements.
+- `functions/lib/hqAuth.js`: RS256-only verification, certificate retrieval/cache, issuer/audience checks, expiration/issued-at/auth-time checks, verified-email requirement, owner allowlist, privacy-safe diagnostics.
+- `functions/lib/hqRateLimit.js`: fail-closed binding resolution, IP/UID key construction, malformed binding/response handling, and error logging.
+- CRM, Projects, Approvals/QA and Financial API handlers: field allowlists, parameterized SQL, pagination bounds, owner guard ordering, conditional audit writes, payment/refund idempotency, and financial integer arithmetic.
+- `migrations/hq/0001_studio_hq_schema.sql` and `0002_financial_management.sql`: constraints, foreign keys, unique indexes, and audit immutability triggers.
+- `worker.js`: HQ route dispatch and compatibility aliases.
+
+### Positive source findings
+
+- JSON request bodies are streamed and capped at 16 KiB by default; declared and streamed oversize payloads are rejected, invalid UTF-8/JSON is rejected, and stream errors return controlled responses.
+- SQL data values are parameter-bound. Dynamic table/column fragments inspected are selected from fixed internal allowlists or fixed route-derived constants.
+- CRM and project mutations put the active-owner guard first in their D1 batch and write audit entries in the same batch. Conditional audit entries follow mutation statements and use `changes() = 1`.
+- Audit logs have explicit SQLite triggers that abort UPDATE and DELETE, enforcing append-only behavior at the database layer.
+- Financial amounts are represented as integer minor units (INR paise), use safe-integer and range checks, and apply deterministic BigInt rounding for line tax.
+- Payment/refund creation uses unique idempotency keys and request fingerprints; database constraints also enforce unique keys and one invoice per converted quotation.
+- Existing HQ unit tests cover streamed body limits, invalid JSON, quotation/invoice lifecycle, duplicate conversion, payment/refund replay, overpayment/refund bounds, archived-payment calculations, and owner/rate-limit behavior.
+
+### Review limitations / evidence boundary
+
+- This was source inspection; no new tests were executed locally during this review.
+- The previously recorded successful CI run (132/132) used Node's in-memory SQLite test adapter for financial lifecycle tests. It does not constitute a live D1 integration test or prove every Cloudflare D1 batch/SQLite runtime behavior.
+- The prior Wrangler deployment dry run validates configuration/build packaging, not a live Worker request.
+- No customer, owner, payment, invoice, refund, or audit row contents were queried during this source review.
+- No further high-severity source defect was confirmed in the reviewed areas. This is not a blanket security certification or a substitute for live deployment verification.
+
+### Current decision
+
+Keep the release blocked by the independently confirmed live Worker binding mismatch, unverified account-wide namespace allocation, outstanding D1 export/restore drill, PR #51 main-branch divergence, and missing deployment/rollback approval. Do not deploy the current branch until those items are resolved through separate reviewed steps.
+
+No source files other than this checkpoint were changed in this review. No tests, D1 writes/migrations/exports, Worker setting changes, deployments, merges, rebases, or customer-project changes were performed.
+
+
+## 29. Phase 2.7T — latest checkpoint-head CI verification — 16 November 2026
+
+The push-triggered `Studio HQ Firebase Auth Tests` workflow also ran on the latest documentation/checkpoint head:
+- Commit: `7dc7ccd33fccaa263d1f5fa47caa7b9475f5fa09`.
+- Workflow run: [43801621405](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43801621405).
+- Job `hq-auth-unit-tests`: completed successfully.
+- Test output: **132 passed, 0 failed, 0 skipped**.
+- TypeScript and production build: completed successfully.
+- Wrangler Worker configuration `deploy --dry-run`: completed successfully; no deployment was published.
+- Production-artifact gRPC server-auth check: completed successfully.
+- Overall workflow conclusion: `success`.
+
+This run verifies the exact current checkpoint head, including all source/test changes already present at that head. The only changes after the previously verified code/test commit were documentation/checkpoint updates; this run independently reran the full dedicated workflow on the latest head.
+
+This does not alter the release decision: the live Worker version 13 still lacks all three rate-limiter bindings, account-wide namespace uniqueness remains unverified, no D1 export/restore drill has occurred, and PR #51 remains Draft and not mergeable against main. No live deployment, Worker configuration change, D1 write/export/restore, merge, or rebase was performed.
+
+
+## 30. Phase 2.7U — rate-limit namespace allocation preflight — 16 November 2026
+
+### Cloudflare platform contract
+
+Cloudflare's current Workers Rate Limiting documentation states:
+- `namespace_id` must be a positive integer expressed as a string.
+- Each namespace identifier must be unique within the Cloudflare account.
+- Two bindings sharing a namespace ID share counters for a given key within each Cloudflare location, including across Workers.
+- Rate-limit counters are approximate and location-local; this feature is not a globally strict limiter.
+- Rate-limit bindings are not currently visible in the Cloudflare dashboard.
+
+Source: [Cloudflare Workers Rate Limiting documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) (documentation retrieved 16 November 2026).
+
+### Current PR allocation
+
+The feature branch `wrangler.jsonc` declares:
+| Binding | Namespace ID | Limit |
+|---|---:|---:|
+| `HQ_SESSION_LIMITER` | `620261114` | 10 / 60 seconds |
+| `HQ_WRITE_LIMITER` | `620261115` | 30 / 60 seconds |
+| `HQ_RATE_LIMITER` | `620261116` | 120 / 60 seconds |
+
+These are distinct positive integer IDs and are correctly represented as strings in Wrangler configuration.
+
+### Read-only account inventory
+
+Cloudflare's account Worker Scripts list returned two scripts:
+- `jawed-website-ai-studio-lab`
+- `kaushal-path-proxy`
+
+The latest 100%-traffic version for each script was inspected through the version-details endpoint. Neither deployed version has a `ratelimit` binding. The currently deployed Studio HQ version 13 likewise has no rate-limit binding.
+
+This is metadata-only inspection. No Kaushal source, settings, deployment, secrets, or application data were accessed or changed.
+
+### Allocation assessment
+
+- No collision with a rate-limit binding was found in the two Worker scripts returned by the account Worker Scripts inventory.
+- This is **not yet proof of account-wide uniqueness**: Cloudflare does not expose a rate-limit namespace registry endpoint in the API specification reviewed, and this inspection did not enumerate every possible account product surface that could host a Worker configuration (for example, Pages Functions).
+- Therefore the three proposed IDs are plausible candidates but are **not approved for deployment**. Preserve the existing values for now; do not renumber or create bindings speculatively.
+- Sharing a namespace across these three bindings would be incorrect for the intended independent session/write/general buckets; the three separate IDs should remain distinct.
+
+### Next safe action
+
+Before binding activation, complete a final account-surface inventory for Pages Functions and any other deployed Worker configurations, then record an explicit owner-approved namespace allocation. Do not patch live settings or deploy as part of this preflight.
+
+No Cloudflare resources were mutated. No Worker was deployed, no rate-limit binding was created, and no Kaushal or personal website configuration was changed.
+
+
+## 31. Phase 2.7U — Pages-generated Worker inventory extension — 16 November 2026
+
+The account Pages Projects inventory returned two projects:
+- `jawed-website` (personal site; `uses_functions: false`).
+- `advocate-kaushal-kishor` (separate customer project; `uses_functions: false`).
+
+Only binding metadata for the generated Pages Worker scripts was checked; no Pages source, deployment files, environment values, or application data were read:
+- `pages-worker--10525077-production`: settings endpoint returned no `ratelimit` bindings.
+- `pages-worker--10525077-preview`: settings endpoint returned no `ratelimit` bindings.
+- The generated Worker script names for the Kaushal Pages project were not present at the expected script-settings endpoints (HTTP 404). The Pages project itself reports `uses_functions: false`, so it does not currently expose Pages Functions requiring a runtime function binding inventory.
+
+Combined with the two account Worker Scripts and their active versions, no existing `ratelimit` binding was found in the inspected account Worker/Pages surfaces. This materially improves confidence that the proposed IDs `620261114`, `620261115`, and `620261116` do not collide with currently visible deployed bindings.
+
+It is still not a formal account-wide namespace registry check: Cloudflare documents uniqueness as account-wide but does not expose a namespace-list endpoint in the API specification reviewed. Treat the IDs as **inventory-clear candidates, not formally reserved or owner-approved**. Do not deploy or change bindings on the basis of this inventory alone.
+
+No code, customer project, Pages project, Worker configuration, secrets, or deployment was modified.
+
+
+## 32. Phase 2.7V — D1 backup readiness review — 16 November 2026
+
+### CI carry-forward
+
+The preceding checkpoint head `438c1dc614ebce4e5851514642db5fa93918105d` completed the Studio HQ Firebase Auth Tests workflow successfully:
+- Run: [43801999079](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43801999079)
+- Conclusion: success.
+
+### Current read-only D1 metadata
+
+Cloudflare API read-only checks against database `jawed-studio-hq` returned:
+- UUID: `d9ec83ea-7114-4179-af8e-a22ba5494508` (matches the repository binding).
+- Storage version: `production`.
+- Reported file size: 401,408 bytes.
+- Current Time Travel bookmark was returned. The bookmark is an opaque recovery-point reference; no restore was attempted.
+- API database metadata returned `num_tables: 24`; this API metadata count is not treated as the prior SQL-level application table count.
+
+No table rows or customer/owner/financial values were selected.
+
+### Documentation changes
+
+Updated `docs/studio-hq-d1-backup-recovery-runbook.md`:
+- Added Cloudflare native manual backup list/create/download commands.
+- Explicitly documented that native backup restore overwrites the target database in place and is not a live-database test.
+- Added the 12 November 2026 export virtual-table compatibility warning: `sqlite3_cli_only` output is SQLite CLI-only and cannot be imported back into D1.
+- Clarified that no backup create, download, export, import, restore, or recovery drill was performed.
+
+### Readiness status
+
+- Current production-storage metadata and a current Time Travel bookmark were observed.
+- Native manual backup inventory was not queried because the connected Cloudflare API specification exposes no corresponding list endpoint; Wrangler CLI is the documented path.
+- No SQL export or native backup was created/downloaded.
+- No restore/import or disposable database drill was performed.
+- RTO/RPO remain unestablished; recovery is not tested or certified.
+- Customer and financial data remain sensitive; any export/download and any disposable copy require explicit approval and approved encrypted storage.
+
+### Next safe step
+
+Prepare a non-destructive backup inventory checklist and confirm approved backup storage, operator environment, and maintenance window. Do not create/download a backup or create a disposable D1 database until explicitly authorized.
+
+No live D1 writes, schema changes, migrations, exports, imports, restores, Worker changes, or deployments occurred.
+
+
+## 33. Phase 2.7W — correction: D1 native backup commands are legacy-only — 16 November 2026
+
+A deeper review of Cloudflare's authoritative D1 Time Travel and legacy Backups documentation identified an error in the preceding Phase 2.7V draft.
+
+The Studio HQ D1 database reports `version: production`. Cloudflare states that:
+- Production-storage D1 databases use Time Travel.
+- Time Travel replaces snapshot-based backups used by legacy alpha databases.
+- The legacy alpha backup API was removed on 1 July 2025.
+- The `wrangler d1 backup create/list/download/restore` documentation is explicitly marked **Backups (Legacy)** and is not the applicable backup workflow for this production-storage database.
+
+The runbook's earlier Section 11, which recommended native `d1 backup` commands as an additional recovery option, has been replaced with an applicability warning. Do not run those commands for this database.
+
+### Applicable Studio HQ recovery planning
+
+1. **Time Travel:** supported for production storage; restore is destructive and overwrites the database in place.
+2. **Standard SQL export:** documented through `wrangler d1 export <name> --remote --output=<path>`; retain only in an approved secure destination and validate the dump for intended import compatibility.
+3. **Virtual-table compatibility:** the special `sqlite3_cli_only` export mode introduced in November 2026 is not importable back into D1. Do not select it for D1-to-D1 recovery.
+
+### Security and encryption facts
+
+Cloudflare documents D1 encryption at rest using AES-256 with Cloudflare-managed keys, and TLS for data in transit. R2 likewise documents AES-256 encryption at rest and TLS in transit. These platform protections do not replace access control, least privilege, retention, and secure handling of exported SQL files. If client-side encryption or a separate encrypted storage destination is required by the owner's policy, that must be designed and approved before export.
+
+### Verification state
+
+- Read-only Cloudflare metadata reconfirmed database UUID and `version: production`; a current Time Travel bookmark was retrieved.
+- No native backup command, SQL export, download, import, restore, database creation, or live write was performed.
+- No recovery drill has been performed. RTO/RPO remain unestablished.
+- Section 32's suggestion to investigate native manual backup inventory is superseded: that legacy workflow is not applicable to this production database.
+
+### Sources
+
+- [Cloudflare D1 Time Travel and backups](https://developers.cloudflare.com/d1/reference/time-travel/) — production storage support and Time Travel.
+- [Cloudflare D1 Backups (Legacy)](https://developers.cloudflare.com/d1/reference/backups/) — alpha-only snapshot backup API.
+- [Cloudflare D1 release notes](https://developers.cloudflare.com/d1/platform/release-notes/) — legacy alpha backup API removal.
+- [Cloudflare D1 data security](https://developers.cloudflare.com/d1/reference/data-security/) — encryption at rest and in transit.
+- [Cloudflare R2 data security](https://developers.cloudflare.com/r2/reference/data-security/) — encryption at rest and in transit.
+
+This section supersedes conflicting backup-method statements in earlier checkpoint sections. No Cloudflare resources or application data were changed.
+
+
+## Phase 2.7X — SQL export/import compatibility and recovery design — 16 November 2026
+
+### Verified source and documentation findings
+
+- GitHub Actions run #224 on exact PR head `fdc198d8296c8675ed50018a6fa9f2e6b5140140` completed with conclusion `success`.
+- Cloudflare's D1 import/export documentation confirms the supported SQL import command is `wrangler d1 execute <database> --remote --file=<sql-file>`. This executes SQL against the named target and is therefore a write operation. The documented Wrangler import limit is 5 GiB per SQL file.
+- Cloudflare says standard D1 SQL exports can be executed/imported with `d1 execute --file`. The special `sqlite3_cli_only` compatibility export is not importable into D1.
+- Source review of canonical migrations found no `CREATE VIRTUAL TABLE` statements: migration 0001 contains 17 table, 20 index, and 2 trigger declarations; migration 0002 contains 6 table and 7 index declarations. This is migration-source evidence only, not a fresh live-schema inventory.
+- A live schema read-only inspection for virtual tables remains a pre-export check. Do not infer that the live database has none solely from migration files.
+
+### Recovery architecture decision
+
+1. Use D1 Time Travel for point-in-time recovery within the supported retention window.
+2. Use standard D1 SQL export for a separately retained artifact. Store it outside Git in an approved access-controlled destination; encrypt the artifact before transfer/storage under an owner-approved key-management process.
+3. Use a separately approved disposable D1 database for any import drill. Never import a backup into the live `jawed-studio-hq` database as a test.
+4. Prefer synthetic data for initial rehearsal. Any production-derived customer/financial data copy requires explicit approval and sanitization/access controls.
+5. Verify checksum, schema, migration ledger, foreign keys, triggers, and application invariants after import.
+6. Define RTO/RPO with the business owner before a drill; measure recovery-point age and elapsed time to validated service readiness. Until then, both remain **not established**.
+
+### Outstanding approval gates
+
+- Live read-only virtual-table inventory before any export.
+- Owner-approved backup destination, encryption/key custody, access list, retention, and deletion policy.
+- Owner approval for export and maintenance window.
+- Separate approval to create a disposable recovery D1 database and import any backup.
+- Agreed RTO/RPO targets and accepted drill evidence.
+
+### Execution boundary and status
+
+No export, download, import, restore, database creation, D1 write, Worker setting change, deployment, merge, or production code change was performed. The runbook now documents the supported import command and target safety boundary. Recovery remains **planned, not tested**.
+
+Sources: [Cloudflare D1 import/export](https://developers.cloudflare.com/d1/best-practices/import-export-data/), [Wrangler D1 commands](https://developers.cloudflare.com/workers/wrangler/commands/d1/), [D1 virtual-table export update](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/).
+
+
+## 35. PR #52 main-based reconciliation and release-readiness recheck — 16 November 2026
+
+### Reconciliation result
+
+- Fresh branch: `reconcile/phase-2-7m-from-main-20261116`.
+- Base: current `main` at `355341935a8ba87011e52d0c862852900aefe9db`.
+- PR: [#52 — reconcile(hq): restore canonical Studio HQ on current main](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/52).
+- Reconciled head before this checkpoint update: `9cd8d8cc2c4bf153ca99e99025b3585284ee7c51`.
+- GitHub compare: 2 commits ahead, 0 behind; PR reported `mergeable: true`, Draft, open, and unmerged.
+- The current main-only `docs/STUDIO_HQ_CONTINUITY.md` was preserved. PR #51's canonical HQ application, migration, and Phase 2.7M–2.7X documentation changes were retained. No PR #51 merge/rebase or main mutation occurred.
+
+### Exact-head CI result
+
+All 14 GitHub Actions check runs on reconciled application head `9cd8d8cc2c4bf153ca99e99025b3585284ee7c51` completed successfully:
+- HQ authentication tests: 132 passed, 0 failed, 0 skipped.
+- TypeScript and production build: passed.
+- Wrangler Worker deploy dry-run: passed; printed the expected `HQ_DB`, `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER` bindings.
+- gRPC artifact regression scan: passed; no gRPC package/server-auth markers in inspected build artifacts.
+- D1 schema contract, AI production regression matrix, site integrity, security/supply-chain, performance, PWA, accessibility, AdSense privacy, deployment runtime reliability, and Career Match browser runtime: passed.
+- Career Match browser smoke loaded at 1440x1100, 390x844, and 320x800.
+- CI run links include [Studio HQ auth/build/dry-run](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720478), [AI regression](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720473), and [Career Match browser runtime](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/43805720273).
+
+These results validate the reconciled source at that exact commit. They do not validate a live Worker deployment or D1 recovery.
+
+### AI knowledge review-date correction
+
+The first PR #52 CI run caught that `index.html` changed after the AI knowledge review date. The changed HTML only removed the self-closing slash from the manifest link and added a deferred classic analytics script; it did not change AI grounding content. The knowledge review date was refreshed to `2026-11-16` in `assets/data/ai-knowledge.json` and the generated `functions/lib/ai-knowledge-data.js` copy was synchronized. The subsequent AI regression matrix passed.
+
+### Current read-only Cloudflare inventory
+
+- Account Worker Scripts inventory returned two scripts. Their current script settings contained no rate-limit bindings.
+- The active Studio HQ deployment is still deployment `739b15b1-22b5-499c-a738-7830cb394579`, directing 100% traffic to version 13 `cf1dba45-c28c-4865-9571-dc508f6863d2`, created 13 November 2026.
+- The active version's resource bindings remain `AI`, `ASSETS`, `CANONICAL_ORIGIN`, `ENVIRONMENT`, and `HQ_DB`. The three HQ rate-limit bindings are absent from the active version metadata. No version upload or deployment occurred.
+- Account Pages inventory returned `jawed-website` and `advocate-kaushal-kishor`; both report `uses_functions: false`. No Pages source or customer data was accessed.
+- Cloudflare's Rate Limiting documentation says namespace IDs must be positive integer strings unique within the account. No existing rate-limit binding was found in the inspected active Worker/Pages surfaces for IDs `620261114`, `620261115`, and `620261116`. Treat them as **inventory-clear candidates**, not formally reserved IDs or deployment approval. Cloudflare does not expose a namespace registry endpoint in the reviewed API.
+- Cloudflare docs also state these rate limits are approximate and eventually consistent, not strict global limits. Do not describe them as strict account-wide request caps.
+
+### Current read-only D1 checks
+
+Against only `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`):
+- Storage version: `production`; reported file size: 401,408 bytes.
+- Current Time Travel bookmark was returned; it is a recovery-point reference, not a separately retained export.
+- `PRAGMA quick_check` returned `ok`.
+- `PRAGMA foreign_key_check` returned no rows.
+- Live catalog: 25 tables (including `_cf_KV` and `d1_migrations`), 27 indexes, 2 audit-log triggers.
+- Applied migration ledger still lists only `0001_studio_hq_schema.sql` and `0002_financial_management.sql`.
+- Live catalog query found no virtual tables.
+- No customer, owner, project, invoice, payment, refund, quotation, or audit-log row contents were selected. No export, import, restore, database creation, migration, or D1 write occurred.
+
+These are read-only integrity/schema observations, not backup evidence or a recovery drill. RTO/RPO remain unestablished.
+
+### Dependency advisory recheck
+
+- The current lockfile still resolves `@grpc/grpc-js@1.9.16` through Firestore's `~1.9.0` dependency range.
+- Firebase's official JavaScript SDK release notes show Firebase `13.3.0` released on 11 November 2026. The published Firestore `4.19.1` metadata still lists `@grpc/grpc-js` among its dependencies, and the open Firebase SDK issue [#10400](https://github.com/firebase/firebase-js-sdk/issues/10400) continues to report the `~1.9.0` pin blocking patched gRPC releases (issue last updated 10 November 2026).
+- The two reviewed gRPC advisories are fixed upstream in later 1.13.x/1.14.x versions, but the Firestore range still excludes them. Do not apply an override: it would not satisfy Firestore's declared range and can produce a duplicate nested gRPC dependency.
+- The existing CI exception remains temporary and narrow. It is not an upstream patch and is not a claim that every advisory scenario is impossible. Recheck after Firebase/Firestore changes the dependency range.
+
+### Deployment workflow / PR separation
+
+- Current `main` and PR #52 do not contain a manual Studio HQ Worker deployment workflow; the only workflow filename containing “deploy” is the non-deploying deployment-runtime reliability test.
+- PR #49 remains open, non-draft, unmerged. Its deployment workflow is not part of current `main` or PR #52. Do not dispatch PR #49's workflow; its previously reviewed hard-coded source SHA is stale relative to the reconciled Studio HQ source.
+- PR #51 remains open, Draft, unmerged, and not mergeable. PR #52 is the new reconciliation candidate; it does not supersede or close PR #51 automatically.
+
+### Release decision and remaining gates
+
+**PR #52 is CI-green and mergeable, but Studio HQ is not release-ready.** Outstanding gates:
+1. Resolve the upstream Firebase/Firestore gRPC dependency pin or retain a documented temporary exception with periodic review.
+2. Obtain an explicit account-level namespace allocation attestation or a safe owner-approved allocation process for the three unique IDs.
+3. Complete an approved, secure D1 SQL export and a separate disposable-target recovery drill; no such export or drill has been performed. Agree RTO/RPO first.
+4. Reconcile a new manual-only deployment workflow to the exact approved PR #52 source SHA, validate all three rate-limit bindings and thresholds, include source provenance and rollback, and obtain separate deployment approval.
+5. Establish a tested runtime verification plan for the three limiter bindings before exposing HQ routes.
+
+**Explicitly not performed:** no merge, deployment, Worker settings mutation, D1 export/import/restore/migration/write, database creation, PR #49 dispatch, personal website modification, or Kaushal customer project modification.
+
+Sources:
+- [Firebase JavaScript SDK release notes](https://firebase.google.com/support/release-notes/js).
+- [Firebase SDK issue #10400](https://github.com/firebase/firebase-js-sdk/issues/10400).
+- [gRPC advisory GHSA-M9GG-HP2V-232J](https://github.com/advisories/GHSA-M9GG-HP2V-232J).
+- [gRPC advisory GHSA-F596-WHHP-79R4](https://github.com/advisories/GHSA-F596-WHHP-79R4).
+- [Cloudflare Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+
+This checkpoint records read-only findings and CI evidence only. It does not authorize release operations.
+
+
+## 36. Three-way documentation reconciliation details — 16 November 2026
+
+The common ancestor used for reconciliation was `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. A direct GitHub comparison showed current main had exactly three main-only commits, and their changed paths were documentation-only:
+- `docs/STUDIO_HQ_CONTINUITY.md`
+- `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md`
+- `docs/ci-and-bundle-maintenance-review.md`
+
+Reconciliation treatment:
+1. `docs/STUDIO_HQ_CONTINUITY.md` was copied from current main verbatim into the fresh branch because it was absent from PR #51.
+2. The PR #51 versions of `docs/STUDIO_HQ_PHASE_2_7M_CHECKPOINT.md` and `docs/ci-and-bundle-maintenance-review.md` were retained because they contain the later Phase 2.7M–2.7X and deployment-source review material. The main versions were not allowed to overwrite that later material.
+3. The unique main-only PR #49 status/review facts were compared line-by-line and carried forward as refreshed reconciliation sections in both documents. This retains the main-only information without discarding the more extensive PR #51 history.
+4. No application source or migration file was selected from the main-only commits because GitHub's three-commit main delta contained only those three documentation files.
+
+### PR #49 status refreshed against current main
+
+- PR #49 is open, non-draft, unmerged, and GitHub reports it mergeable.
+- Head remains `8ba814c23e51c6182309cff5d22184084f7a1745`; base snapshot remains `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Direct comparison against current main reports 3 commits ahead and 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- Its two PR-triggered checks (Security Supply Chain Gate and Site Integrity Gate) completed successfully. Neither is a deployment run.
+- The deployment workflow remains confined to PR #49's branch and is not present in current main or PR #52. Its manual dispatch remains unauthorized and unsafe for this source reconciliation: it checks out fixed commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, then validates only `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER`; it does not validate the newer `HQ_RATE_LIMITER` required by PR #51/PR #52 code.
+- PR #51 is still open, Draft, unmerged, and not mergeable; its current head is `9645e08f4d4b65e7ca8205ef8bf339283b0fed83`, and direct comparison against current main is 191 commits ahead / 3 behind with the same common ancestor.
+- PR #52 remains the clean main-based reconciliation candidate; it does not close or merge PR #49 or PR #51.
+
+This section preserves the unique main-only status details while keeping PR #51's later checkpoint history. No PR was merged, no workflow dispatched, and no deployment performed.

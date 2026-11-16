@@ -3,21 +3,7 @@ concurrency:
   group: production-cache-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
-    paths:
-      - "_headers"
-      - "functions/api/ai.js"
-      - "assets/css/style.css"
-      - "assets/js/main.js"
-      - "assets/images/social-preview.png"
-      - "favicon.svg"
-      - "assets/css/style.css"
-      - "assets/js/main.js"
-      - "assets/images/social-preview.png"
-      - "favicon.svg"
-      - "config/production-cache-contract.json"
-      - "scripts/validate-production-cache.mjs"
-      - ".github/workflows/production-cache-reliability.yml"
+  # Live production probes are scheduled/manual and must not block unrelated Lab PRs.
   push:
     branches:
       - main

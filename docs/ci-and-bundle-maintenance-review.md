@@ -476,14 +476,15 @@ Before deployment, record the currently active deployment ID and version ID, and
 **Conclusion:** This preflight procedure is prepared for owner review only. Do not upload a Worker version, deploy traffic, modify bindings, run D1 operations, or test mutating HQ endpoints under the current authorization.
 
 Official reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
+
 ## 16. PR #49 deployment-source reconciliation against PR #51 — 15 November 2026
 
-This read-only review compared PR #49's full patch, its deployment workflow, the pinned application source, current main, the PR #51 branch configuration, and current PR/check metadata.
+This is the deployment-source analysis originally recorded on main on 15 November 2026. It has been carried into the PR #51 review after a fresh status recheck. The technical source/configuration findings remain applicable; PR head/base/divergence metadata below is refreshed to the latest read-only GitHub observations.
 
 ### Current PR states and checks
 
-- PR #49: open, non-draft, unmerged, mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base SHA `f432865d33e30d988f070ccf0b7b8b68e9442f7f` (the 14 November main snapshot). Three commits ahead, one behind current main. Its head has two PR-triggered workflow runs returned: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are not deployment runs.
-- PR #51: open, Draft, unmerged, mergeable. Latest head at this review `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`; base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` (current main). It is 157 commits ahead and one behind main. The latest documentation-only commit has no associated PR workflow runs returned; the 13 successful application-code runs on the prior application commit remain the relevant CI evidence.
+- PR #49 (fresh recheck): open, non-draft, unmerged, mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base SHA `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct comparison against current main reports 3 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Its head has two PR-triggered workflow runs returned: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are not deployment runs.
+- PR #51 (fresh recheck): open, Draft, unmerged, currently reported not mergeable. Latest head `77b60af57b254329881505c247e06a6713ecf667`; PR metadata base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`. Direct comparison against current main reports 161 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. The latest two commits are documentation-only; no PR-triggered workflow runs were returned for the newest documentation checkpoint commit. Do not infer that the prior application-code CI results reran on this documentation head.
 
 ### PR #49's deployment workflow — actual source behavior
 
@@ -538,3 +539,33 @@ Before any deployment workflow can be approved, one consolidated deployment cand
 5. Include a reviewed rollback procedure, source SHA annotation, and post-deployment binding verification.
 
 No files in PR #49, PR #51 application code, main, Cloudflare configuration, D1 schema/data, or secrets were changed. No workflow was dispatched, no deployment was run, and no PR was merged.
+
+
+## 17. Main-only PR #49 status and deployment workflow details carried forward — 16 November 2026
+
+This section preserves the unique PR #49 facts from the current-main copy of the continuity/checkpoint documentation while retaining the more extensive Phase 2.7 review already present in this file.
+
+### Refreshed GitHub state
+
+- PR #49: open, non-draft, unmerged, GitHub reports mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base snapshot `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct comparison against current main: 3 ahead / 3 behind, common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`.
+- PR #49 has two PR-triggered checks: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are validation runs, not deployment runs.
+- PR #51: open, Draft, unmerged, not mergeable. Current head `9645e08f4d4b65e7ca8205ef8bf339283b0fed83`; base snapshot `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`. Direct comparison against current main: 191 ahead / 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f).
+- PR #52 is the new main-based reconciliation branch and is the only candidate currently under active validation.
+
+### Exact PR #49 deployment workflow source behavior
+
+File: `.github/workflows/manual-studio-hq-worker-deploy.yml` on PR #49 head.
+
+- Trigger: `workflow_dispatch` only; the deploy job additionally requires `github.ref == 'refs/heads/main'`.
+- It checks out hard-coded source commit `7c103f61e2692b6b18eeb9249f02d18ba3ea60a6`, not the current main commit or the reconciled PR #52 source.
+- It builds and invokes `bunx wrangler deploy --config wrangler.jsonc` with Cloudflare secrets.
+- Its pre-deploy validator checks only `HQ_SESSION_LIMITER` and `HQ_WRITE_LIMITER`. It does not validate `HQ_RATE_LIMITER`, which is required by the newer reconciled application code.
+- The workflow's source pin and incomplete limiter validation make it unsuitable for PR #52. Do not dispatch it.
+
+### Current repository presence and safety
+
+The manual deployment workflow is not present in current `main` or PR #52. The current main and PR #52 workflow inventories include deployment-runtime reliability checks, not a manual deployment workflow. PR #49's workflow remains isolated on its unmerged branch.
+
+**Decision:** do not merge PR #49 or dispatch its deployment workflow. A future manual-only deployment workflow must be newly reviewed against the exact approved source SHA and validate all three limiter bindings and thresholds, D1 identity/migration directory, provenance, and rollback requirements. Separate explicit deployment approval remains mandatory.
+
+No workflow was dispatched, no secrets accessed, no Worker uploaded/deployed, and no Cloudflare or D1 configuration changed.
