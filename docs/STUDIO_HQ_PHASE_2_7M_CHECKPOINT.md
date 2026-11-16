@@ -745,3 +745,40 @@ The current script settings endpoint independently returned the same binding inv
 Only GET operations were used. No script upload, settings patch, version upload, deployment, D1 operation, or Cloudflare resource mutation was performed. The production/live Worker was not changed.
 
 This closes the factual question of whether the currently deployed Worker already has the new rate-limit bindings: **it does not**. It does not close namespace uniqueness, deployment approval, backup/restore, or PR mergeability gates.
+
+
+## 28. Phase 2.7T — HQ API and financial data-handling source review — 16 November 2026
+
+### Scope reviewed (read-only source inspection)
+
+Reviewed the current feature-branch source for:
+- `functions/lib/hqApi.js`: same-origin checks, Firebase bearer authorization handoff, bounded JSON body reader, D1 availability handling, owner guard statements, audit statements.
+- `functions/lib/hqAuth.js`: RS256-only verification, certificate retrieval/cache, issuer/audience checks, expiration/issued-at/auth-time checks, verified-email requirement, owner allowlist, privacy-safe diagnostics.
+- `functions/lib/hqRateLimit.js`: fail-closed binding resolution, IP/UID key construction, malformed binding/response handling, and error logging.
+- CRM, Projects, Approvals/QA and Financial API handlers: field allowlists, parameterized SQL, pagination bounds, owner guard ordering, conditional audit writes, payment/refund idempotency, and financial integer arithmetic.
+- `migrations/hq/0001_studio_hq_schema.sql` and `0002_financial_management.sql`: constraints, foreign keys, unique indexes, and audit immutability triggers.
+- `worker.js`: HQ route dispatch and compatibility aliases.
+
+### Positive source findings
+
+- JSON request bodies are streamed and capped at 16 KiB by default; declared and streamed oversize payloads are rejected, invalid UTF-8/JSON is rejected, and stream errors return controlled responses.
+- SQL data values are parameter-bound. Dynamic table/column fragments inspected are selected from fixed internal allowlists or fixed route-derived constants.
+- CRM and project mutations put the active-owner guard first in their D1 batch and write audit entries in the same batch. Conditional audit entries follow mutation statements and use `changes() = 1`.
+- Audit logs have explicit SQLite triggers that abort UPDATE and DELETE, enforcing append-only behavior at the database layer.
+- Financial amounts are represented as integer minor units (INR paise), use safe-integer and range checks, and apply deterministic BigInt rounding for line tax.
+- Payment/refund creation uses unique idempotency keys and request fingerprints; database constraints also enforce unique keys and one invoice per converted quotation.
+- Existing HQ unit tests cover streamed body limits, invalid JSON, quotation/invoice lifecycle, duplicate conversion, payment/refund replay, overpayment/refund bounds, archived-payment calculations, and owner/rate-limit behavior.
+
+### Review limitations / evidence boundary
+
+- This was source inspection; no new tests were executed locally during this review.
+- The previously recorded successful CI run (132/132) used Node's in-memory SQLite test adapter for financial lifecycle tests. It does not constitute a live D1 integration test or prove every Cloudflare D1 batch/SQLite runtime behavior.
+- The prior Wrangler deployment dry run validates configuration/build packaging, not a live Worker request.
+- No customer, owner, payment, invoice, refund, or audit row contents were queried during this source review.
+- No further high-severity source defect was confirmed in the reviewed areas. This is not a blanket security certification or a substitute for live deployment verification.
+
+### Current decision
+
+Keep the release blocked by the independently confirmed live Worker binding mismatch, unverified account-wide namespace allocation, outstanding D1 export/restore drill, PR #51 main-branch divergence, and missing deployment/rollback approval. Do not deploy the current branch until those items are resolved through separate reviewed steps.
+
+No source files other than this checkpoint were changed in this review. No tests, D1 writes/migrations/exports, Worker setting changes, deployments, merges, rebases, or customer-project changes were performed.
