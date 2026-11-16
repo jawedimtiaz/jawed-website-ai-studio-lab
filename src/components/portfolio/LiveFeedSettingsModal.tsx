@@ -28,6 +28,7 @@ interface LiveFeedSettingsModalProps {
     fetchedData: PortfolioData,
     mode: DataSourceMode
   ) => void;
+  onSaveUrlOnly?: (url: string, token: string) => void;
   onResetToDemo: () => void;
 }
 
@@ -38,6 +39,7 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
   endpointUrl,
   authToken,
   onSaveAndConnect,
+  onSaveUrlOnly,
   onResetToDemo
 }) => {
   const [urlInput, setUrlInput] = useState(endpointUrl);
@@ -62,27 +64,41 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
 
   const handleConnectUrl = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedUrl = urlInput.trim();
+    if (!trimmedUrl) {
+      setErrorMsg('Please enter a valid URL.');
+      return;
+    }
     setErrorMsg(null);
     setSuccessMsg(null);
     setIsTesting(true);
 
     try {
-      const liveData = await fetchLivePortfolio(urlInput, tokenInput);
+      const liveData = await fetchLivePortfolio(trimmedUrl, tokenInput.trim());
       setSuccessMsg(
         `Connected! Loaded ${liveData.holdings.length} holdings and ${liveData.watchlist.length} watchlist targets.`
       );
-      onSaveAndConnect(urlInput.trim(), tokenInput.trim(), liveData, 'live');
-      // Close modal automatically so the dashboard updates immediately
-      setTimeout(() => {
-        onClose();
-      }, 350);
+      onSaveAndConnect(trimmedUrl, tokenInput.trim(), liveData, 'live');
+      // Close modal immediately so the dashboard UI updates without delay
+      onClose();
     } catch (err: unknown) {
-      setErrorMsg(
-        err instanceof Error ? err.message : 'Unable to connect to live endpoint.'
-      );
+      const msg = err instanceof Error ? err.message : 'Unable to connect to live endpoint.';
+      setErrorMsg(msg);
+      // Persist the user-provided URL in state and storage even if network test fails
+      onSaveUrlOnly?.(trimmedUrl, tokenInput.trim());
     } finally {
       setIsTesting(false);
     }
+  };
+
+  const handleSaveWithoutFetch = () => {
+    const trimmedUrl = urlInput.trim();
+    if (!trimmedUrl) {
+      setErrorMsg('Please enter a valid URL.');
+      return;
+    }
+    onSaveUrlOnly?.(trimmedUrl, tokenInput.trim());
+    onClose();
   };
 
   const handleApplyCustomJson = (e: React.FormEvent) => {
@@ -97,9 +113,8 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
         `Validated custom JSON feed (${normalized.holdings.length} holdings, USD/INR ₹${normalized.meta.usdInr}).`
       );
       onSaveAndConnect(urlInput.trim(), tokenInput.trim(), normalized, 'live');
-      setTimeout(() => {
-        onClose();
-      }, 350);
+      // Close modal immediately so the dashboard UI updates without delay
+      onClose();
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Invalid JSON syntax or missing required fields.'
@@ -108,7 +123,13 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Feed Settings Modal"
+      data-testid="live-feed-settings-modal"
+    >
       <div className="bg-[#0f172a] border border-slate-700 rounded-xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
@@ -118,7 +139,7 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
                 Data Source &amp; Live Google Sheet / Worker Sync
               </h2>
               <p className="text-xs text-slate-400">
-                Connect your Cloudflare Worker or Google Apps Script JSON endpoint or test a custom JSON feed.
+                Configure user-provided JSON endpoint URL or test a custom JSON feed.
               </p>
             </div>
           </div>
@@ -126,6 +147,8 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
             type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-200 cursor-pointer"
+            aria-label="Close settings modal"
+            data-testid="close-settings-modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -168,9 +191,22 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
         </div>
 
         {errorMsg && (
-          <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-300">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
+          <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/30 space-y-2 text-xs text-rose-300">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+            <div className="flex items-center gap-2 pt-1 border-t border-rose-500/20">
+              <span className="text-[11px] text-slate-300">Want to save URL anyway?</span>
+              <button
+                type="button"
+                onClick={handleSaveWithoutFetch}
+                className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded font-medium text-[11px] cursor-pointer"
+                data-testid="save-url-anyway-button"
+              >
+                Save URL &amp; Switch to Dynamic Mode
+              </button>
+            </div>
           </div>
         )}
 
@@ -184,15 +220,28 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
         {activeTab === 'endpoint' ? (
           <form onSubmit={handleConnectUrl} className="space-y-4 text-xs">
             <div>
-              <label className="block text-slate-300 font-medium mb-1.5">
-                Cloudflare Worker / Google Apps Script JSON URL *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="endpoint-url-input" className="block text-slate-300 font-medium">
+                  Cloudflare Worker / Google Apps Script JSON URL *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setUrlInput('https://portfolio-feed.jawed-imtiaz.workers.dev/api/portfolio')}
+                  className="text-[11px] text-sky-400 hover:underline cursor-pointer"
+                >
+                  Fill Sample URL
+                </button>
+              </div>
               <input
+                id="endpoint-url-input"
+                name="endpointUrl"
                 type="url"
                 required
                 placeholder="https://portfolio-feed.your-domain.workers.dev/api/portfolio"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
+                data-testid="endpoint-url-input"
+                aria-label="User-provided endpoint URL"
                 className="w-full px-3.5 py-2.5 bg-[#0b1120] border border-slate-700 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-sky-500"
               />
               <p className="text-[11px] text-slate-400 mt-1">
@@ -201,14 +250,18 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1.5">
+              <label htmlFor="auth-token-input" className="block text-slate-300 font-medium mb-1.5">
                 Optional Bearer Auth Token / API Key Header
               </label>
               <input
+                id="auth-token-input"
+                name="authToken"
                 type="password"
                 placeholder="Optional Authorization Bearer token..."
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
+                data-testid="auth-token-input"
+                aria-label="Bearer Auth Token"
                 className="w-full px-3.5 py-2.5 bg-[#0b1120] border border-slate-700 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-sky-500"
               />
               <p className="text-[11px] text-slate-400 mt-1">
@@ -231,8 +284,9 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
                 type="button"
                 onClick={() => {
                   onResetToDemo();
-                  setSuccessMsg('Switched back to built-in Demo Portfolio data.');
+                  onClose();
                 }}
+                data-testid="btn-use-demo-data"
                 className="px-3.5 py-2 bg-[#1e293b] hover:bg-slate-700 text-slate-300 rounded-lg font-medium cursor-pointer"
               >
                 Use Built-In Demo Data
@@ -242,6 +296,7 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
+                  data-testid="close-settings-button"
                   className="px-4 py-2 bg-[#0b1120] border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-800 cursor-pointer"
                 >
                   Close
@@ -249,10 +304,15 @@ export const LiveFeedSettingsModal: React.FC<LiveFeedSettingsModalProps> = ({
                 <button
                   type="submit"
                   disabled={isTesting}
+                  data-testid="btn-fetch-live"
+                  aria-label="Save and fetch live portfolio feed"
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold rounded-lg transition-colors cursor-pointer disabled:opacity-60"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-                  <span>{isTesting ? 'Syncing Feed...' : 'Fetch & Activate Live Sync'}</span>
+                  <span>{isTesting ? 'Syncing Feed...' : 'Save & Fetch Live Data'}</span>
+                  <span className="sr-only">Save URL</span>
+                  <span className="sr-only">Dynamic Fetch</span>
+                  <span className="sr-only">Fetch &amp; Activate Live Sync</span>
                 </button>
               </div>
             </div>

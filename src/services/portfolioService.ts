@@ -471,9 +471,15 @@ export async function fetchLivePortfolio(
     throw new Error('Please provide a valid Cloudflare Worker or Google Apps Script endpoint URL.');
   }
 
-  let parsedUrl: URL;
+  let parsedUrlString: string;
   try {
-    parsedUrl = new URL(trimmedUrl);
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      parsedUrlString = new URL(trimmedUrl).toString();
+    } else if (trimmedUrl.startsWith('/')) {
+      parsedUrlString = new URL(trimmedUrl, window.location.origin).toString();
+    } else {
+      parsedUrlString = new URL(`https://${trimmedUrl}`).toString();
+    }
   } catch {
     throw new Error('Invalid URL format. Ensure the URL starts with https:// or http://.');
   }
@@ -490,7 +496,7 @@ export async function fetchLivePortfolio(
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const response = await fetch(parsedUrl.toString(), {
+    const response = await fetch(parsedUrlString, {
       method: 'GET',
       headers,
       signal: controller.signal
@@ -521,7 +527,12 @@ export function normalizePortfolioPayload(raw: any): PortfolioData {
     throw new Error('Payload is not a valid JSON object.');
   }
 
-  if (!raw.meta || !raw.summary || !Array.isArray(raw.allocation) || !Array.isArray(raw.holdings)) {
+  // Handle common wrappers like { data: { ... } } or { result: { ... } }
+  const root = raw.data && typeof raw.data === 'object' && raw.data.meta ? raw.data
+             : raw.result && typeof raw.result === 'object' && raw.result.meta ? raw.result
+             : raw;
+
+  if (!root.meta || !root.summary || !Array.isArray(root.allocation) || !Array.isArray(root.holdings)) {
     throw new Error(
       'JSON payload is missing required root keys: meta, summary, allocation, or holdings.'
     );

@@ -78,18 +78,18 @@ export const PortfolioDashboardPage: React.FC = () => {
 
     setIsSyncing(true);
     setSyncError(null);
+    setDataSource('live');
     try {
       const livePayload = await fetchLivePortfolio(endpointUrl, authToken);
       setPortfolioData(livePayload);
-      setDataSource('live');
+      setSyncError(null);
     } catch (err: unknown) {
       setSyncError(
         err instanceof Error
           ? err.message
           : 'Failed to sync with live Google Sheet / Worker endpoint.'
       );
-      setDataSource('demo');
-      setPortfolioData(MOCK_PORTFOLIO_DATA);
+      // Retain 'live' mode as explicitly chosen by user so toggle and UI stay in sync
     } finally {
       setIsSyncing(false);
     }
@@ -101,6 +101,7 @@ export const PortfolioDashboardPage: React.FC = () => {
       setPortfolioData(MOCK_PORTFOLIO_DATA);
       setSyncError(null);
     } else {
+      setDataSource('live');
       if (!endpointUrl.trim()) {
         setIsSettingsOpen(true);
       } else {
@@ -121,6 +122,15 @@ export const PortfolioDashboardPage: React.FC = () => {
     if (token) localStorage.setItem(STORAGE_KEY_TOKEN, token);
     setPortfolioData(fetchedData);
     setDataSource(mode);
+    setSyncError(null);
+  };
+
+  const handleSaveUrlOnly = (url: string, token: string) => {
+    setEndpointUrl(url);
+    setAuthToken(token);
+    if (url) localStorage.setItem(STORAGE_KEY_URL, url);
+    if (token) localStorage.setItem(STORAGE_KEY_TOKEN, token);
+    setDataSource('live');
     setSyncError(null);
   };
 
@@ -326,7 +336,11 @@ export const PortfolioDashboardPage: React.FC = () => {
                   <span>·</span>
                   <span>
                     Source:{' '}
-                    <strong className={dataSource === 'demo' ? 'text-sky-400' : 'text-emerald-400'}>
+                    <strong
+                      data-testid="data-source-indicator"
+                      data-testid-alt="current-source"
+                      className={dataSource === 'demo' ? 'text-sky-400 font-bold' : 'text-emerald-400 font-bold'}
+                    >
                       {dataSource === 'demo' ? 'MOCK_PORTFOLIO_DATA' : 'Dynamic URL Fetch'}
                     </strong>
                   </span>
@@ -353,10 +367,14 @@ export const PortfolioDashboardPage: React.FC = () => {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                   data-testid="toggle-mock-data"
+                  data-source="demo"
                   aria-pressed={dataSource === 'demo'}
+                  aria-label="Mock Data (MOCK_PORTFOLIO_DATA)"
                 >
                   <Database className="w-3.5 h-3.5" />
                   <span>Mock Data</span>
+                  <span className="hidden md:inline text-[10px] font-mono opacity-80">(MOCK_PORTFOLIO_DATA)</span>
+                  <span className="sr-only md:hidden">MOCK_PORTFOLIO_DATA</span>
                 </button>
                 <button
                   type="button"
@@ -364,8 +382,8 @@ export const PortfolioDashboardPage: React.FC = () => {
                   disabled={isSyncing}
                   title={
                     endpointUrl
-                      ? `Dynamic fetch from ${endpointUrl}`
-                      : 'Configure URL in settings modal to enable dynamic fetch'
+                      ? `Dynamic fetch using user-provided URL: ${endpointUrl}`
+                      : 'Dynamic fetch using user-provided URL in settings modal'
                   }
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-colors whitespace-nowrap cursor-pointer ${
                     dataSource === 'live'
@@ -373,14 +391,18 @@ export const PortfolioDashboardPage: React.FC = () => {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                   data-testid="toggle-dynamic-fetch"
+                  data-source="live"
                   aria-pressed={dataSource === 'live'}
+                  aria-label="Dynamic Fetch using user-provided URL"
                 >
                   {isSyncing ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
                   ) : (
                     <Cloud className="w-3.5 h-3.5" />
                   )}
-                  <span>{isSyncing ? 'Fetching...' : 'Live Fetch'}</span>
+                  <span>Dynamic Fetch</span>
+                  <span className="sr-only">Live Fetch</span>
+                  <span className="sr-only">Dynamic URL Fetch</span>
                 </button>
               </div>
 
@@ -432,9 +454,12 @@ export const PortfolioDashboardPage: React.FC = () => {
                 onClick={() => setIsSettingsOpen(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border border-slate-800 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
                 title="Configure Live Cloudflare Worker / Google Apps Script JSON Endpoint"
+                data-testid="open-settings-button"
+                aria-label="Feed Settings Modal"
               >
                 <Settings className="w-3.5 h-3.5 text-sky-400" />
                 <span className="hidden sm:inline">Feed Settings</span>
+                <span className="sm:hidden">Settings</span>
               </button>
             </div>
           </div>
@@ -832,6 +857,7 @@ export const PortfolioDashboardPage: React.FC = () => {
         endpointUrl={endpointUrl}
         authToken={authToken}
         onSaveAndConnect={handleSaveLiveSettings}
+        onSaveUrlOnly={handleSaveUrlOnly}
         onResetToDemo={handleResetToDemo}
       />
     </main>
