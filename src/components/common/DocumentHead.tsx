@@ -15,8 +15,12 @@ export const DocumentHead: React.FC = () => {
 
     // Normalize path by stripping trailing slash for matching
     const cleanPath = pathname.replace(/\/$/, '') || '/';
+    const isPrivateHq = cleanPath === '/studio-hq' || cleanPath.startsWith('/studio-hq/');
 
-    if (cleanPath === '/') {
+    if (isPrivateHq) {
+      title = 'Studio HQ | Jawed Web Studio';
+      description = 'Private business operations workspace.';
+    } else if (cleanPath === '/') {
       title = 'Jawed Imtiaz | IT Support & Workplace Technology';
       description =
         'IT Field Tech portfolio, practical troubleshooting guides, interactive browser-based IT & finance tools, and Jawed AI assistant.';
@@ -113,12 +117,28 @@ export const DocumentHead: React.FC = () => {
 
     // Update canonical link
     let canonicalTag = document.querySelector('link[rel="canonical"]');
-    if (!canonicalTag) {
-      canonicalTag = document.createElement('link');
-      canonicalTag.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonicalTag);
+    if (isPrivateHq) {
+      canonicalTag?.remove();
+    } else {
+      if (!canonicalTag) {
+        canonicalTag = document.createElement('link');
+        canonicalTag.setAttribute('rel', 'canonical');
+        document.head.appendChild(canonicalTag);
+      }
+      canonicalTag.setAttribute('href', canonicalUrl);
     }
-    canonicalTag.setAttribute('href', canonicalUrl);
+
+    let robotsTag = document.querySelector('meta[name="robots"]');
+    if (isPrivateHq) {
+      if (!robotsTag) {
+        robotsTag = document.createElement('meta');
+        robotsTag.setAttribute('name', 'robots');
+        document.head.appendChild(robotsTag);
+      }
+      robotsTag.setAttribute('content', 'noindex, nofollow, noarchive');
+    } else if (robotsTag) {
+      robotsTag.remove();
+    }
 
     // Update OpenGraph Title & Description
     let ogTitle = document.querySelector('meta[property="og:title"]');
@@ -140,7 +160,9 @@ export const DocumentHead: React.FC = () => {
     // Generate and inject Schema.org JSON-LD Structured Data
     let jsonLdData: any = null;
 
-    if (cleanPath === '/') {
+    if (isPrivateHq) {
+      jsonLdData = null;
+    } else if (cleanPath === '/') {
       jsonLdData = {
         '@context': 'https://schema.org',
         '@graph': [
@@ -365,12 +387,16 @@ export const DocumentHead: React.FC = () => {
     }
 
     let scriptTag = document.querySelector('script[type="application/ld+json"]');
-    if (!scriptTag) {
-      scriptTag = document.createElement('script');
-      scriptTag.setAttribute('type', 'application/ld+json');
-      document.head.appendChild(scriptTag);
+    if (isPrivateHq) {
+      scriptTag?.remove();
+    } else {
+      if (!scriptTag) {
+        scriptTag = document.createElement('script');
+        scriptTag.setAttribute('type', 'application/ld+json');
+        document.head.appendChild(scriptTag);
+      }
+      scriptTag.textContent = JSON.stringify(jsonLdData);
     }
-    scriptTag.textContent = JSON.stringify(jsonLdData);
   }, [pathname]);
 
   return null;

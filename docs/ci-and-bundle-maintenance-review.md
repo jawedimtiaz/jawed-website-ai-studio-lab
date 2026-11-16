@@ -476,14 +476,15 @@ Before deployment, record the currently active deployment ID and version ID, and
 **Conclusion:** This preflight procedure is prepared for owner review only. Do not upload a Worker version, deploy traffic, modify bindings, run D1 operations, or test mutating HQ endpoints under the current authorization.
 
 Official reference: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
+
 ## 16. PR #49 deployment-source reconciliation against PR #51 — 15 November 2026
 
-This read-only review compared PR #49's full patch, its deployment workflow, the pinned application source, current main, the PR #51 branch configuration, and current PR/check metadata.
+This is the deployment-source analysis originally recorded on main on 15 November 2026. It has been carried into the PR #51 review after a fresh status recheck. The technical source/configuration findings remain applicable; PR head/base/divergence metadata below is refreshed to the latest read-only GitHub observations.
 
 ### Current PR states and checks
 
-- PR #49: open, non-draft, unmerged, mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base SHA `f432865d33e30d988f070ccf0b7b8b68e9442f7f` (the 14 November main snapshot). Three commits ahead, one behind current main. Its head has two PR-triggered workflow runs returned: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are not deployment runs.
-- PR #51: open, Draft, unmerged, mergeable. Latest head at this review `ad37138c70dabe88c992bfff02a8dfdaa78dd55c`; base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae` (current main). It is 157 commits ahead and one behind main. The latest documentation-only commit has no associated PR workflow runs returned; the 13 successful application-code runs on the prior application commit remain the relevant CI evidence.
+- PR #49 (fresh recheck): open, non-draft, unmerged, mergeable. Head `8ba814c23e51c6182309cff5d22184084f7a1745`; base SHA `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Direct comparison against current main reports 3 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. Its head has two PR-triggered workflow runs returned: Security Supply Chain Gate and Site Integrity Gate; both completed successfully. These are not deployment runs.
+- PR #51 (fresh recheck): open, Draft, unmerged, currently reported not mergeable. Latest head `77b60af57b254329881505c247e06a6713ecf667`; PR metadata base SHA `022f8ab41285834d9f8fe149e05f1c3b6d8fe6ae`. Direct comparison against current main reports 161 commits ahead and 3 behind, with common ancestor `f432865d33e30d988f070ccf0b7b8b68e9442f7f`. The latest two commits are documentation-only; no PR-triggered workflow runs were returned for the newest documentation checkpoint commit. Do not infer that the prior application-code CI results reran on this documentation head.
 
 ### PR #49's deployment workflow — actual source behavior
 
