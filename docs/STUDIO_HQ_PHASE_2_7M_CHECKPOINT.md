@@ -908,3 +908,43 @@ Updated `docs/studio-hq-d1-backup-recovery-runbook.md`:
 Prepare a non-destructive backup inventory checklist and confirm approved backup storage, operator environment, and maintenance window. Do not create/download a backup or create a disposable D1 database until explicitly authorized.
 
 No live D1 writes, schema changes, migrations, exports, imports, restores, Worker changes, or deployments occurred.
+
+
+## 33. Phase 2.7W — correction: D1 native backup commands are legacy-only — 16 November 2026
+
+A deeper review of Cloudflare's authoritative D1 Time Travel and legacy Backups documentation identified an error in the preceding Phase 2.7V draft.
+
+The Studio HQ D1 database reports `version: production`. Cloudflare states that:
+- Production-storage D1 databases use Time Travel.
+- Time Travel replaces snapshot-based backups used by legacy alpha databases.
+- The legacy alpha backup API was removed on 1 July 2025.
+- The `wrangler d1 backup create/list/download/restore` documentation is explicitly marked **Backups (Legacy)** and is not the applicable backup workflow for this production-storage database.
+
+The runbook's earlier Section 11, which recommended native `d1 backup` commands as an additional recovery option, has been replaced with an applicability warning. Do not run those commands for this database.
+
+### Applicable Studio HQ recovery planning
+
+1. **Time Travel:** supported for production storage; restore is destructive and overwrites the database in place.
+2. **Standard SQL export:** documented through `wrangler d1 export <name> --remote --output=<path>`; retain only in an approved secure destination and validate the dump for intended import compatibility.
+3. **Virtual-table compatibility:** the special `sqlite3_cli_only` export mode introduced in November 2026 is not importable back into D1. Do not select it for D1-to-D1 recovery.
+
+### Security and encryption facts
+
+Cloudflare documents D1 encryption at rest using AES-256 with Cloudflare-managed keys, and TLS for data in transit. R2 likewise documents AES-256 encryption at rest and TLS in transit. These platform protections do not replace access control, least privilege, retention, and secure handling of exported SQL files. If client-side encryption or a separate encrypted storage destination is required by the owner's policy, that must be designed and approved before export.
+
+### Verification state
+
+- Read-only Cloudflare metadata reconfirmed database UUID and `version: production`; a current Time Travel bookmark was retrieved.
+- No native backup command, SQL export, download, import, restore, database creation, or live write was performed.
+- No recovery drill has been performed. RTO/RPO remain unestablished.
+- Section 32's suggestion to investigate native manual backup inventory is superseded: that legacy workflow is not applicable to this production database.
+
+### Sources
+
+- [Cloudflare D1 Time Travel and backups](https://developers.cloudflare.com/d1/reference/time-travel/) — production storage support and Time Travel.
+- [Cloudflare D1 Backups (Legacy)](https://developers.cloudflare.com/d1/reference/backups/) — alpha-only snapshot backup API.
+- [Cloudflare D1 release notes](https://developers.cloudflare.com/d1/platform/release-notes/) — legacy alpha backup API removal.
+- [Cloudflare D1 data security](https://developers.cloudflare.com/d1/reference/data-security/) — encryption at rest and in transit.
+- [Cloudflare R2 data security](https://developers.cloudflare.com/r2/reference/data-security/) — encryption at rest and in transit.
+
+This section supersedes conflicting backup-method statements in earlier checkpoint sections. No Cloudflare resources or application data were changed.
