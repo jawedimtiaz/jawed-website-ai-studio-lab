@@ -799,3 +799,51 @@ The push-triggered `Studio HQ Firebase Auth Tests` workflow also ran on the late
 This run verifies the exact current checkpoint head, including all source/test changes already present at that head. The only changes after the previously verified code/test commit were documentation/checkpoint updates; this run independently reran the full dedicated workflow on the latest head.
 
 This does not alter the release decision: the live Worker version 13 still lacks all three rate-limiter bindings, account-wide namespace uniqueness remains unverified, no D1 export/restore drill has occurred, and PR #51 remains Draft and not mergeable against main. No live deployment, Worker configuration change, D1 write/export/restore, merge, or rebase was performed.
+
+
+## 30. Phase 2.7U — rate-limit namespace allocation preflight — 16 November 2026
+
+### Cloudflare platform contract
+
+Cloudflare's current Workers Rate Limiting documentation states:
+- `namespace_id` must be a positive integer expressed as a string.
+- Each namespace identifier must be unique within the Cloudflare account.
+- Two bindings sharing a namespace ID share counters for a given key within each Cloudflare location, including across Workers.
+- Rate-limit counters are approximate and location-local; this feature is not a globally strict limiter.
+- Rate-limit bindings are not currently visible in the Cloudflare dashboard.
+
+Source: [Cloudflare Workers Rate Limiting documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) (documentation retrieved 16 November 2026).
+
+### Current PR allocation
+
+The feature branch `wrangler.jsonc` declares:
+| Binding | Namespace ID | Limit |
+|---|---:|---:|
+| `HQ_SESSION_LIMITER` | `620261114` | 10 / 60 seconds |
+| `HQ_WRITE_LIMITER` | `620261115` | 30 / 60 seconds |
+| `HQ_RATE_LIMITER` | `620261116` | 120 / 60 seconds |
+
+These are distinct positive integer IDs and are correctly represented as strings in Wrangler configuration.
+
+### Read-only account inventory
+
+Cloudflare's account Worker Scripts list returned two scripts:
+- `jawed-website-ai-studio-lab`
+- `kaushal-path-proxy`
+
+The latest 100%-traffic version for each script was inspected through the version-details endpoint. Neither deployed version has a `ratelimit` binding. The currently deployed Studio HQ version 13 likewise has no rate-limit binding.
+
+This is metadata-only inspection. No Kaushal source, settings, deployment, secrets, or application data were accessed or changed.
+
+### Allocation assessment
+
+- No collision with a rate-limit binding was found in the two Worker scripts returned by the account Worker Scripts inventory.
+- This is **not yet proof of account-wide uniqueness**: Cloudflare does not expose a rate-limit namespace registry endpoint in the API specification reviewed, and this inspection did not enumerate every possible account product surface that could host a Worker configuration (for example, Pages Functions).
+- Therefore the three proposed IDs are plausible candidates but are **not approved for deployment**. Preserve the existing values for now; do not renumber or create bindings speculatively.
+- Sharing a namespace across these three bindings would be incorrect for the intended independent session/write/general buckets; the three separate IDs should remain distinct.
+
+### Next safe action
+
+Before binding activation, complete a final account-surface inventory for Pages Functions and any other deployed Worker configurations, then record an explicit owner-approved namespace allocation. Do not patch live settings or deploy as part of this preflight.
+
+No Cloudflare resources were mutated. No Worker was deployed, no rate-limit binding was created, and no Kaushal or personal website configuration was changed.
