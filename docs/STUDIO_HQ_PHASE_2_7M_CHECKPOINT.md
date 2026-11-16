@@ -948,3 +948,37 @@ Cloudflare documents D1 encryption at rest using AES-256 with Cloudflare-managed
 - [Cloudflare R2 data security](https://developers.cloudflare.com/r2/reference/data-security/) — encryption at rest and in transit.
 
 This section supersedes conflicting backup-method statements in earlier checkpoint sections. No Cloudflare resources or application data were changed.
+
+
+## Phase 2.7X — SQL export/import compatibility and recovery design — 16 November 2026
+
+### Verified source and documentation findings
+
+- GitHub Actions run #224 on exact PR head `fdc198d8296c8675ed50018a6fa9f2e6b5140140` completed with conclusion `success`.
+- Cloudflare's D1 import/export documentation confirms the supported SQL import command is `wrangler d1 execute <database> --remote --file=<sql-file>`. This executes SQL against the named target and is therefore a write operation. The documented Wrangler import limit is 5 GiB per SQL file.
+- Cloudflare says standard D1 SQL exports can be executed/imported with `d1 execute --file`. The special `sqlite3_cli_only` compatibility export is not importable into D1.
+- Source review of canonical migrations found no `CREATE VIRTUAL TABLE` statements: migration 0001 contains 17 table, 20 index, and 2 trigger declarations; migration 0002 contains 6 table and 7 index declarations. This is migration-source evidence only, not a fresh live-schema inventory.
+- A live schema read-only inspection for virtual tables remains a pre-export check. Do not infer that the live database has none solely from migration files.
+
+### Recovery architecture decision
+
+1. Use D1 Time Travel for point-in-time recovery within the supported retention window.
+2. Use standard D1 SQL export for a separately retained artifact. Store it outside Git in an approved access-controlled destination; encrypt the artifact before transfer/storage under an owner-approved key-management process.
+3. Use a separately approved disposable D1 database for any import drill. Never import a backup into the live `jawed-studio-hq` database as a test.
+4. Prefer synthetic data for initial rehearsal. Any production-derived customer/financial data copy requires explicit approval and sanitization/access controls.
+5. Verify checksum, schema, migration ledger, foreign keys, triggers, and application invariants after import.
+6. Define RTO/RPO with the business owner before a drill; measure recovery-point age and elapsed time to validated service readiness. Until then, both remain **not established**.
+
+### Outstanding approval gates
+
+- Live read-only virtual-table inventory before any export.
+- Owner-approved backup destination, encryption/key custody, access list, retention, and deletion policy.
+- Owner approval for export and maintenance window.
+- Separate approval to create a disposable recovery D1 database and import any backup.
+- Agreed RTO/RPO targets and accepted drill evidence.
+
+### Execution boundary and status
+
+No export, download, import, restore, database creation, D1 write, Worker setting change, deployment, merge, or production code change was performed. The runbook now documents the supported import command and target safety boundary. Recovery remains **planned, not tested**.
+
+Sources: [Cloudflare D1 import/export](https://developers.cloudflare.com/d1/best-practices/import-export-data/), [Wrangler D1 commands](https://developers.cloudflare.com/workers/wrangler/commands/d1/), [D1 virtual-table export update](https://developers.cloudflare.com/changelog/post/2026-11-12-d1-export-virtual-tables/).
