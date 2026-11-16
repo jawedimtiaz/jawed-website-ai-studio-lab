@@ -298,7 +298,7 @@ async function addRefund(request, db, identity, paymentId) {
   if(!refundedAt)return error('REFUNDED_AT_INVALID');
   const key=request.headers.get('idempotency-key')||'';
   if(!/^[A-Za-z0-9._:-]{16,128}$/.test(key))return error('IDEMPOTENCY_KEY_REQUIRED');
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({paymentId,amount_minor:x.amount_minor,reason,refunded_at:refundedAt})));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({paymentId,amount_minor:x.amount_minor,reason,refunded_at:x.refunded_at == null ? null : refundedAt})));
   const fingerprint=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
   const prior=await db.prepare('SELECT payment_id,refund_id,request_fingerprint FROM refund_idempotency_keys WHERE idempotency_key=?').bind(key).first();
   if(prior) return prior.payment_id===paymentId && prior.request_fingerprint===fingerprint
