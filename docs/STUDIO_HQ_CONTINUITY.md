@@ -534,3 +534,53 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 2. Add a preview dry-run and assertions to CI so the preview build verifies `HQ_DB`, `AI`, `ASSETS` and rate-limit bindings in the resolved preview configuration.
 3. Choose and test the rate-limit isolation strategy before introducing any namespace IDs or changing limiter key construction.
 4. Keep PR #54 draft and do not deploy, migrate D1 or mutate Cloudflare resources.
+
+
+## 17. Phase 2.7O — preview bindings implemented and dry-run verified (17 November 2026)
+
+### Wrangler 4.160.1 source-level confirmation
+- Inspected Cloudflare Workers SDK configuration source used by Wrangler:
+  - `packages/workers-utils/src/config/environment.ts` explicitly marks `ai` and `ratelimits` as `@nonInheritable` and says each must be specified in every named environment.
+  - The same source explicitly marks `assets` as `@inheritable`.
+- This confirms the correct preview binding contract: explicit preview `ai` and `ratelimits`; inherit top-level `assets`; retain the preview-specific `HQ_DB` and vars.
+- Source file: https://github.com/cloudflare/workers-sdk/blob/main/packages/workers-utils/src/config/environment.ts
+
+### Preview configuration changes
+- Updated `wrangler.jsonc` on PR #54 branch:
+  - Added `ai.binding = "AI"` inside `env.preview`.
+  - Added preview-specific `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER` declarations.
+  - Selected candidate preview namespace IDs `620261117`, `620261118`, and `620261119`, respectively.
+  - Preserved the existing preview D1 database `jawed-studio-hq-preview` and preview vars.
+  - Did not duplicate `assets`; it is inherited from top-level config.
+- Config commit: `143941edfaf2a1c512be631ce3b23227eb6607a1`.
+- The candidate namespace IDs were selected after read-only inspection found only two deployed Workers in the account and neither currently exposes rate-limit bindings. The inventory is not an authoritative historical namespace registry; account-wide historical uniqueness is not proven. Do not deploy or provision these namespaces until this remaining release prerequisite is accepted/verified.
+
+### CI validation added
+- Updated `.github/workflows/studio-hq-auth-tests.yml` to run:
+  `npx wrangler deploy --dry-run --env preview --outdir .wrangler-preview-dry-run`.
+- Added assertions that the preview dry-run output lists `HQ_DB`, `AI`, `ASSETS`, `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER`.
+- Updated the gRPC artifact scan to inspect the preview dry-run bundle as well.
+- Workflow commits: `bdc1eb6c5427b716a0e505811939afc92ebda3d6` and `1558ae97970870de15bee7e4a387f74e58246905`.
+
+### Exact CI evidence on latest application/configuration head
+- Candidate head at verification: `1558ae97970870de15bee7e4a387f74e58246905`.
+- Studio HQ Firebase Auth Tests run `44054052747`, job `133938691478`: completed successfully.
+- Auth/API tests: 132 passed, 0 failed.
+- TypeScript and production build: passed.
+- Default Wrangler dry-run: passed and listed production/default D1, AI, three rate limit bindings and ASSETS.
+- Preview Wrangler dry-run: passed and listed:
+  - `HQ_DB (jawed-studio-hq-preview)`
+  - `AI`
+  - `HQ_SESSION_LIMITER` (10/60s)
+  - `HQ_WRITE_LIMITER` (30/60s)
+  - `HQ_RATE_LIMITER` (120/60s)
+  - `ASSETS`
+  - `ENVIRONMENT="preview"`
+  - `CANONICAL_ORIGIN="https://lab.jawed.co.in"`
+- gRPC artifact scan inspected 48 text artifacts and found no `@grpc/grpc-js` or gRPC server-auth markers.
+- These were dry-runs only. No preview Worker was deployed and no D1 migration or Cloudflare resource mutation occurred.
+
+### Remaining workflow state
+- On exact head `1558ae97970870de15bee7e4a387f74e58246905`, eight retrieved workflows had completed successfully; AdSense Readiness Gate was still pending with no job payload returned at the last check. Do not claim the full workflow set is green until that run reaches a completed success conclusion.
+- The preview config and CI validation are now proven by Wrangler dry-run, but preview runtime integration/auth and D1 migration execution remain untested.
+- PR #54 remains draft. Do not merge, deploy, migrate D1, enroll an owner or mutate customer/financial records without explicit approval.
