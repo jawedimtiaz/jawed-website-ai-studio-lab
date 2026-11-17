@@ -2,7 +2,20 @@
 // Studio HQ Projects Module: All Projects, Active Projects, Rich Project Details, Tasks, Milestones
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { FolderKanban, CheckSquare, Flag, Plus, Edit3, Trash2, ArrowLeft } from 'lucide-react';
+import {
+  FolderKanban,
+  CheckSquare,
+  Flag,
+  Plus,
+  Edit3,
+  Trash2,
+  ArrowLeft,
+  Filter,
+  Check,
+  Minus,
+  RotateCcw,
+  SlidersHorizontal
+} from 'lucide-react';
 import {
   hqFetch,
   formatMoney,
@@ -36,6 +49,29 @@ const TASK_STATUSES = ['Todo', 'In Progress', 'Review', 'Blocked', 'Done', 'Comp
 const MILESTONE_STATUSES = ['Pending', 'In Progress', 'Completed', 'Delayed'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 
+const ACTIVE_PROJECT_STATUSES: string[] = [
+  'Planning',
+  'Quoted',
+  'Onboarding',
+  'In Progress',
+  'Review',
+  'Client Approval'
+];
+
+const STATUS_VISIBILITY_GROUPS: Array<{
+  id: string;
+  label: string;
+  dotColor: string;
+  statuses: string[];
+}> = [
+  { id: 'active', label: 'Active', dotColor: 'bg-blue-600', statuses: ACTIVE_PROJECT_STATUSES },
+  { id: 'completed', label: 'Completed', dotColor: 'bg-emerald-600', statuses: ['Completed'] },
+  { id: 'on-hold', label: 'On Hold', dotColor: 'bg-amber-500', statuses: ['On Hold'] },
+  { id: 'maintenance', label: 'Maintenance', dotColor: 'bg-slate-500', statuses: ['Maintenance'] },
+  { id: 'lead', label: 'Lead', dotColor: 'bg-amber-500', statuses: ['Lead'] },
+  { id: 'cancelled', label: 'Cancelled', dotColor: 'bg-rose-600', statuses: ['Cancelled'] }
+];
+
 interface ProjectDetailBundle {
   project: HqProject;
   tasks: HqTask[];
@@ -68,6 +104,10 @@ export const ProjectsSection: React.FC<{
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [visibleStatuses, setVisibleStatuses] = useState<string[]>([...PROJECT_STATUS_LIST]);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [totalUnfilteredProjects, setTotalUnfilteredProjects] = useState(0);
+  const [showStageToggles, setShowStageToggles] = useState(false);
 
   const [projects, setProjects] = useState<HqProject[]>([]);
   const [clients, setClients] = useState<HqClient[]>([]);
@@ -144,11 +184,18 @@ export const ProjectsSection: React.FC<{
     try {
       if (activeTab === 'all' || activeTab === 'active') {
         const params = new URLSearchParams({ limit: '100' });
-        if (activeTab === 'active') params.set('activeOnly', 'true');
-        else if (statusFilter !== 'All') params.set('status', statusFilter);
+        if (visibleStatuses.length < PROJECT_STATUS_LIST.length) {
+          params.set('statuses', visibleStatuses.join(','));
+        }
         if (search) params.set('q', search);
-        const res = await hqFetch<{ projects: HqProject[] }>(`/api/hq/projects?${params.toString()}`);
+        const res = await hqFetch<{
+          projects: HqProject[];
+          totalUnfiltered?: number;
+          statusCounts?: Record<string, number>;
+        }>(`/api/hq/projects?${params.toString()}`);
         setProjects(res.projects || []);
+        setStatusCounts(res.statusCounts || {});
+        setTotalUnfilteredProjects(Number(res.totalUnfiltered ?? res.projects?.length ?? 0));
       } else if (activeTab === 'details') {
         const targetId = selectedProjectId || projects[0]?.id;
         if (targetId) {
@@ -172,11 +219,16 @@ export const ProjectsSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, search, selectedProjectId, projects, onSelectProject, onToast]);
+  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, projects, onSelectProject, onToast]);
 
   useEffect(() => {
     setStatusFilter('All');
     setSearch('');
+    if (activeTab === 'active') {
+      setVisibleStatuses([...ACTIVE_PROJECT_STATUSES]);
+    } else if (activeTab === 'all') {
+      setVisibleStatuses([...PROJECT_STATUS_LIST]);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -186,6 +238,31 @@ export const ProjectsSection: React.FC<{
   useEffect(() => {
     loadMain();
   }, [loadMain]);
+
+  const toggleSingleStatus = (statusName: string) => {
+    setVisibleStatuses((prev) => {
+      const nextSet = new Set(prev);
+      if (nextSet.has(statusName)) {
+        nextSet.delete(statusName);
+      } else {
+        nextSet.add(statusName);
+      }
+      return PROJECT_STATUS_LIST.filter((s) => nextSet.has(s));
+    });
+  };
+
+  const toggleStatusGroup = (groupStatuses: string[]) => {
+    setVisibleStatuses((prev) => {
+      const nextSet = new Set(prev);
+      const allGroupVisible = groupStatuses.every((s) => nextSet.has(s));
+      if (allGroupVisible) {
+        for (const s of groupStatuses) nextSet.delete(s);
+      } else {
+        for (const s of groupStatuses) nextSet.add(s);
+      }
+      return PROJECT_STATUS_LIST.filter((s) => nextSet.has(s));
+    });
+  };
 
   const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -328,22 +405,180 @@ export const ProjectsSection: React.FC<{
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search projects by title, type or customer..."
-            filterValue={activeTab === 'all' ? statusFilter : undefined}
-            onFilterChange={activeTab === 'all' ? setStatusFilter : undefined}
-            filterOptions={activeTab === 'all' ? [...PROJECT_STATUS_LIST] : undefined}
-            filterLabel="Stage"
             primaryAction={{ label: 'New Project', onClick: openNewProject }}
           />
+
+          {/* Status Visibility Filtering System */}
+          <div
+            className="bg-white border border-slate-200 rounded-lg p-3.5 mb-4 space-y-3"
+            role="region"
+            aria-label="Project status visibility filters"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs">
+                <Filter className="w-3.5 h-3.5 text-slate-500" />
+                <span className="font-semibold text-slate-800">Status Visibility</span>
+                <span className="text-slate-400">·</span>
+                <span className="font-mono tabular-nums text-slate-500">
+                  Showing {projects.length} of {totalUnfilteredProjects} projects ({visibleStatuses.length}/
+                  {PROJECT_STATUS_LIST.length} stages visible)
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setVisibleStatuses([...PROJECT_STATUS_LIST])}
+                  disabled={visibleStatuses.length === PROJECT_STATUS_LIST.length}
+                  className="px-2.5 py-1 text-xs font-medium rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-45 disabled:cursor-default cursor-pointer"
+                >
+                  Show All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleStatuses([...ACTIVE_PROJECT_STATUSES])}
+                  className="px-2.5 py-1 text-xs font-medium rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Active Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleStatuses([])}
+                  disabled={visibleStatuses.length === 0}
+                  className="px-2.5 py-1 text-xs font-medium rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-45 disabled:cursor-default cursor-pointer"
+                >
+                  Hide All
+                </button>
+                {(visibleStatuses.length < PROJECT_STATUS_LIST.length || search) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVisibleStatuses([...PROJECT_STATUS_LIST]);
+                      setSearch('');
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-expanded={showStageToggles}
+                  onClick={() => setShowStageToggles((v) => !v)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border cursor-pointer ${
+                    showStageToggles
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3 h-3" />
+                  All Stages ({PROJECT_STATUS_LIST.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Status Category Toggles (Active, Completed, On Hold, Maintenance, Lead, Cancelled) */}
+            <div className="flex flex-wrap items-center gap-2">
+              {STATUS_VISIBILITY_GROUPS.map((group) => {
+                const selectedInGroup = group.statuses.filter((s) => visibleStatuses.includes(s)).length;
+                const allChecked = selectedInGroup === group.statuses.length;
+                const partialChecked = selectedInGroup > 0 && selectedInGroup < group.statuses.length;
+                const groupCount = group.statuses.reduce((sum, s) => sum + Number(statusCounts[s] ?? 0), 0);
+
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    aria-pressed={allChecked}
+                    onClick={() => toggleStatusGroup(group.statuses)}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                      allChecked
+                        ? 'bg-blue-50/90 border-blue-300 text-slate-900'
+                        : partialChecked
+                          ? 'bg-slate-50 border-blue-200 text-slate-800'
+                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex items-center justify-center w-3.5 h-3.5 rounded border shrink-0 ${
+                        allChecked
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : partialChecked
+                            ? 'bg-blue-100 border-blue-500 text-blue-700'
+                            : 'bg-white border-slate-300'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {allChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                      {partialChecked && <Minus className="w-2.5 h-2.5 stroke-[3]" />}
+                    </span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${group.dotColor}`} aria-hidden="true" />
+                    <span>{group.label}</span>
+                    <span className="font-mono tabular-nums text-[11px] text-slate-500">({groupCount})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Expandable Individual Stage Toggles */}
+            {showStageToggles && (
+              <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                {PROJECT_STATUS_LIST.map((stage) => {
+                  const checked = visibleStatuses.includes(stage);
+                  const count = Number(statusCounts[stage] ?? 0);
+                  return (
+                    <label
+                      key={stage}
+                      className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-colors ${
+                        checked
+                          ? 'bg-slate-50 border-slate-300 text-slate-900 font-medium'
+                          : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSingleStatus(stage)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer"
+                        />
+                        <StatusDotText status={stage} className="truncate" />
+                      </span>
+                      <span className="font-mono tabular-nums text-[11px] text-slate-500">{count}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {loading ? (
             <LoadingSkeleton />
           ) : projects.length === 0 ? (
-            <EmptyState
-              icon={<FolderKanban className="w-5 h-5" />}
-              title="No projects found"
-              description="Create a project linked to an existing customer to track milestones, tasks, QA, and billing."
-              actionLabel="Create Project"
-              onAction={openNewProject}
-            />
+            totalUnfilteredProjects > 0 || visibleStatuses.length < PROJECT_STATUS_LIST.length || search ? (
+              <EmptyState
+                icon={<Filter className="w-5 h-5" />}
+                title="No projects match visible filters"
+                description={
+                  visibleStatuses.length === 0
+                    ? 'All project statuses are currently toggled off. Enable one or more status toggles above to inspect projects.'
+                    : 'No projects match the currently enabled status filters or search query.'
+                }
+                actionLabel="Show All Statuses"
+                onAction={() => {
+                  setVisibleStatuses([...PROJECT_STATUS_LIST]);
+                  setSearch('');
+                }}
+              />
+            ) : (
+              <EmptyState
+                icon={<FolderKanban className="w-5 h-5" />}
+                title="No projects found"
+                description="Create a project linked to an existing customer to track milestones, tasks, QA, and billing."
+                actionLabel="Create Project"
+                onAction={openNewProject}
+              />
+            )
           ) : (
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">

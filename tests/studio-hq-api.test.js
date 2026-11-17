@@ -495,4 +495,44 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     assert.equal(auditRes.status, 200);
     assert.ok(auditRes.data.logs.length > 0);
   });
+
+  test('5. Projects Multi-Status Visibility Filtering & statusCounts Aggregation', async () => {
+    const cRes = await apiCall(env, '/api/hq/clients', {
+      method: 'POST',
+      body: { business_name: 'FilterTest Co', name: 'Karan', email: 'karan@filtertest.example', status: 'active' }
+    });
+    const clientId = cRes.data.client.id;
+
+    for (const [name, status] of [
+      ['Alpha Active', 'In Progress'],
+      ['Beta Planning', 'Planning'],
+      ['Gamma Done', 'Completed'],
+      ['Delta Paused', 'On Hold']
+    ]) {
+      const res = await apiCall(env, '/api/hq/projects', {
+        method: 'POST',
+        body: { client_id: clientId, name, status }
+      });
+      assert.equal(res.status, 201);
+    }
+
+    // Filter to Completed + On Hold only
+    const coRes = await apiCall(env, '/api/hq/projects?statuses=Completed,On%20Hold');
+    assert.equal(coRes.status, 200);
+    assert.equal(coRes.data.projects.length, 2);
+    assert.equal(coRes.data.totalUnfiltered, 4);
+    assert.equal(coRes.data.statusCounts['In Progress'], 1);
+    assert.equal(coRes.data.statusCounts['Planning'], 1);
+    assert.equal(coRes.data.statusCounts['Completed'], 1);
+    assert.equal(coRes.data.statusCounts['On Hold'], 1);
+    const returnedNames = coRes.data.projects.map((p) => p.name).sort();
+    assert.deepEqual(returnedNames, ['Delta Paused', 'Gamma Done']);
+
+    // Filter with all statuses toggled off (?statuses=) returns 0 rows while preserving statusCounts
+    const noneRes = await apiCall(env, '/api/hq/projects?statuses=');
+    assert.equal(noneRes.status, 200);
+    assert.equal(noneRes.data.projects.length, 0);
+    assert.equal(noneRes.data.totalUnfiltered, 4);
+    assert.equal(noneRes.data.statusCounts['Completed'], 1);
+  });
 });

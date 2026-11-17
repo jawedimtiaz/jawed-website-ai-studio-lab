@@ -81,26 +81,68 @@ export async function onRequestGet({ request, env }) {
 
     const clientId = url.searchParams.get('clientId') || '';
     const status = url.searchParams.get('status') || '';
+    const hasStatusesParam = url.searchParams.has('statuses');
+    const statusesRaw = url.searchParams.get('statuses') || '';
     const activeOnly = url.searchParams.get('activeOnly') === 'true';
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     const { page, limit, offset } = parsePagination(url);
 
-    const conditions = ['p.archived_at IS NULL'];
-    const params = [];
+    const baseConditions = ['p.archived_at IS NULL'];
+    const baseParams = [];
     if (clientId) {
-      conditions.push('p.client_id = ?');
-      params.push(clientId);
+      baseConditions.push('p.client_id = ?');
+      baseParams.push(clientId);
     }
-    if (activeOnly) {
+    if (q) {
+      baseConditions.push('(LOWER(p.name) LIKE ? OR LOWER(p.project_type) LIKE ? OR LOWER(c.business_name) LIKE ?)');
+      const pat = `%${q}%`;
+      baseParams.push(pat, pat, pat);
+    }
+
+    const baseWhereClause = `WHERE ${baseConditions.join(' AND ')}`;
+    const countsResult = await db
+      .prepare(
+        `SELECT p.status, COUNT(*) AS count
+         FROM projects p
+         LEFT JOIN clients c ON c.id = p.client_id
+         ${baseWhereClause}
+         GROUP BY p.status`
+      )
+      .bind(...baseParams)
+      .all();
+
+    const statusCounts = {};
+    for (const st of PROJECT_STATUSES) {
+      statusCounts[st] = 0;
+    }
+    let totalUnfiltered = 0;
+    for (const row of countsResult.results || []) {
+      const cnt = Number(row?.count || 0);
+      if (row?.status && row.status in statusCounts) {
+        statusCounts[row.status] = cnt;
+      }
+      totalUnfiltered += cnt;
+    }
+
+    const conditions = [...baseConditions];
+    const params = [...baseParams];
+    if (hasStatusesParam) {
+      const requested = statusesRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => PROJECT_STATUSES.includes(s));
+      const uniqueSelected = Array.from(new Set(requested));
+      if (uniqueSelected.length === 0) {
+        conditions.push('1 = 0');
+      } else {
+        conditions.push(`p.status IN (${uniqueSelected.map(() => '?').join(', ')})`);
+        params.push(...uniqueSelected);
+      }
+    } else if (activeOnly) {
       conditions.push(`p.status IN ('Planning', 'Quoted', 'Onboarding', 'In Progress', 'Review', 'Client Approval')`);
     } else if (status && status !== 'All') {
       conditions.push('p.status = ?');
       params.push(status);
-    }
-    if (q) {
-      conditions.push('(LOWER(p.name) LIKE ? OR LOWER(p.project_type) LIKE ? OR LOWER(c.business_name) LIKE ?)');
-      const pat = `%${q}%`;
-      params.push(pat, pat, pat);
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
@@ -131,6 +173,8 @@ export async function onRequestGet({ request, env }) {
       success: true,
       projects: rows.results || [],
       total: Number(countRow?.total || 0),
+      totalUnfiltered,
+      statusCounts,
       page,
       limit
     });
