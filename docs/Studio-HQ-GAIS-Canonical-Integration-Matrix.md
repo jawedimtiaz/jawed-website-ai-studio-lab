@@ -71,3 +71,66 @@ Canonical shared security modules include `hqAuth.js`, `hqApi.js`, and `hqRateLi
 - No live D1 migration or data write was performed.
 - No Worker deployment was performed.
 - The public `/studio-hq` route has not been verified as deployed.
+
+
+## Phase 2F — core data model mapping (Clients and Projects)
+
+**Scope:** Source-level comparison of the GAIS dashboard contracts and the canonical PR #54 data model. This is a mapping review, not a runtime test.
+
+### Clients
+
+| Concept | GAIS UI / TypeScript field | Canonical D1 field | Mapping |
+|---|---|---|---|
+| Record identifier | `id` | `clients.id` | Direct |
+| Contact/person display name | `name` | `clients.name` | Direct |
+| Business name | `business_name` | `clients.business_name` | Direct |
+| Lifecycle | `status` | `clients.status` | Direct only after enforcing canonical allowed values: lead, onboarding, active, paused, completed, archived |
+| Email / phone | `email`, `phone` | `clients.email`, `clients.phone` | Direct |
+| Category / website / address | `category`, `website`, `address` | same-named columns | Direct |
+| Lead source | `lead_source` | `clients.lead_source` | Direct |
+| Notes | `notes` | `clients.notes` | Direct for the client-level summary; communication history belongs in `activity_notes` |
+| Last contact | `last_contact_at` | `clients.last_contact_at` | Direct |
+| Archive timestamp | `archived_at` | `clients.archived_at` | Direct |
+| Project count | optional `project_count` | derived count from `projects` | Computed response field, not a stored client column |
+| Outstanding balance | optional `outstanding_minor` | derived from invoice balance fields | Computed response field; requires canonical financial contract |
+
+The GAIS `HqClient` interface is substantially aligned with the canonical `clients` table. Client create/update can therefore be adapted without a client-table redesign. However, the GAIS client API's detailed bundle also queries follow-ups, invoices, quotations, maintenance plans, and support tickets; those relationships must not be enabled until the corresponding canonical tables and field contracts are confirmed.
+
+**Important contract mismatch:** GAIS `clients.js` returns `{ success: true, ... }` and uses query parameters such as `includeArchived`; canonical PR #54 uses `{ ok: true, ... }` and has a different archive/action route convention. The current GAIS CRM UI primarily consumes typed arrays from successful `hqFetch` responses, but the API envelope and archive workflows still need a single explicit contract. Do not make a blind response-key replacement.
+
+### Projects
+
+| Concept | GAIS UI / TypeScript field | Canonical D1 field | Mapping |
+|---|---|---|---|
+| Record identifier | `id` | `projects.id` | Direct |
+| Parent customer | `client_id` | `projects.client_id` | Direct; required foreign key |
+| Project name | `name` | `projects.name` | Direct |
+| Type | `project_type` | `projects.project_type` | Direct |
+| Status | `status` | `projects.status` | Requires canonical status vocabulary and case preservation |
+| Priority | `priority` | `projects.priority` | Requires canonical values: Low, Medium, High, Critical |
+| Summary / scope | `summary`, `scope_markdown` | same-named columns | Direct |
+| Start / target date | `start_date`, `target_date` | same-named columns | Direct; validate date ordering |
+| Quoted amount | `quoted_amount_minor` | `projects.quoted_amount_minor` | Direct integer minor units |
+| Currency | `currency` | `projects.currency` | Direct; validate supported currency |
+| Audit ownership | implicit from authenticated owner | `created_by`, `updated_by` | Server-derived only; never trust client-supplied actor IDs |
+| Archive | `archived_at` | `projects.archived_at` | Direct concept; canonical archive endpoint also records `archived_by` where schema supports it |
+
+The project table is a good fit for the dashboard's project form and list fields. Canonical PR #54's project handler performs strict field validation, requires a linked non-archived client, validates target date against start date, and writes through an owner authorization guard plus audit statement. The GAIS project handler has a different helper/auth contract and should not replace the canonical handler.
+
+**Status vocabulary is a real integration risk:** the dashboard exposes the set `Lead`, `Planning`, `Quoted`, `Onboarding`, `In Progress`, `Review`, `Client Approval`, `Completed`, `Maintenance`, `On Hold`, and `Cancelled`. The canonical project validator and schema must be treated as the source of truth. Any UI value not accepted by the canonical validator must be mapped deliberately or rejected with a visible validation message; do not silently normalize values.
+
+### Response and API adapter requirements
+
+1. Keep the dashboard's `hqFetch` token acquisition, but route requests only through canonical owner authentication and same-origin protections.
+2. Normalize canonical success/error envelopes once in a shared service adapter. Do not mix `success` and `ok` checks in individual components.
+3. Normalize archive operations to the canonical route and method contract; preserve audit logging and authorization guards.
+4. Ensure list response properties match the UI types (`clients`, `projects`, totals and status counts). Derived counts must be computed server-side.
+5. Keep all money values in integer minor units end-to-end; format only at the presentation boundary.
+6. Keep actor UID/email, archive actor, timestamps, and audit metadata server-derived.
+
+### Phase 2F findings
+
+- **Clients:** field-level data mapping is mostly direct; API envelope, archive semantics, and related-record bundle are not yet compatible.
+- **Projects:** core fields are mostly direct; canonical validation, status vocabulary, authorization/audit write path, and endpoint shape must be preserved.
+- **No adapter code was written.** The next safe unit is a small read-only contract adapter design for client/project list and detail responses, followed by tests against the canonical handler contracts.
+- **No migrations, D1 writes, tests, Worker deployments, or changes to PR #54/#55 were performed in this phase.
