@@ -390,3 +390,36 @@ Additional read-only inspection confirmed:
 - Current-main `functions/lib/hqAuth.js` hardcodes a different `DEFAULT_PROJECT_ID` (`ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb`).
 
 Unless a valid environment override is supplied (none was established by this read-only review), current-main auth would reject tokens issued for the actual Lab Firebase project even after signature verification is repaired. The project ID must have one authoritative source and be validated against the client Firebase config and deployed Worker configuration. Do not print or expose Firebase private credentials; the client config project ID is public configuration, not a secret.
+
+
+## 13. Phase 2.7N — PR #54 release-gate reconciliation (17 November 2026)
+
+### Branch and review status
+- Active candidate: PR #54, `reconcile/studio-hq-canonical-main-20261117`.
+- PR remains draft, open and unmerged. No production deployment or D1 migration was performed.
+- Latest review identified two release-gate issues in addition to the earlier schema/authentication reconciliation.
+
+### Cloudflare Rate Limiting bindings restored in source configuration
+- The PR #54 `wrangler.jsonc` omitted all three rate-limit bindings even though the HQ API handlers fail closed when a required binding is absent.
+- Restored the existing candidate values from the earlier unmerged PR #51 configuration:
+  - `HQ_SESSION_LIMITER`, namespace `620261114`, 10 requests / 60 seconds.
+  - `HQ_WRITE_LIMITER`, namespace `620261115`, 30 requests / 60 seconds.
+  - `HQ_RATE_LIMITER`, namespace `620261116`, 120 requests / 60 seconds.
+- Commit: `c07df215e4ede7d0e61274d805e3984ad0de711c`.
+- Read-only Cloudflare account inspection found two deployed Worker scripts. Neither currently exposes a Rate Limiting binding. This is not an authoritative registry of every namespace ID ever used; account-wide uniqueness must remain a deployment prerequisite.
+- The source change has not yet been verified by a new Wrangler dry run or a deployed runtime test.
+
+### AI knowledge freshness gate reviewed
+- PR #54 CI failed the AI knowledge coverage validator because the recorded review date was 2026-11-14 while the tracked grounding sources `index.html` and `src/data/toolsData.ts` had later commits.
+- Reviewed the homepage metadata and the tool metadata corresponding to the affected sitemap entries against the current knowledge summaries. The current summaries remain consistent with the reviewed tool descriptions/purposes; no unsupported feature claims were added.
+- Updated `assets/data/ai-knowledge.json` review date to `2026-11-17`.
+- Regenerated `functions/lib/ai-knowledge-data.js` from the JSON source and verified byte-for-byte expected serialization.
+- Commits: `74c2bedd8d5d2a1fcf9d6b6dcb8566e58b7aed59` and `0729416dd3681e64e1ba519dd203851d69c684c4`.
+
+### Current verification state
+- Earlier PR #54 head `e5c394e22338171f4a37cdc61fa7ce45852002e9`: 8 retrieved workflow checks passed; AI Regression Gate failed on stale knowledge review metadata.
+- On that earlier head, Studio HQ auth workflow reported 132 tests passed, 0 failed. Wrangler dry run recognized `HQ_DB`, but did not list any Rate Limiting bindings.
+- Latest branch head: `0729416dd3681e64e1ba519dd203851d69c684c4`.
+- GitHub had not yet returned workflow runs or combined status checks for the latest head when this record was written. Do not treat the latest configuration or knowledge-freshness updates as CI-verified.
+- Next required verification: run the AI Regression Gate and Studio HQ Firebase Auth Tests against the latest branch head; confirm Wrangler dry-run output explicitly lists all three rate-limit bindings.
+- Keep PR #54 draft and do not merge, deploy, migrate D1, enroll owners, or alter customer/financial records until all checks pass and the remaining release prerequisites are reviewed.
