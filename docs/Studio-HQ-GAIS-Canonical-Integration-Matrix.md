@@ -197,3 +197,90 @@ This is a source-level defect/inconsistency in the PR #54 branch, not a live dat
 - **Canonical endpoint handlers:** currently inconsistent with the canonical migration and shared security helper; must be corrected before integration.
 - **Risk:** deploying the existing PR #54 task/milestone handlers could produce missing-table or missing-export failures.
 - **No code changes, migrations, D1 writes, automated tests, or deployments were performed in this phase.
+
+
+## Phase 2H — Financial data model and API review
+
+**Scope:** Read-only comparison of the GAIS Business module, its financial endpoints and GAIS migrations against the canonical PR #54 financial handler and migrations. No financial records were created or changed.
+
+### 1. GAIS Business module contract
+
+The UI has five submodules: Quotations, Proposals, Invoices, Payments and Expenses. It expects separate endpoints and response arrays:
+
+- `/api/hq/quotations` → `{ quotations }`, detail response `{ quotation, items }`
+- `/api/hq/proposals` → `{ proposals }`
+- `/api/hq/invoices` → `{ invoices }`, detail response `{ invoice, items, payments }`
+- `/api/hq/payments` → `{ payments }`
+- `/api/hq/expenses` → `{ expenses }`
+
+GAIS forms collect major currency units in the browser and convert them to integer minor units for API calls. GAIS uses paise for INR, and its quotation/invoice line items use decimal `quantity`, `unit_price_minor`, and server-computed `line_total_minor`.
+
+### 2. Canonical financial schema and handler
+
+Canonical PR #54 uses one consolidated `functions/api/hq/financial.js` handler rather than five separate endpoint modules. The canonical migration 0001 defines the base tables `quotations`, `invoices`, and `payments`; canonical migration 0002 adds item detail, financial sequence, payment idempotency and refund support.
+
+| Concept | GAIS schema / API | Canonical PR #54 schema / API | Integration impact |
+|---|---|---|---|
+| Quotation number | `quotation_number` | `quote_number` | Must map field and printable document label |
+| Quotation lifecycle | Title-case: Draft, Sent, Approved, Declined, Expired, Converted | Lowercase: draft, sent, accepted, rejected, expired, withdrawn | Not equivalent; decide UI vocabulary and explicit mapping |
+| Quotation terms | `terms` | `terms_markdown` | Field adapter needed |
+| Invoice issue date | `issue_date` | `issued_on` | Field adapter needed |
+| Invoice due date | `due_date` | `due_on` | Field adapter needed |
+| Paid amount | `paid_amount_minor` | `amount_paid_minor` | Field adapter needed |
+| Invoice balance | Stored `balance_due_minor` | Derived from payments less refunds | Do not treat GAIS stored balance as canonical source of truth |
+| Invoice status | Title-case incl. Partially Paid / Overdue | Lowercase incl. partially-paid / overdue | Explicit UI/API mapping required |
+| Line item quantity | REAL decimal `quantity` | Integer `quantity_milli` (thousandths) | Conversion and rounding contract required |
+| Line item discount/tax | Document-level discount and tax rate fields | Per-item discount and tax basis points | Calculation semantics differ; totals must be reconciled |
+| Payment date | `payment_date` | `paid_at` | Field and timestamp semantics differ |
+| Payment method | Free-form/title-case | Constrained: bank-transfer, upi, cash, card, other | Validate and map explicitly |
+| Payment reversal | Status `Reversed`, invoice totals updated | Archive/refund model with refund records and idempotency | Do not implement canonical reversal as hard delete |
+| Numbering | Generic sequence helper with QUO/INV prefix | Financial-year sequence, e.g. `QUO/YYYY-YY/NNNN` and `INV/YYYY-YY/NNNN` | UI must display canonical generated number |
+| Monetary precision | Integer minor units | Integer minor units, bounded safe amounts | Common principle; validation/calculation differs |
+
+Canonical migration 0002 stores quantity in thousandths, uses per-line discount and tax, and constrains monetary amounts. Canonical `calculateItems` uses integer/BigInt arithmetic and explicit bounds. GAIS `computeTotals` / `computeInvoiceTotals` use floating-point decimal quantity multiplication and document-level discount/tax. A shared adapter must not simply rename fields: the calculation model and rounding point need an explicit decision and regression tests.
+
+### 3. Features with no canonical counterpart
+
+- **Proposals:** GAIS has a `proposals` table and API (proposal number, executive summary, scope, timeline, deliverables, amount and lifecycle). Canonical PR #54 has no proposals table or endpoint. This requires a separately reviewed additive schema/API design; do not assume migration 0003 is safe to apply.
+- **Expenses:** GAIS has an `expenses` table and API with client/project, category, vendor, billable flag, incurred date and status. Canonical PR #54 has no expenses table or endpoint. Add only through a new canonical migration after schema and access-control review.
+- **Quotation-to-invoice conversion:** GAIS implements conversion in the quotations POST action. Canonical handler needs its own reviewed conversion workflow and uniqueness/idempotency safeguards before the UI exposes this action.
+- **Refunds:** Canonical migration supports payment refunds and refund idempotency; GAIS payment endpoint only records or reverses a payment. The UI needs a deliberate refund/reversal workflow, not a destructive shortcut.
+
+### 4. Important integrity and security observations
+
+1. GAIS payment creation checks for an idempotency key, but its lookup-and-insert flow and schema are not the canonical idempotency contract. Canonical keys bind invoice, payment and request fingerprint.
+2. GAIS payment reversal marks a payment reversed and updates invoice totals; GAIS endpoint exposes a DELETE action. Canonical records are designed around archival/refunds and restrictive foreign keys. Do not wire a UI trash/delete action to canonical financial records.
+3. GAIS invoice/quotation update handlers and canonical financial handlers have different field allowlists, validation, response envelopes and write-guard patterns.
+4. Canonical financial mutations must retain canonical owner authorization, rate limiting, owner guard statements, and audit statements. GAIS handlers use the incompatible `verifyAndAuthorizeOwner` / `auth.owner` helper contract.
+5. The canonical handler validates that a selected project belongs to the selected active client. GAIS handlers check client existence but must not be assumed to enforce the same relationship.
+6. The GAIS `expenses` and `proposals` handlers depend on tables from GAIS migration 0003. That migration also adds multiple unrelated operations tables and is not an approved migration for the live database.
+
+### 5. Migration collision — do not apply GAIS financial migration
+
+The GAIS `migrations/hq/0002_financial_management.sql` creates complete financial tables and columns (including `quotation_number`, `issue_date`, `due_date`, `paid_amount_minor`, decimal `quantity`, and a different `financial_sequences` shape).
+
+The canonical PR #54 migration `0001_studio_hq_schema.sql` already creates the base financial tables with different names/columns; canonical `0002_financial_management.sql` is an additive migration that assumes those canonical tables and adds item/sequence/idempotency/refund support. These files are not interchangeable despite sharing the filename and migration number.
+
+The live D1 was previously verified to have canonical migrations 0001 and 0002 recorded as applied. Therefore:
+- Never apply GAIS 0002 or GAIS 0003 to the live HQ D1.
+- Never rename or replace canonical migration files to make GAIS SQL fit.
+- Any new proposal/expense capability must use a newly numbered canonical additive migration after a schema review and isolated preview test.
+- No migration was run in this phase.
+
+### 6. Safe financial integration decision
+
+1. Keep the GAIS Business UI as a visual/functional reference, not as a direct consumer of its current handlers.
+2. Make canonical financial schema and handler the authority for quotations, invoices and payments, after the canonical handler is fully reconciled and tested against migrations 0001/0002.
+3. Define a typed UI adapter for canonical response envelopes, document numbers, lifecycle values, dates, quantities, line totals and payment summaries.
+4. Decide whether to adapt the UI to canonical lowercase statuses and milli-quantity contract, or maintain explicit presentation labels with tested conversion functions.
+5. Design proposal and expense support separately, with additive migrations and canonical auth/audit/soft-archive rules.
+6. Replace destructive payment deletion with an auditable reversal/refund flow; preserve idempotency.
+7. Add unit tests for monetary calculations, rounding, quantity conversion, invoice balance/status derivation, duplicate payment/refund requests, and quotation conversion before preview deployment.
+
+### Phase 2H findings
+
+- **Quotations / invoices / payments:** same business concepts, but substantial schema, API, status, date, quantity and calculation differences; adapters and tests are mandatory.
+- **Proposals / expenses:** GAIS-only capabilities; no canonical table/handler currently exists in PR #54.
+- **Financial migration:** GAIS 0002 is incompatible with canonical 0001/0002 and must never be applied to the existing HQ D1.
+- **Risk:** direct deployment of GAIS financial handlers against canonical D1 would encounter mismatched columns and helper contracts; financial write/delete semantics also differ.
+- **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
