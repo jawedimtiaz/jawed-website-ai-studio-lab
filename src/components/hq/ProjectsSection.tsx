@@ -16,7 +16,9 @@ import {
   RotateCcw,
   SlidersHorizontal,
   LayoutGrid,
-  List
+  List,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import {
   hqFetch,
@@ -75,6 +77,188 @@ const STATUS_VISIBILITY_GROUPS: Array<{
   { id: 'lead', label: 'Lead', dotColor: 'bg-slate-500', statuses: ['Lead'] },
   { id: 'cancelled', label: 'Cancelled', dotColor: 'bg-rose-600', statuses: ['Cancelled'] }
 ];
+
+function parseDateUtcMidnight(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T00:00:00Z` : trimmed;
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+}
+
+interface ProjectTimelineInfo {
+  hasSchedule: boolean;
+  progressPct: number;
+  durationLabel: string;
+  barClass: string;
+  labelClass: string;
+  isOverdue: boolean;
+  startLabel: string;
+  targetLabel: string;
+}
+
+function getProjectTimelineInfo(project: HqProject, statusCategory: string, defaultBarClass: string): ProjectTimelineInfo {
+  const startMs = parseDateUtcMidnight(project.start_date);
+  const targetMs = parseDateUtcMidnight(project.target_date);
+  const completedMs = parseDateUtcMidnight(project.completed_at);
+  const now = new Date();
+  const todayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const msPerDay = 86400000;
+
+  const startLabel = project.start_date ? formatDate(project.start_date) : 'Unscheduled';
+  const targetLabel = project.target_date ? formatDate(project.target_date) : 'No target';
+
+  if (statusCategory === 'Completed') {
+    let durationLabel = project.completed_at ? `Completed ${formatDate(project.completed_at)}` : 'Completed';
+    if (startMs !== null && (completedMs ?? targetMs) !== null) {
+      const endMs = (completedMs ?? targetMs)!;
+      const totalDays = Math.max(1, Math.round((endMs - startMs) / msPerDay));
+      durationLabel = `${totalDays}d total · Completed`;
+    }
+    return {
+      hasSchedule: startMs !== null || targetMs !== null,
+      progressPct: 100,
+      durationLabel,
+      barClass: 'bg-emerald-600',
+      labelClass: 'text-emerald-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (statusCategory === 'Cancelled') {
+    return {
+      hasSchedule: startMs !== null || targetMs !== null,
+      progressPct: 0,
+      durationLabel: 'Cancelled',
+      barClass: 'bg-rose-500',
+      labelClass: 'text-rose-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (startMs !== null && targetMs !== null && targetMs >= startMs) {
+    const totalDays = Math.max(1, Math.round((targetMs - startMs) / msPerDay));
+    const elapsedDays = Math.round((todayMs - startMs) / msPerDay);
+    const remainingDays = Math.round((targetMs - todayMs) / msPerDay);
+    const progressPct = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
+
+    if (remainingDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `${Math.abs(remainingDays)}d overdue`,
+        barClass: 'bg-rose-600',
+        labelClass: 'text-rose-700 font-semibold',
+        isOverdue: true,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (remainingDays === 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `Due today (${totalDays}d span)`,
+        barClass: 'bg-amber-500',
+        labelClass: 'text-amber-700 font-semibold',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (elapsedDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 0,
+        durationLabel: `Starts in ${Math.abs(elapsedDays)}d · ${totalDays}d span`,
+        barClass: defaultBarClass,
+        labelClass: 'text-slate-600',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    return {
+      hasSchedule: true,
+      progressPct,
+      durationLabel: `${remainingDays}d left of ${totalDays}d`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (targetMs !== null) {
+    const remainingDays = Math.round((targetMs - todayMs) / msPerDay);
+    if (remainingDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `${Math.abs(remainingDays)}d overdue`,
+        barClass: 'bg-rose-600',
+        labelClass: 'text-rose-700 font-semibold',
+        isOverdue: true,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (remainingDays === 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: 'Due today',
+        barClass: 'bg-amber-500',
+        labelClass: 'text-amber-700 font-semibold',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    return {
+      hasSchedule: true,
+      progressPct: Math.min(90, Math.max(15, 100 - Math.min(85, remainingDays * 2))),
+      durationLabel: `${remainingDays}d until target`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (startMs !== null) {
+    const elapsedDays = Math.round((todayMs - startMs) / msPerDay);
+    return {
+      hasSchedule: true,
+      progressPct: elapsedDays > 0 ? 35 : 0,
+      durationLabel: elapsedDays >= 0 ? `Day ${elapsedDays + 1} active` : `Starts in ${Math.abs(elapsedDays)}d`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-600',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  return {
+    hasSchedule: false,
+    progressPct: 0,
+    durationLabel: 'No dates set',
+    barClass: 'bg-slate-300',
+    labelClass: 'text-slate-400',
+    isOverdue: false,
+    startLabel,
+    targetLabel
+  };
+}
 
 interface ProjectDetailBundle {
   project: HqProject;
@@ -645,6 +829,9 @@ export const ProjectsSection: React.FC<{
                 const totalTasks = Number(p.total_tasks ?? 0);
                 const doneTasks = Number(p.completed_tasks ?? 0);
                 const taskPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+                const totalMilestones = Number(p.total_milestones ?? 0);
+                const doneMilestones = Number(p.completed_milestones ?? 0);
+                const timeline = getProjectTimelineInfo(p, statusMeta.category, statusMeta.barColor);
 
                 return (
                   <article
@@ -679,7 +866,46 @@ export const ProjectsSection: React.FC<{
                       )}
                     </div>
 
-                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                    <div className="space-y-3 pt-2.5 border-t border-slate-100">
+                      {/* Project Lifecycle Timeline & Duration Bar */}
+                      <div className="project-card__timeline space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
+                            <Calendar className="w-3 h-3 text-slate-400 shrink-0" aria-hidden="true" />
+                            <span>Timeline</span>
+                          </span>
+                          <span className={`inline-flex items-center gap-1 font-mono tabular-nums ${timeline.labelClass}`}>
+                            <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
+                            <span>{timeline.durationLabel}</span>
+                          </span>
+                        </div>
+                        <div
+                          role="progressbar"
+                          aria-label={`Project timeline progress for ${p.name}`}
+                          aria-valuenow={timeline.progressPct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"
+                        >
+                          <div
+                            className={`h-full ${timeline.barClass} rounded-full transition-all duration-300`}
+                            style={{ width: `${timeline.progressPct}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-slate-500">
+                          <span className="truncate" title={`Start date: ${timeline.startLabel}`}>
+                            Start: {timeline.startLabel}
+                          </span>
+                          <span
+                            className={`truncate ${timeline.isOverdue ? 'text-rose-600 font-semibold' : ''}`}
+                            title={`Target date: ${timeline.targetLabel}`}
+                          >
+                            Target: {timeline.targetLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tasks Completion Progress */}
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[11px] text-slate-500">
                           <span>Tasks Progress</span>
@@ -701,8 +927,10 @@ export const ProjectsSection: React.FC<{
                             </div>
                           </div>
                           <div>
-                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Target</div>
-                            <div className="font-mono text-slate-600">{formatDate(p.target_date)}</div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Milestones</div>
+                            <div className="font-mono tabular-nums text-slate-700 font-medium">
+                              {doneMilestones}/{totalMilestones}
+                            </div>
                           </div>
                           <div>
                             <div className="text-[10px] uppercase tracking-wider text-slate-400">Priority</div>
