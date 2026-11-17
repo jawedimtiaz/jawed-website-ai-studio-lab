@@ -437,3 +437,91 @@ Canonical owner allowlist and authentication policy are security configuration, 
 - **Analytics:** GAIS SQL is incompatible with canonical financial columns and assumes GAIS expenses; no canonical analytics endpoint exists yet.
 - **Settings:** GAIS relies on a table absent from canonical schema. Security configuration must remain server-controlled; workspace preferences require a separate additive design.
 - **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
+
+
+## Phase 2K — Cross-cutting Worker routing, authentication, configuration and test readiness
+
+**Scope:** Read-only source comparison of the GAIS main Worker/router/configuration and canonical PR #54 Worker/security/configuration. No Worker deployment, binding change, authentication change, test execution or D1 write was performed.
+
+### 1. Worker routing is architecturally different
+
+GAIS main `worker.js` dispatches every `/api/hq/*` request through `functions/lib/hqRouter.js`. That router statically imports the GAIS endpoint modules and maps 24 collection routes, including `/api/hq/session/enroll`.
+
+Canonical PR #54 `worker.js` uses explicit route groups and calls canonical handlers:
+- `/api/hq/session` → canonical session POST only
+- clients → canonical client handler
+- project/task/milestone routes → canonical project handler and compatibility aliases
+- approvals/QA → canonical release handler
+- quotations/invoices/payments → canonical financial handler
+
+The canonical router does not currently expose the GAIS-only leads, contacts, notes, follow-ups, proposals, expenses, onboarding, support, repositories, deployments, analytics, settings or audit-log collection routes as GAIS expects. The route structure is not a drop-in replacement. A future integration router must explicitly map each supported path/method to a canonical handler and return a safe 404/405 for unsupported paths; it must not import the full GAIS handler tree unchanged.
+
+### 2. Session and auth contracts must remain canonical
+
+GAIS `hqRouter` exposes both `/api/hq/session` and `/api/hq/session/enroll`. GAIS session flow includes a controlled enrollment path. Canonical PR #54 session route is deliberately narrower and exposes POST/OPTIONS only; the canonical owner must already exist in `hq_users`.
+
+Canonical `hqApi.js`:
+- enforces same-origin request checks,
+- verifies Bearer Firebase identity,
+- requires the HQ D1 binding,
+- verifies the owner UID/email/status against `hq_users`,
+- provides bounded JSON parsing,
+- provides an owner authorization guard as the first statement in every mutating D1 batch,
+- writes audit statements in the same batch as mutations.
+
+GAIS helper functions and handler return contracts are different. Do not shim canonical auth by merely adding legacy export aliases; that could let GAIS handlers skip canonical same-origin checks, database checks, write guards or transactional audit behavior. Implement endpoint-specific adapters that call canonical authorization and guards directly.
+
+### 3. Worker configuration mismatch remains a deployment blocker
+
+GAIS main `wrangler.jsonc` currently declares ASSETS, AI and basic vars only. It does not declare canonical `HQ_DB` or the three required rate-limit bindings.
+
+Canonical PR #54 `wrangler.jsonc` declares:
+- dedicated `HQ_DB` D1 binding for the existing HQ database,
+- session, write and general rate-limit bindings,
+- a separate preview environment with its own named D1 database and separate rate-limit namespaces.
+
+Earlier read-only Cloudflare inspection confirmed the live Worker has an HQ_DB binding but not the canonical three rate-limit bindings. Earlier D1 inspection confirmed canonical migration 0001/0002 are recorded applied. These facts make the current GAIS main Wrangler config unsafe as a deployment source. Do not deploy it or run Wrangler migrations from it.
+
+The preview D1 and preview rate-limit namespace resources must be independently verified to exist and be isolated before any preview deployment. A config declaration alone does not prove those resources exist.
+
+### 4. Test command and dependency readiness mismatch
+
+Canonical PR #54 `package.json` includes `test:hq-auth`, running the canonical auth, API, rate-limit, domain and private-page/service-worker tests. GAIS main `package.json` currently has only dev/build/lint/preview scripts and does not include that canonical test script. It also does not declare the canonical `jose` dependency used by the canonical Firebase verifier.
+
+The GAIS implementation report previously stated 14 GAIS-specific tests passed in its Build environment, but those tests are not evidence that canonical PR #54 tests pass on the current GAIS main tree. No tests were run as part of this source review. Before integration, reconcile dependencies, scripts, test coverage and CI workflow requirements on the isolated integration branch.
+
+### 5. Security header and private-route review
+
+Both Worker versions add security headers and protect the private HQ page with noindex/no-store behavior. Their implementations differ:
+- GAIS Worker adds the HQ-specific CSP and cache/robots headers when path matches `/studio-hq` or `/api/hq/*`.
+- Canonical Worker applies a dedicated private page header function and endpoint-specific private/no-store response handling.
+- Canonical auth adds same-origin enforcement at the API authorization layer; Worker headers alone are not a substitute for it.
+
+Preserve the stricter canonical request authorization and response cache controls when reconciling routing. Check that every new nested HQ route is covered by no-store/noindex response policy, and do not broaden the private page CSP to public routes.
+
+### 6. Cross-cutting integration blockers
+
+1. GAIS router statically imports modules that depend on incompatible helper exports and incompatible schema. Routing those modules does not make them canonical.
+2. GAIS `/session/enroll` must not be exposed as a compatibility alias.
+3. GAIS main Wrangler config lacks required HQ bindings; current live rate-limit binding configuration was previously found incomplete.
+4. Canonical `jose` dependency and canonical `test:hq-auth` script are missing from GAIS main package manifest.
+5. Canonical PR #54 Worker route layout and GAIS route layout differ; do not combine the two dispatchers without a route-by-route allowlist.
+6. A passing GAIS local build/test report cannot substitute for canonical CI or deployed preview evidence.
+
+### 7. Safe integration decision and readiness gate
+
+- Treat canonical PR #54 Worker, auth helpers, rate limiting, D1 binding configuration and test suite as the security baseline, subject to the specific handler/schema defects already documented in Phase 2G.
+- Do not deploy GAIS main or the current integration branch.
+- Build a minimal route manifest for the first supported UI slice only; prefer Overview read-only, Clients, Projects, Tasks and Milestones after their canonical handlers are corrected and tested.
+- Remove/disable enrollment from the GAIS UI and router; use only the canonical pre-enrolled owner session.
+- Reconcile package dependencies and test scripts before code integration.
+- Verify preview resources independently, then run tests and preview smoke checks against an isolated preview database.
+- Require separate explicit approval before any production deployment or live D1 migration.
+
+### Phase 2K findings
+
+- **Routing:** GAIS unified router and canonical explicit Worker routing are incompatible; a route-by-route canonical dispatcher is required.
+- **Authentication:** canonical same-origin, owner enrollment, D1 owner check and mutation guard model must remain authoritative; do not expose GAIS enrollment.
+- **Configuration:** GAIS main Wrangler config is missing canonical HQ D1 and rate-limit bindings; unsafe to deploy.
+- **Dependencies/tests:** GAIS main package manifest lacks canonical `jose` dependency and canonical test script; GAIS reported test results do not validate canonical implementation.
+- **Deployment status:** no deploy or migration occurred. The current integration work remains documentation-only.
