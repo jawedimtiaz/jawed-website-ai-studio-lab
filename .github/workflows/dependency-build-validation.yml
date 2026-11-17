@@ -44,7 +44,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: Install pinned Bun
-        run: npm install --global bun@1.3.5
+        run: npm install --global bun@1.4.4
       - name: Verify Bun version
         run: bun --version
       - name: Install dependencies from lockfile
