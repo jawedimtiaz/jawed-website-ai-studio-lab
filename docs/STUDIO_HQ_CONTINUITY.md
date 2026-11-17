@@ -431,3 +431,49 @@ Unless a valid environment override is supplied (none was established by this re
 - Added `workflow_dispatch` to `.github/workflows/studio-hq-auth-tests.yml` so the Studio HQ auth/build/Wrangler dry-run gate can also be run manually against the current candidate branch.
 - Workflow change commit: `71f046df56db9a7f7711a7682235ea6cdef9a4cb`.
 - Manual runs are still pending. The exact current branch must be selected when dispatching both workflows.
+
+
+## 14. Phase 2.7N — latest PR #54 CI verification (17 November 2026)
+
+### Exact branch head and workflow results
+- Candidate branch: `reconcile/studio-hq-canonical-main-20261117`.
+- Verified head SHA: `b7ae6923caefbe6a3722df5113342a2f8eec0aa8`.
+- PR #54 remains open, draft and unmerged. No merge, deployment, D1 migration, secret change or live Worker configuration change was performed.
+- GitHub Actions returned 9 completed workflow runs for this exact SHA; all 9 concluded `success`:
+  - Security Baseline Gate — run `44052716483`.
+  - Studio HQ Firebase Auth Tests — run `44052716608`.
+  - Studio HQ D1 Schema Validation — run `44052716488`.
+  - AI Regression Gate — run `44052716477`.
+  - PWA Reliability Gate — run `44052716563`.
+  - Deployment Runtime Reliability Gate — run `44052716553`.
+  - Site Integrity Gate — run `44052716562`.
+  - AdSense Readiness Gate — run `44052716527`.
+  - Security Supply Chain Gate — run `44052716598`.
+- These were GitHub pull-request-triggered workflow runs on the exact branch head; a separate manual dispatch was not needed for this verification.
+
+### Auth/build/Wrangler job evidence
+- Studio HQ Auth job ID: `133934242552`; completed successfully.
+- Test output: 132 tests, 132 passed, 0 failed.
+- TypeScript and production build step passed.
+- Wrangler `deploy --dry-run` passed.
+- Wrangler output explicitly listed:
+  - `HQ_DB` — D1 database `jawed-studio-hq`.
+  - `HQ_SESSION_LIMITER` — 10 requests / 60 seconds.
+  - `HQ_WRITE_LIMITER` — 30 requests / 60 seconds.
+  - `HQ_RATE_LIMITER` — 120 requests / 60 seconds.
+  - `AI` and `ASSETS`.
+- This verifies that the PR's Wrangler configuration parses and the dry-run recognizes all three rate-limit bindings. It does not provision those bindings on the live Worker or prove live API behavior.
+
+### AI regression gate evidence
+- AI Regression Gate run `44052716477`, job `133934320052`, completed successfully on the same SHA.
+- Site integrity validation and AI regression matrix steps passed.
+
+### Remaining release blockers
+1. Rate-limit namespace IDs `620261114`, `620261115`, and `620261116` were reused from an earlier unmerged candidate configuration. The deployed Worker inventory showed no currently configured rate-limit bindings, but that is not a complete account-wide historical namespace registry. Confirm uniqueness/ownership before provisioning or deployment.
+2. The live Lab Worker has not been updated with these bindings; protected HQ APIs must be treated as unavailable/fail-closed until a separately approved deployment/configuration change and live verification.
+3. The preview D1 database remains separate and no preview or production migration was applied.
+4. The backup/restore drill and RTO/RPO remain outstanding.
+5. PR #54 remains draft. Do not merge, deploy, migrate D1, enroll an owner, or alter customer/financial records without explicit approval.
+
+### Next review
+Perform a final read-only release review of rate-limit namespace provisioning/uniqueness and the preview-versus-production D1 migration plan. Keep PR #54 draft until these operational gates are resolved and an explicit approval is obtained.
