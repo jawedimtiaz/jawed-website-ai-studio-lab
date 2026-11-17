@@ -584,3 +584,11 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 - On exact head `1558ae97970870de15bee7e4a387f74e58246905`, eight retrieved workflows had completed successfully; AdSense Readiness Gate was still pending with no job payload returned at the last check. Do not claim the full workflow set is green until that run reaches a completed success conclusion.
 - The preview config and CI validation are now proven by Wrangler dry-run, but preview runtime integration/auth and D1 migration execution remain untested.
 - PR #54 remains draft. Do not merge, deploy, migrate D1, enroll an owner or mutate customer/financial records without explicit approval.
+
+
+### CI follow-up — AdSense workflow terminal state (17 November 2026)
+- Rechecked all nine workflow runs for application/configuration head `1558ae97970870de15bee7e4a387f74e58246905`.
+- Eight workflows completed successfully.
+- AdSense Readiness Gate run `44054052736` completed with conclusion `cancelled`, not success and not failure. No job payload was available for that run.
+- Therefore the exact result is **8 success, 1 cancelled**. Do not describe the entire nine-workflow suite as green.
+- The cancellation does not invalidate the independently successful Studio HQ Auth job or preview Wrangler dry-run. The AdSense gate must be rerun successfully if the release process requires every repository gate green.
