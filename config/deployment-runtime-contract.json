@@ -46,5 +46,8 @@
   "api_origin_policy": "jawed.co.in-and-subdomains",
   "static_asset_binding_required": true,
   "deployment_scope": "Studio HQ Lab Worker only; no personal-site or Kaushal deployment",
-  "build_script": "tsc && vite build && node scripts/prepare-dist.mjs"
+  "build_script": "tsc && vite build && node scripts/prepare-dist.mjs",
+  "allowed_redirect_statuses": [
+    301
+  ]
 }
