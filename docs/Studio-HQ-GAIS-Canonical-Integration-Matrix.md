@@ -284,3 +284,81 @@ The live D1 was previously verified to have canonical migrations 0001 and 0002 r
 - **Financial migration:** GAIS 0002 is incompatible with canonical 0001/0002 and must never be applied to the existing HQ D1.
 - **Risk:** direct deployment of GAIS financial handlers against canonical D1 would encounter mismatched columns and helper contracts; financial write/delete semantics also differ.
 - **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
+
+
+## Phase 2I — Operations module and schema review
+
+**Scope:** Read-only review of the GAIS Operations UI and onboarding, approvals, QA, maintenance and support handlers against canonical PR #54 migration 0001. This phase did not change application code or database state.
+
+### 1. GAIS Operations capabilities
+
+The GAIS Operations section exposes five submodules:
+
+- Client/project onboarding checklist (`onboarding_items`)
+- Client/project approvals (`approvals`)
+- QA checks and defect tracking (`qa_checks`)
+- Maintenance plans (`maintenance_plans`)
+- Client support tickets (`support_tickets`)
+
+The GAIS handlers use title-case status vocabularies and mostly return `{ success: true, ... }`. They import the GAIS-era `verifyAndAuthorizeOwner`, `jsonResponse`, `errorResponse`, `readJsonBody`, and `auditLog` helper contract.
+
+### 2. Canonical schema coverage
+
+Canonical PR #54 migration 0001 defines `approvals`, `qa_checks`, and `maintenance_plans`, but does not define `onboarding_items` or `support_tickets`. It also defines `assets` and `activity_notes`, which may support parts of onboarding/history but are not direct replacements for GAIS checklist and ticket workflows.
+
+| GAIS module | GAIS table | Canonical table(s) | Assessment |
+|---|---|---|---|
+| Onboarding | `onboarding_items` | No direct table; `assets` and `activity_notes` are adjacent only | New additive schema/API required |
+| Approvals | `approvals` | `approvals` | Same name, incompatible column model and lifecycle |
+| QA | `qa_checks` | `qa_checks` | Same name, incompatible column model and lifecycle |
+| Maintenance | `maintenance_plans` | `maintenance_plans` | Same name, requires field-by-field mapping |
+| Support | `support_tickets` | No direct table | New additive schema/API required |
+
+### 3. Same-name tables are not drop-in compatible
+
+**Approvals**
+- GAIS writes `client_id`, `project_id`, `stage`, `title`, `summary`, title-case `status`, `requested_by`, `reviewed_by`, `decision_notes`, and GAIS timestamps.
+- Canonical schema uses `approval_type`, `status` values pending/approved/rejected/withdrawn, `requested_by` and `decided_by` as owner UID foreign keys, `requested_from_email`, `decision_note`, `requested_at`, `decided_at`, and optional deployment/evidence references.
+- GAIS's stage/title and reviewer-email model must be redesigned or explicitly adapted. Do not pass email into canonical owner UID foreign-key fields.
+
+**QA**
+- GAIS writes `client_id`, `project_id`, `category`, `title`, `status`, `severity`, `defect_description`, `assigned_action`, `resolution_status`, `tested_by`, and `tested_at`.
+- Canonical schema uses `project_id`, optional `deployment_id`, constrained `category`, `check_name`, `result`, `evidence_url`, `notes`, `checked_by` UID and `checked_at`.
+- Canonical QA is a check/evidence record, while GAIS combines check outcome and defect workflow. Map the concepts deliberately; do not assume `title` equals `check_name` or `severity` has a canonical column.
+
+**Maintenance**
+- Both schemas define `maintenance_plans`, but GAIS fields include `plan_name`, `billing_cycle`, `amount_minor`, `start_date`, `expiry_date`, `renewal_reminder_days`, `scope_notes`, and title-case statuses.
+- Canonical schema uses its own field vocabulary and constraints (including plan name/status and date/renewal metadata). A column-by-column migration map and status mapping are required before reusing the UI.
+- Confirm the exact canonical maintenance columns in handler implementation before writing any adapter; the GAIS handler is not authoritative for canonical SQL.
+
+### 4. New capabilities in GAIS migration 0003
+
+GAIS migration 0003 creates seven tables: `leads`, `follow_ups`, `proposals`, `onboarding_items`, `support_tickets`, `expenses`, and `studio_settings`.
+
+Canonical migration 0001 already contains `clients`, `client_contacts`, `projects`, `approvals`, `qa_checks`, `maintenance_plans`, `assets`, `activity_notes`, and `audit_logs`. It does not contain those seven GAIS 0003 tables. GAIS migration 0003 is therefore a broad feature expansion, not a safe additive migration for the canonical database. Each required capability must be redesigned against canonical foreign keys, owner UID references, audit conventions, soft-archive rules and API guards.
+
+### 5. Integration and security risks
+
+1. GAIS operations endpoints use the incompatible GAIS auth/helper API; the canonical owner authorization and audit statement model must be retained.
+2. GAIS approval and QA endpoints insert fields that do not exist in the canonical same-name tables. They will not work unchanged against canonical D1.
+3. GAIS approval and QA handlers derive client identity by looking up a project, but canonical authorization/audit semantics require actor UIDs and guard statements within mutating batches.
+4. GAIS onboarding and support endpoints require tables absent from canonical schema. They must not be enabled until new canonical migrations are reviewed and tested.
+5. GAIS UI exposes delete/trash affordances in Operations. Canonical business records generally use soft archive or restricted references; avoid hard deletes and preserve audit history.
+6. Do not use GAIS migration 0003 as a shortcut: it includes seven unrelated tables with different FK delete behavior and lacks the canonical actor/archive constraints.
+
+### 6. Safe Operations integration decision
+
+1. Retain the GAIS Operations UI as a product reference.
+2. Rebuild Approvals and QA adapters around canonical fields and canonical status enums; decide whether to simplify the UI to canonical concepts or add explicit presentation adapters.
+3. Map Maintenance against the full canonical table and handler before connecting it.
+4. Design Onboarding and Support as new canonical capabilities only after separate schema/API threat and data-retention review.
+5. Keep all actor identities server-derived as owner UIDs; do not accept actor email/UID fields from the browser.
+6. Use canonical owner guards, same-origin checks, bounded request parsing, rate limits, audit statements, and soft-archive semantics for every mutation.
+
+### Phase 2I findings
+
+- **Approvals and QA:** tables exist on both sides but have materially different columns, status models and actor semantics; GAIS endpoints are incompatible with canonical D1.
+- **Maintenance:** same business concept and table name, but field-level reconciliation is still required.
+- **Onboarding and Support:** GAIS-only tables; no direct canonical table exists.
+- **GAIS migration 0003:** must not be applied to the existing HQ D1.
+- **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
