@@ -6,7 +6,7 @@ import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { JawedAiWidget } from './components/layout/JawedAiWidget';
 
-// Eagerly loaded landing & portfolio dashboard pages for optimal First Contentful Paint
+// Eagerly loaded landing page for optimal First Contentful Paint
 import { HomePage } from './pages/HomePage';
 import { PortfolioDashboardPage } from './pages/PortfolioDashboardPage';
 
@@ -27,6 +27,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ defa
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const ItServicePage = lazy(() => import('./pages/ItServicePage').then((m) => ({ default: m.ItServicePage })));
 const HardwareDiagnosticPage = lazy(() => import('./pages/HardwareDiagnosticPage').then((m) => ({ default: m.HardwareDiagnosticPage })));
+const StudioHqPage = lazy(() => import('./pages/StudioHqPage').then((m) => ({ default: m.StudioHqPage })));
 
 import { AuthProvider } from './context/AuthContext';
 import { DocumentHead } from './components/common/DocumentHead';
@@ -75,113 +76,118 @@ const ScrollToTop: React.FC = () => {
   return null;
 };
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const location = useLocation();
+  const isStudioHq = location.pathname === '/studio-hq' || location.pathname.startsWith('/studio-hq/');
+
   return (
-    <BrowserRouter>
       <AuthProvider>
         <ScrollToTop />
         <DocumentHead />
         <ErrorBoundary>
           <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-            <Header />
+        {!isStudioHq && <Header />}
+        
+        <div style={{ flex: 1 }}>
+          <RouteErrorBoundary>
+            <Suspense fallback={<PageLoadingFallback />}>
+              <Routes>
+                {/* Private Jawed Web Studio HQ */}
+                <Route path="/studio-hq" element={<StudioHqPage />} />
+                <Route path="/studio-hq/" element={<StudioHqPage />} />
 
-            <div style={{ flex: 1 }}>
-              <RouteErrorBoundary>
-                <Suspense fallback={<PageLoadingFallback />}>
-                  <Routes>
-                    {/* Home */}
-                    <Route path="/" element={<HomePage />} />
-
-                    {/* About */}
-                    <Route path="/about" element={<AboutPage />} />
-                    <Route path="/about/" element={<AboutPage />} />
-
-                    {/* Work & Subroutes */}
-                    <Route path="/work" element={<WorkPage initialTab="overview" />} />
-                    <Route path="/work/" element={<WorkPage initialTab="overview" />} />
-                    <Route path="/work/experience" element={<WorkPage initialTab="experience" />} />
-                    <Route path="/work/experience/" element={<WorkPage initialTab="experience" />} />
-                    <Route path="/work/skills" element={<WorkPage initialTab="skills" />} />
-                    <Route path="/work/skills/" element={<WorkPage initialTab="skills" />} />
-                    <Route path="/work/certifications" element={<WorkPage initialTab="certifications" />} />
-                    <Route path="/work/certifications/" element={<WorkPage initialTab="certifications" />} />
-                    <Route path="/work/projects" element={<WorkPage initialTab="projects" />} />
-                    <Route path="/work/projects/" element={<WorkPage initialTab="projects" />} />
-
-                    {/* Notes */}
-                    <Route path="/notes" element={<NotesPage />} />
-                    <Route path="/notes/" element={<NotesPage />} />
-                    <Route path="/notes/:slug" element={<NoteDetailPage />} />
-                    <Route path="/notes/:slug/" element={<NoteDetailPage />} />
-
-                    {/* Blog */}
-                    <Route path="/blog" element={<BlogPage />} />
-                    <Route path="/blog/" element={<BlogPage />} />
-                    <Route path="/blog/:slug" element={<BlogDetailPage />} />
-                    <Route path="/blog/:slug/" element={<BlogDetailPage />} />
-
-                    {/* Topics */}
-                    <Route path="/topics" element={<TopicsPage />} />
-                    <Route path="/topics/" element={<TopicsPage />} />
-
-                    {/* Resources */}
-                    <Route path="/resources" element={<ResourcesPage />} />
-                    <Route path="/resources/" element={<ResourcesPage />} />
-
-                    {/* Tools */}
-                    <Route path="/tools" element={<ToolsPage />} />
-                    <Route path="/tools/" element={<ToolsPage />} />
-                    <Route path="/tools/portfolio-tracker" element={<PortfolioDashboardPage />} />
-                    <Route path="/tools/portfolio-tracker/" element={<PortfolioDashboardPage />} />
-                    <Route path="/tools/investment-portfolio-dashboard" element={<PortfolioDashboardPage />} />
-                    <Route path="/tools/investment-portfolio-dashboard/" element={<PortfolioDashboardPage />} />
+                {/* Home */}
+                <Route path="/" element={<HomePage />} />
                     <Route path="/portfolio" element={<PortfolioDashboardPage />} />
-                    <Route path="/portfolio/" element={<PortfolioDashboardPage />} />
-                    <Route path="/tools/:slug" element={<ToolDetailPage />} />
-                    <Route path="/tools/:slug/" element={<ToolDetailPage />} />
 
-                    {/* AI */}
-                    <Route path="/ai" element={<AiPage />} />
-                    <Route path="/ai/" element={<AiPage />} />
+                {/* About */}
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/about/" element={<AboutPage />} />
 
-                    {/* Contact */}
-                    <Route path="/contact" element={<ContactPage />} />
-                    <Route path="/contact/" element={<ContactPage />} />
+                {/* Work & Subroutes */}
+                <Route path="/work" element={<WorkPage initialTab="overview" />} />
+                <Route path="/work/" element={<WorkPage initialTab="overview" />} />
+                <Route path="/work/experience" element={<WorkPage initialTab="experience" />} />
+                <Route path="/work/experience/" element={<WorkPage initialTab="experience" />} />
+                <Route path="/work/skills" element={<WorkPage initialTab="skills" />} />
+                <Route path="/work/skills/" element={<WorkPage initialTab="skills" />} />
+                <Route path="/work/certifications" element={<WorkPage initialTab="certifications" />} />
+                <Route path="/work/certifications/" element={<WorkPage initialTab="certifications" />} />
+                <Route path="/work/projects" element={<WorkPage initialTab="projects" />} />
+                <Route path="/work/projects/" element={<WorkPage initialTab="projects" />} />
 
-                    {/* Privacy */}
-                    <Route path="/privacy" element={<PrivacyPage />} />
-                    <Route path="/privacy/" element={<PrivacyPage />} />
+                {/* Notes */}
+                <Route path="/notes" element={<NotesPage />} />
+                <Route path="/notes/" element={<NotesPage />} />
+                <Route path="/notes/:slug" element={<NoteDetailPage />} />
+                <Route path="/notes/:slug/" element={<NoteDetailPage />} />
 
-                    {/* IT Service & Field Tech Portal */}
-                    <Route path="/it-service" element={<ItServicePage />} />
-                    <Route path="/it-service/" element={<ItServicePage />} />
-                    <Route path="/service-desk" element={<ItServicePage />} />
-                    <Route path="/service-desk/" element={<ItServicePage />} />
-                    <Route path="/it-portal" element={<ItServicePage />} />
-                    <Route path="/it-portal/" element={<ItServicePage />} />
+                {/* Blog */}
+                <Route path="/blog" element={<BlogPage />} />
+                <Route path="/blog/" element={<BlogPage />} />
+                <Route path="/blog/:slug" element={<BlogDetailPage />} />
+                <Route path="/blog/:slug/" element={<BlogDetailPage />} />
 
-                    {/* AI Hardware Diagnostic & Image Inspector */}
-                    <Route path="/diagnostic" element={<HardwareDiagnosticPage />} />
-                    <Route path="/diagnostic/" element={<HardwareDiagnosticPage />} />
-                    <Route path="/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
-                    <Route path="/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
-                    <Route path="/tools/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
-                    <Route path="/tools/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
+                {/* Topics */}
+                <Route path="/topics" element={<TopicsPage />} />
+                <Route path="/topics/" element={<TopicsPage />} />
 
-                    {/* 404 */}
-                    <Route path="*" element={<NotFoundPage />} />
-                  </Routes>
-                </Suspense>
-              </RouteErrorBoundary>
-            </div>
+                {/* Resources */}
+                <Route path="/resources" element={<ResourcesPage />} />
+                <Route path="/resources/" element={<ResourcesPage />} />
 
-            <Footer />
-            <JawedAiWidget />
-            <PwaInstallPrompt />
-          </div>
-        </ErrorBoundary>
-      </AuthProvider>
-    </BrowserRouter>
+                {/* Tools */}
+                <Route path="/tools" element={<ToolsPage />} />
+                <Route path="/tools/" element={<ToolsPage />} />
+                <Route path="/tools/:slug" element={<ToolDetailPage />} />
+                <Route path="/tools/:slug/" element={<ToolDetailPage />} />
+
+                {/* AI */}
+                <Route path="/ai" element={<AiPage />} />
+                <Route path="/ai/" element={<AiPage />} />
+
+                {/* Contact */}
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/contact/" element={<ContactPage />} />
+
+                {/* Privacy */}
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/privacy/" element={<PrivacyPage />} />
+
+                {/* IT Service & Field Tech Portal */}
+                <Route path="/it-service" element={<ItServicePage />} />
+                <Route path="/it-service/" element={<ItServicePage />} />
+                <Route path="/service-desk" element={<ItServicePage />} />
+                <Route path="/service-desk/" element={<ItServicePage />} />
+                <Route path="/it-portal" element={<ItServicePage />} />
+                <Route path="/it-portal/" element={<ItServicePage />} />
+
+                {/* AI Hardware Diagnostic & Image Inspector */}
+                <Route path="/diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/diagnostic/" element={<HardwareDiagnosticPage />} />
+                <Route path="/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
+                <Route path="/tools/hardware-diagnostic" element={<HardwareDiagnosticPage />} />
+                <Route path="/tools/hardware-diagnostic/" element={<HardwareDiagnosticPage />} />
+
+                {/* 404 */}
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </Suspense>
+          </RouteErrorBoundary>
+        </div>
+
+        {!isStudioHq && <Footer />}
+        {!isStudioHq && <JawedAiWidget />}
+        {!isStudioHq && <PwaInstallPrompt />}
+      </div>
+    </ErrorBoundary>
+    </AuthProvider>
   );
 };
 
+export const App: React.FC = () => (
+  <BrowserRouter>
+    <AppContent />
+  </BrowserRouter>
+);
