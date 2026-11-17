@@ -78,5 +78,16 @@ jobs:
         run: npm run build
       - name: Validate Cloudflare Worker configuration (dry run)
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+      - name: Validate preview Worker configuration (dry run)
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy --dry-run --env preview --outdir .wrangler-preview-dry-run 2>&1 | tee "$RUNNER_TEMP/wrangler-preview-dry-run.log"
+          for binding in HQ_DB AI HQ_SESSION_LIMITER HQ_WRITE_LIMITER HQ_RATE_LIMITER; do
+            if ! grep -Fq "$binding" "$RUNNER_TEMP/wrangler-preview-dry-run.log"; then
+              echo "Preview dry-run output did not list required binding: $binding"
+              exit 1
+            fi
+          done
       - name: Verify gRPC server-auth code is absent from production artifacts
-        run: node scripts/verify-no-grpc-runtime.mjs dist .wrangler-dry-run
+        run: node scripts/verify-no-grpc-runtime.mjs dist .wrangler-dry-run .wrangler-preview-dry-run
