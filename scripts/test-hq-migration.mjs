@@ -2,20 +2,25 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-const sql = readFileSync('migrations/hq/0001_studio_hq_schema.sql', 'utf8');
+const schemaSql = readFileSync('migrations/hq/0001_studio_hq_schema.sql', 'utf8');
+const financialSql = readFileSync('migrations/hq/0002_financial_management.sql', 'utf8');
 const db = new DatabaseSync(':memory:');
 
 try {
   // D1 enforces foreign keys by default; mirror that behavior in local SQLite.
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(sql);
+  db.exec(schemaSql);
+  db.exec(financialSql);
 
   const expectedTables = [
     'hq_users', 'clients', 'client_contacts', 'projects',
     'project_milestones', 'project_tasks', 'repositories',
     'deployments', 'approvals', 'qa_checks', 'quotations',
     'invoices', 'payments', 'maintenance_plans', 'assets',
-    'activity_notes', 'audit_logs'
+    'activity_notes', 'audit_logs', 'quotation_items',
+    'invoice_items', 'financial_sequences',
+    'payment_idempotency_keys', 'payment_refunds',
+    'refund_idempotency_keys'
   ];
   const actualTables = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -34,6 +39,16 @@ try {
   db.prepare("UPDATE clients SET archived_at=NULL, archived_by=NULL WHERE id=?").run('client-1');
   assert.equal(db.prepare("SELECT archived_at FROM clients WHERE id=?").get('client-1').archived_at, null);
 
+  // Financial migration tables and quotation-to-invoice constraints are active.
+  db.prepare("INSERT INTO quotations (id,quote_number,client_id,created_by) VALUES (?,?,?,?)")
+    .run('quote-1', 'JWS-QA-2026-001', 'client-1', 'owner-1');
+  db.prepare("INSERT INTO quotation_items (id,quotation_id,description,quantity_milli,unit_price_minor,line_total_minor) VALUES (?,?,?,?,?,?)")
+    .run('quote-item-1', 'quote-1', 'Website discovery', 1000, 500000, 500000);
+  db.prepare("INSERT INTO invoices (id,invoice_number,client_id,quotation_id,created_by,total_minor) VALUES (?,?,?,?,?,?)")
+    .run('invoice-1', 'JWS-INV-2026-001', 'client-1', 'quote-1', 'owner-1', 500000);
+  assert.throws(() => db.prepare("INSERT INTO invoices (id,invoice_number,client_id,quotation_id,created_by,total_minor) VALUES (?,?,?,?,?,?)")
+    .run('invoice-2', 'JWS-INV-2026-002', 'client-1', 'quote-1', 'owner-1', 500000));
+
   // Restrictive foreign keys prevent deleting a client with a project.
   assert.throws(() => db.prepare("DELETE FROM clients WHERE id=?").run('client-1'));
 
@@ -51,7 +66,7 @@ try {
   const fkErrors = db.prepare('PRAGMA foreign_key_check').all();
   assert.equal(fkErrors.length, 0, 'foreign key check must be clean');
 
-  console.log(`Studio HQ D1 schema validation passed: ${expectedTables.length} tables, archive/restore, FK restrictions, append-only audit, JSON validation.`);
+  console.log(`Studio HQ D1 schema validation passed: both migrations, ${expectedTables.length} tables, archive/restore, financial constraints, FK restrictions, append-only audit, JSON validation.`);
 } finally {
   db.close();
 }
