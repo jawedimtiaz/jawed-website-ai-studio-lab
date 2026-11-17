@@ -134,3 +134,66 @@ The project table is a good fit for the dashboard's project form and list fields
 - **Projects:** core fields are mostly direct; canonical validation, status vocabulary, authorization/audit write path, and endpoint shape must be preserved.
 - **No adapter code was written.** The next safe unit is a small read-only contract adapter design for client/project list and detail responses, followed by tests against the canonical handler contracts.
 - **No migrations, D1 writes, tests, Worker deployments, or changes to PR #54/#55 were performed in this phase.
+
+
+## Phase 2G — Tasks and Milestones data-model review
+
+**Scope:** Read-only source comparison of the GAIS task/milestone UI and handlers, the PR #54 canonical handlers, and the canonical PR #54 migration schema.
+
+### 1. GAIS UI contract
+
+The GAIS Projects module exposes these task fields:
+
+- `project_id`, `title`, `description`
+- `status`: Todo, In Progress, Review, Blocked, Done, Completed, Cancelled
+- `priority`: Low, Medium, High, Critical
+- `assigned_to`, `due_date`
+
+Milestone fields:
+
+- `project_id`, `name`, `description`
+- `status`: Pending, In Progress, Completed, Delayed
+- `due_date`
+
+The UI loads `GET /api/hq/tasks` and `GET /api/hq/milestones`, and the project detail bundle expects task/milestone arrays. GAIS handlers operate on `project_tasks` and `project_milestones`.
+
+### 2. Canonical D1 schema contract (PR #54 migration 0001)
+
+The canonical migration defines `project_tasks` with `project_id`, `milestone_id`, `title`, `description`, `status`, `priority`, `assigned_to`, `due_date`, `completed_at`, `sort_order`, `created_by`, `updated_by`, timestamps and archive fields.
+
+It defines `project_milestones` with `project_id`, `name`, `description`, `status`, `due_date`, `completed_at`, `sort_order`, timestamps and archive fields.
+
+**The table and core column concepts match the GAIS handlers.** But the canonical migration constrains status and priority values to lowercase enums:
+- Task status: `todo`, `in-progress`, `blocked`, `done`, `cancelled`
+- Task priority: `low`, `normal`, `high`, `urgent`
+- Milestone status: `not-started`, `in-progress`, `blocked`, `completed`, `skipped`
+
+This differs from GAIS's title-case status/priority labels. A deliberate bidirectional enum adapter is required. In particular, GAIS `Review`, `Completed` (task), and `Delayed` (milestone) have no exact canonical enum equivalent. They must not be silently coerced. Product decision required for mapping or UI option changes.
+
+### 3. Critical inconsistency discovered in the canonical PR #54 branch
+
+The canonical PR #54 endpoint files currently named `functions/api/hq/tasks.js` and `functions/api/hq/milestones.js` do **not** query the tables defined in the canonical migration:
+
+- `tasks.js` queries `hq_tasks`, while migration 0001 defines `project_tasks`.
+- `milestones.js` queries `hq_milestones`, while migration 0001 defines `project_milestones`.
+- The endpoint fields are also older contracts: task handler uses a reduced field list; milestone handler expects `title` and `target_date`, whereas the migration uses `name` and `due_date`.
+- The canonical endpoint handlers use the GAIS-era `verifyAndAuthorizeOwner` helper contract, whereas the canonical shared security helper `hqApi.js` exports `authorizeHqOwner`, `hqJson`, `readHqJson`, and owner-guard/audit statement helpers. The endpoint imports are therefore not aligned with the current shared helper contract either.
+
+This is a source-level defect/inconsistency in the PR #54 branch, not a live database test result. Do not connect these handlers to the live Worker or deploy them as-is. Do not assume the existence of `hq_tasks` or `hq_milestones` in the live D1 database.
+
+### 4. Safe integration decision
+
+1. Treat canonical migration 0001's `project_tasks` and `project_milestones` tables as the intended data model, subject to final reconciliation against the live D1 schema already inspected earlier.
+2. Do not reuse the current PR #54 task/milestone handlers without correction.
+3. Implement replacement handlers only after explicitly using canonical `authorizeHqOwner`, same-origin checks, bounded JSON parsing, `requireHqDatabase`, owner-authorization guard statements in every mutating D1 batch, and audit statements.
+4. Use the canonical lowercase enum values in API/database contracts. Decide whether the UI should adopt canonical values directly or use a tested, explicit label adapter. Never map unsupported statuses to a different meaning silently.
+5. Use soft-archive semantics consistent with the canonical schema; avoid GAIS hard DELETE endpoints for business records.
+6. Keep task/milestone actor IDs server-derived. Validate that referenced project and milestone belong together before insert/update.
+
+### Phase 2G findings
+
+- **Schema tables/columns:** GAIS and canonical migration mostly align at the structural level.
+- **Enums:** incompatible and need explicit mapping or UI adjustment.
+- **Canonical endpoint handlers:** currently inconsistent with the canonical migration and shared security helper; must be corrected before integration.
+- **Risk:** deploying the existing PR #54 task/milestone handlers could produce missing-table or missing-export failures.
+- **No code changes, migrations, D1 writes, automated tests, or deployments were performed in this phase.
