@@ -5,7 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { hqFetch, formatMoney, formatDate } from '../../services/hqService';
 import { HqAnalyticsResponse, HqSubView } from '../../types/hq';
-import { KpiStatCard, StatusDotText, EmptyState, LoadingSkeleton } from './HqUiPrimitives';
+import { KpiStatCard, StatusDotText, ProjectStatusBadge, EmptyState, LoadingSkeleton } from './HqUiPrimitives';
 
 export const AnalyticsSection: React.FC<{
   subView: HqSubView;
@@ -216,7 +216,7 @@ export const AnalyticsSection: React.FC<{
                           <div className="text-xs text-slate-500">{p.client_business}</div>
                         </td>
                         <td className="px-4 py-3">
-                          <StatusDotText status={p.status} />
+                          <ProjectStatusBadge status={p.status} />
                         </td>
                         <td className="px-4 py-3 text-right font-mono tabular-nums text-xs">
                           {p.completed_tasks}/{p.total_tasks}

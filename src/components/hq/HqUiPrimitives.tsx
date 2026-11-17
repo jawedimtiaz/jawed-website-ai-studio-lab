@@ -2,7 +2,19 @@
 // Reusable SaaS UI Primitives for Jawed Web Studio HQ
 
 import React, { useEffect } from 'react';
-import { X, AlertTriangle, Printer, Download, Search } from 'lucide-react';
+import {
+  X,
+  AlertTriangle,
+  Printer,
+  Download,
+  Search,
+  PlayCircle,
+  CheckCircle2,
+  PauseCircle,
+  Wrench,
+  XCircle,
+  Compass
+} from 'lucide-react';
 import { formatMoney, formatDate } from '../../services/hqService';
 
 export interface ToastMessage {
@@ -75,6 +87,151 @@ export const StatusDotText: React.FC<{ status: string; className?: string }> = (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 ${className}`}>
       <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
       <span>{status || '—'}</span>
+    </span>
+  );
+};
+
+export interface ProjectStatusMeta {
+  category: 'Active' | 'Completed' | 'On Hold' | 'Maintenance' | 'Lead' | 'Cancelled' | 'Other';
+  badgeClasses: string;
+  accentBorderClass: string;
+  iconColor: string;
+  barColor: string;
+  dotColor: string;
+}
+
+const ACTIVE_STAGE_SET = new Set([
+  'active',
+  'planning',
+  'quoted',
+  'onboarding',
+  'in progress',
+  'review',
+  'client approval'
+]);
+
+export function getProjectStatusMeta(status: string): ProjectStatusMeta {
+  const normalized = String(status || '').trim().toLowerCase();
+
+  if (ACTIVE_STAGE_SET.has(normalized)) {
+    return {
+      category: 'Active',
+      badgeClasses: 'bg-blue-50 text-blue-800 border-blue-200',
+      accentBorderClass: 'border-l-blue-600',
+      iconColor: 'text-blue-600',
+      barColor: 'bg-blue-600',
+      dotColor: 'bg-blue-600'
+    };
+  }
+  if (normalized === 'completed') {
+    return {
+      category: 'Completed',
+      badgeClasses: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      accentBorderClass: 'border-l-emerald-600',
+      iconColor: 'text-emerald-600',
+      barColor: 'bg-emerald-600',
+      dotColor: 'bg-emerald-600'
+    };
+  }
+  if (normalized === 'on hold' || normalized === 'paused') {
+    return {
+      category: 'On Hold',
+      badgeClasses: 'bg-amber-50 text-amber-900 border-amber-300',
+      accentBorderClass: 'border-l-amber-500',
+      iconColor: 'text-amber-600',
+      barColor: 'bg-amber-500',
+      dotColor: 'bg-amber-500'
+    };
+  }
+  if (normalized === 'maintenance') {
+    return {
+      category: 'Maintenance',
+      badgeClasses: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+      accentBorderClass: 'border-l-indigo-600',
+      iconColor: 'text-indigo-600',
+      barColor: 'bg-indigo-600',
+      dotColor: 'bg-indigo-600'
+    };
+  }
+  if (normalized === 'lead') {
+    return {
+      category: 'Lead',
+      badgeClasses: 'bg-slate-100 text-slate-800 border-slate-300',
+      accentBorderClass: 'border-l-slate-400',
+      iconColor: 'text-slate-600',
+      barColor: 'bg-slate-500',
+      dotColor: 'bg-slate-500'
+    };
+  }
+  if (normalized === 'cancelled') {
+    return {
+      category: 'Cancelled',
+      badgeClasses: 'bg-rose-50 text-rose-800 border-rose-200',
+      accentBorderClass: 'border-l-rose-600',
+      iconColor: 'text-rose-600',
+      barColor: 'bg-rose-600',
+      dotColor: 'bg-rose-600'
+    };
+  }
+  return {
+    category: 'Other',
+    badgeClasses: 'bg-slate-100 text-slate-700 border-slate-200',
+    accentBorderClass: 'border-l-slate-300',
+    iconColor: 'text-slate-500',
+    barColor: 'bg-slate-400',
+    dotColor: 'bg-slate-400'
+  };
+}
+
+export const ProjectStatusBadge: React.FC<{
+  status: string;
+  showStage?: boolean;
+  align?: 'start' | 'end';
+  className?: string;
+}> = ({ status, showStage = true, align = 'start', className = '' }) => {
+  const cleanStatus = String(status || '').trim();
+  const meta = getProjectStatusMeta(cleanStatus);
+  const displayLabel = meta.category === 'Other' ? cleanStatus || '—' : meta.category;
+  const hasDistinctStage =
+    showStage && Boolean(cleanStatus) && cleanStatus.toLowerCase() !== displayLabel.toLowerCase();
+
+  const Icon =
+    meta.category === 'Active'
+      ? PlayCircle
+      : meta.category === 'Completed'
+        ? CheckCircle2
+        : meta.category === 'On Hold'
+          ? PauseCircle
+          : meta.category === 'Maintenance'
+            ? Wrench
+            : meta.category === 'Cancelled'
+              ? XCircle
+              : Compass;
+
+  const layoutClass =
+    align === 'end'
+      ? 'inline-flex flex-col items-end gap-0.5'
+      : 'inline-flex items-center gap-1.5 flex-wrap';
+
+  return (
+    <span
+      role="status"
+      title={`Status: ${displayLabel}${hasDistinctStage ? ` — ${cleanStatus}` : ''}`}
+      aria-label={`Project status: ${displayLabel}${hasDistinctStage ? ` (${cleanStatus})` : ''}`}
+      data-project-status={meta.category}
+      data-status={cleanStatus}
+      className={`project-status-badge status-badge ${layoutClass} ${className}`.trim()}
+    >
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-xs font-semibold tracking-tight whitespace-nowrap ${meta.badgeClasses}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dotColor}`} aria-hidden="true" />
+        <Icon className={`w-3.5 h-3.5 shrink-0 ${meta.iconColor}`} aria-hidden="true" />
+        <span>{displayLabel}</span>
+      </span>
+      {hasDistinctStage && (
+        <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">{cleanStatus}</span>
+      )}
     </span>
   );
 };

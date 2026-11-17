@@ -5,7 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { RefreshCw, ArrowUpRight, CheckCircle2, Clock, Rocket, FileText } from 'lucide-react';
 import { hqFetch, formatMoney, formatDate, formatDateTime } from '../../services/hqService';
 import { HqOverviewKpis, RevenueSeriesPoint, HqSubView } from '../../types/hq';
-import { KpiStatCard, StatusDotText, EmptyState, LoadingSkeleton } from './HqUiPrimitives';
+import { KpiStatCard, StatusDotText, ProjectStatusBadge, getProjectStatusMeta, EmptyState, LoadingSkeleton } from './HqUiPrimitives';
 
 interface OverviewResponse {
   kpis: HqOverviewKpis;
@@ -311,16 +311,17 @@ export const OverviewSection: React.FC<{
             <div className="space-y-3">
               {projectDistribution.map((row) => {
                 const pct = Math.round((Number(row.count) / totalProjectCount) * 100);
+                const meta = getProjectStatusMeta(row.status);
                 return (
-                  <div key={row.status} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <StatusDotText status={row.status} />
-                      <span className="font-mono tabular-nums text-slate-700 font-medium">
+                  <div key={row.status} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <ProjectStatusBadge status={row.status} />
+                      <span className="font-mono tabular-nums text-slate-700 font-medium shrink-0">
                         {row.count} ({pct}%)
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+                      <div className={`h-full ${meta.barColor} rounded-full`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );

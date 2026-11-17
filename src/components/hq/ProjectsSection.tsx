@@ -14,7 +14,9 @@ import {
   Check,
   Minus,
   RotateCcw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import {
   hqFetch,
@@ -39,6 +41,8 @@ import {
 import {
   SectionToolbar,
   StatusDotText,
+  ProjectStatusBadge,
+  getProjectStatusMeta,
   EmptyState,
   LoadingSkeleton,
   SlideOverDrawer,
@@ -67,8 +71,8 @@ const STATUS_VISIBILITY_GROUPS: Array<{
   { id: 'active', label: 'Active', dotColor: 'bg-blue-600', statuses: ACTIVE_PROJECT_STATUSES },
   { id: 'completed', label: 'Completed', dotColor: 'bg-emerald-600', statuses: ['Completed'] },
   { id: 'on-hold', label: 'On Hold', dotColor: 'bg-amber-500', statuses: ['On Hold'] },
-  { id: 'maintenance', label: 'Maintenance', dotColor: 'bg-slate-500', statuses: ['Maintenance'] },
-  { id: 'lead', label: 'Lead', dotColor: 'bg-amber-500', statuses: ['Lead'] },
+  { id: 'maintenance', label: 'Maintenance', dotColor: 'bg-indigo-600', statuses: ['Maintenance'] },
+  { id: 'lead', label: 'Lead', dotColor: 'bg-slate-500', statuses: ['Lead'] },
   { id: 'cancelled', label: 'Cancelled', dotColor: 'bg-rose-600', statuses: ['Cancelled'] }
 ];
 
@@ -108,6 +112,7 @@ export const ProjectsSection: React.FC<{
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [totalUnfilteredProjects, setTotalUnfilteredProjects] = useState(0);
   const [showStageToggles, setShowStageToggles] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   const [projects, setProjects] = useState<HqProject[]>([]);
   const [clients, setClients] = useState<HqClient[]>([]);
@@ -131,6 +136,7 @@ export const ProjectsSection: React.FC<{
     onConfirm: () => Promise<void>;
   }>({ open: false, title: '', description: '', onConfirm: async () => {} });
   const [busy, setBusy] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   const [projectForm, setProjectForm] = useState({
     client_id: '',
@@ -298,6 +304,30 @@ export const ProjectsSection: React.FC<{
       onToast('error', err.message || 'Failed to save project');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleQuickStatusChange = async (project: HqProject, nextStatus: string) => {
+    if (!nextStatus || nextStatus === project.status) return;
+    const previousStatus = project.status;
+    setUpdatingStatusId(project.id);
+    setProjects((prev) =>
+      prev.map((item) => (item.id === project.id ? { ...item, status: nextStatus } : item))
+    );
+    try {
+      await hqFetch('/api/hq/projects', {
+        method: 'PUT',
+        body: JSON.stringify({ id: project.id, status: nextStatus })
+      });
+      onToast('success', `${project.name} marked as ${nextStatus}`);
+      await loadMain();
+    } catch (err: any) {
+      setProjects((prev) =>
+        prev.map((item) => (item.id === project.id ? { ...item, status: previousStatus } : item))
+      );
+      onToast('error', err.message || 'Failed to update project status');
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -474,6 +504,32 @@ export const ProjectsSection: React.FC<{
                   <SlidersHorizontal className="w-3 h-3" />
                   All Stages ({PROJECT_STATUS_LIST.length})
                 </button>
+                <div className="inline-flex rounded border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="Project layout view">
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'cards'}
+                    onClick={() => setViewMode('cards')}
+                    title="Card View"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm cursor-pointer ${
+                      viewMode === 'cards' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'table'}
+                    onClick={() => setViewMode('table')}
+                    title="Table View"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm cursor-pointer ${
+                      viewMode === 'table' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <List className="w-3 h-3" />
+                    Table
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -579,6 +635,142 @@ export const ProjectsSection: React.FC<{
                 onAction={openNewProject}
               />
             )
+          ) : viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {projects.map((p) => {
+                const statusMeta = getProjectStatusMeta(p.status);
+                const totalTasks = Number(p.total_tasks ?? 0);
+                const doneTasks = Number(p.completed_tasks ?? 0);
+                const taskPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+                return (
+                  <article
+                    key={p.id}
+                    aria-busy={updatingStatusId === p.id}
+                    data-status-category={statusMeta.category}
+                    data-status-stage={p.status}
+                    className={`project-card bg-white border border-slate-200 border-l-4 ${statusMeta.accentBorderClass} rounded-lg p-4 flex flex-col justify-between gap-3.5 hover:border-slate-300 transition-colors`}
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectProject(p.id);
+                              onSubViewChange('projects-details');
+                            }}
+                            className="text-left text-sm font-semibold text-slate-900 hover:text-blue-700 transition-colors line-clamp-1 cursor-pointer"
+                          >
+                            {p.name}
+                          </button>
+                          <div className="text-xs text-slate-500 truncate mt-0.5">
+                            {p.client_business || p.client_name} · {p.project_type}
+                          </div>
+                        </div>
+                        <ProjectStatusBadge status={p.status} align="end" className="shrink-0" />
+                      </div>
+
+                      {p.summary && (
+                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{p.summary}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>Tasks Progress</span>
+                          <span className="font-mono tabular-nums text-slate-700 font-medium">
+                            {doneTasks}/{totalTasks} ({taskPct}%)
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full ${statusMeta.barColor} rounded-full`} style={{ width: `${taskPct}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Budget</div>
+                            <div className="font-mono tabular-nums font-semibold text-slate-900">
+                              {formatMoney(p.quoted_amount_minor, p.currency)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Target</div>
+                            <div className="font-mono text-slate-600">{formatDate(p.target_date)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Priority</div>
+                            <div className="font-medium text-slate-700">{p.priority}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <select
+                            aria-label={`Change status for ${p.name}`}
+                            value={p.status}
+                            disabled={updatingStatusId === p.id}
+                            onChange={(e) => handleQuickStatusChange(p, e.target.value)}
+                            className="h-7 px-2 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+                          >
+                            {PROJECT_STATUS_LIST.map((st) => (
+                              <option key={st} value={st}>
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingProject(p);
+                              setProjectForm({
+                                client_id: p.client_id,
+                                name: p.name,
+                                project_type: p.project_type || 'Website Build',
+                                status: p.status,
+                                priority: p.priority,
+                                start_date: p.start_date || '',
+                                target_date: p.target_date || '',
+                                quoted_major: minorToMajorString(p.quoted_amount_minor),
+                                currency: p.currency || 'INR',
+                                summary: p.summary || '',
+                                scope_markdown: p.scope_markdown || ''
+                              });
+                              setProjectDrawerOpen(true);
+                            }}
+                            aria-label={`Edit ${p.name}`}
+                            className="p-1.5 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfirmState({
+                                open: true,
+                                title: 'Delete project?',
+                                description: `Delete project "${p.name}" and its child tasks/milestones?`,
+                                onConfirm: async () => {
+                                  await hqFetch(`/api/hq/projects?id=${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+                                  onToast('success', 'Project deleted');
+                                  loadMain();
+                                }
+                              })
+                            }
+                            aria-label={`Delete ${p.name}`}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
@@ -586,7 +778,7 @@ export const ProjectsSection: React.FC<{
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Project & Customer</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Stage</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Status</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Priority</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Tasks</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-slate-600">Budget</th>
@@ -613,7 +805,7 @@ export const ProjectsSection: React.FC<{
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <StatusDotText status={p.status} />
+                          <ProjectStatusBadge status={p.status} />
                         </td>
                         <td className="px-4 py-3 text-xs font-medium text-slate-700">{p.priority}</td>
                         <td className="px-4 py-3 text-xs font-mono tabular-nums text-slate-600">
@@ -741,9 +933,9 @@ export const ProjectsSection: React.FC<{
               <div className="bg-white border border-slate-200 rounded-lg p-5">
                 <div className="flex flex-wrap justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <h2 className="text-lg font-bold text-slate-900">{detail.project.name}</h2>
-                      <StatusDotText status={detail.project.status} />
+                      <ProjectStatusBadge status={detail.project.status} />
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
                       {detail.project.client_business || detail.project.client_name} · {detail.project.project_type} · Priority:{' '}
