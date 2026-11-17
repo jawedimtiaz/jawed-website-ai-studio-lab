@@ -83,7 +83,7 @@ jobs:
         run: |
           set -o pipefail
           npx wrangler deploy --dry-run --env preview --outdir .wrangler-preview-dry-run 2>&1 | tee "$RUNNER_TEMP/wrangler-preview-dry-run.log"
-          for binding in HQ_DB AI HQ_SESSION_LIMITER HQ_WRITE_LIMITER HQ_RATE_LIMITER; do
+          for binding in HQ_DB AI ASSETS HQ_SESSION_LIMITER HQ_WRITE_LIMITER HQ_RATE_LIMITER; do
             if ! grep -Fq "$binding" "$RUNNER_TEMP/wrangler-preview-dry-run.log"; then
               echo "Preview dry-run output did not list required binding: $binding"
               exit 1
