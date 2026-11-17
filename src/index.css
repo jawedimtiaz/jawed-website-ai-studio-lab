@@ -1104,3 +1104,60 @@ tr:last-child td {
   }
 }
 
+@layer components {
+  .project-card[data-status-category="Active"],
+  .project-card--active {
+    border-left-color: #2563eb;
+  }
+  .project-card[data-status-category="Completed"],
+  .project-card--completed {
+    border-left-color: #059669;
+  }
+  .project-card[data-status-category="On Hold"],
+  .project-card--on-hold {
+    border-left-color: #d97706;
+  }
+  .project-card[data-status-category="Maintenance"],
+  .project-card--maintenance {
+    border-left-color: #4f46e5;
+  }
+  .project-card[data-status-category="Lead"],
+  .project-card--lead {
+    border-left-color: #64748b;
+  }
+  .project-card[data-status-category="Cancelled"],
+  .project-card--cancelled {
+    border-left-color: #e11d48;
+  }
+
+  .status-badge--active {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
+  }
+  .status-badge--completed {
+    background-color: #ecfdf5;
+    color: #065f46;
+    border-color: #a7f3d0;
+  }
+  .status-badge--on-hold {
+    background-color: #fffbeb;
+    color: #78350f;
+    border-color: #fcd34d;
+  }
+  .status-badge--maintenance {
+    background-color: #eef2ff;
+    color: #3730a3;
+    border-color: #c7d2fe;
+  }
+  .status-badge--lead {
+    background-color: #f1f5f9;
+    color: #1e293b;
+    border-color: #cbd5e1;
+  }
+  .status-badge--cancelled {
+    background-color: #fff1f2;
+    color: #9f1239;
+    border-color: #fecdd3;
+  }
+}

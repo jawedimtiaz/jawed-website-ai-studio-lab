@@ -208,6 +208,7 @@ export const ProjectStatusBadge: React.FC<{
               ? XCircle
               : Compass;
 
+  const statusSlug = meta.category.toLowerCase().replace(/\s+/g, '-');
   const layoutClass =
     align === 'end'
       ? 'inline-flex flex-col items-end gap-0.5'
@@ -223,7 +224,7 @@ export const ProjectStatusBadge: React.FC<{
       className={`project-status-badge status-badge ${layoutClass} ${className}`.trim()}
     >
       <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-xs font-semibold tracking-tight whitespace-nowrap ${meta.badgeClasses}`}
+        className={`status-badge__pill status-badge--${statusSlug} inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-xs font-semibold tracking-tight whitespace-nowrap ${meta.badgeClasses}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dotColor}`} aria-hidden="true" />
         <Icon className={`w-3.5 h-3.5 shrink-0 ${meta.iconColor}`} aria-hidden="true" />

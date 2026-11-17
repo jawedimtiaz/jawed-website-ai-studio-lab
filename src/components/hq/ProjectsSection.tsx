@@ -1,7 +1,7 @@
 // src/components/hq/ProjectsSection.tsx
 // Studio HQ Projects Module: All Projects, Active Projects, Rich Project Details, Tasks, Milestones
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   FolderKanban,
   CheckSquare,
@@ -115,6 +115,8 @@ export const ProjectsSection: React.FC<{
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   const [projects, setProjects] = useState<HqProject[]>([]);
+  const firstProjectIdRef = useRef<string | null>(null);
+  firstProjectIdRef.current = projects[0]?.id ?? null;
   const [clients, setClients] = useState<HqClient[]>([]);
   const [tasks, setTasks] = useState<HqTask[]>([]);
   const [milestones, setMilestones] = useState<HqMilestone[]>([]);
@@ -203,7 +205,7 @@ export const ProjectsSection: React.FC<{
         setStatusCounts(res.statusCounts || {});
         setTotalUnfilteredProjects(Number(res.totalUnfiltered ?? res.projects?.length ?? 0));
       } else if (activeTab === 'details') {
-        const targetId = selectedProjectId || projects[0]?.id;
+        const targetId = selectedProjectId || firstProjectIdRef.current;
         if (targetId) {
           const res = await hqFetch<ProjectDetailBundle>(`/api/hq/projects?id=${encodeURIComponent(targetId)}`);
           setDetail(res);
@@ -225,7 +227,7 @@ export const ProjectsSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, projects, onSelectProject, onToast]);
+  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, onSelectProject, onToast]);
 
   useEffect(() => {
     setStatusFilter('All');
@@ -639,6 +641,7 @@ export const ProjectsSection: React.FC<{
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {projects.map((p) => {
                 const statusMeta = getProjectStatusMeta(p.status);
+                const statusSlug = statusMeta.category.toLowerCase().replace(/\s+/g, '-');
                 const totalTasks = Number(p.total_tasks ?? 0);
                 const doneTasks = Number(p.completed_tasks ?? 0);
                 const taskPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
@@ -649,7 +652,7 @@ export const ProjectsSection: React.FC<{
                     aria-busy={updatingStatusId === p.id}
                     data-status-category={statusMeta.category}
                     data-status-stage={p.status}
-                    className={`project-card bg-white border border-slate-200 border-l-4 ${statusMeta.accentBorderClass} rounded-lg p-4 flex flex-col justify-between gap-3.5 hover:border-slate-300 transition-colors`}
+                    className={`project-card project-card--${statusSlug} bg-white border border-slate-200 border-l-4 ${statusMeta.accentBorderClass} rounded-lg p-4 flex flex-col justify-between gap-3.5 hover:border-slate-300 transition-colors`}
                   >
                     <div className="space-y-2.5">
                       <div className="flex items-start justify-between gap-2.5">
