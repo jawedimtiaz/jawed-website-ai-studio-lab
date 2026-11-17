@@ -45,6 +45,33 @@ export const ToolsPage: React.FC = () => {
         A collection of 16 practical, privacy-first browser utilities designed for IT Service Desk analysts, Apple &amp; Windows workplace technicians, career builders, and financial planners. All calculations and text processing run strictly inside your browser—no user data is logged or sent to any server.
       </p>
 
+      {/* Private Jawed Web Studio HQ entry — separate from the public tools catalogue */}
+      <section
+        aria-labelledby="studio-hq-entry-title"
+        className="card"
+        style={{
+          maxWidth: '52rem',
+          marginBottom: '2rem',
+          border: '1px solid var(--line)',
+          backgroundColor: 'var(--surface)',
+          padding: '1.5rem'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
+          <span className="badge">Private</span>
+          <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Jawed Web Studio</span>
+        </div>
+        <h2 id="studio-hq-entry-title" style={{ fontSize: '1.3rem', margin: '0 0 0.5rem' }}>
+          Jawed Web Studio HQ
+        </h2>
+        <p style={{ fontSize: '0.95rem', lineHeight: 1.6, margin: '0 0 1rem', color: 'var(--text)' }}>
+          Manage clients, projects, quotations, invoices, payments, approvals, quality assurance and business operations from one secure workspace.
+        </p>
+        <Link to="/studio-hq" className="button" style={{ display: 'inline-block', textAlign: 'center' }}>
+          Open Studio HQ →
+        </Link>
+      </section>
+
       {/* Search and Category Filters */}
       <div
         className="tools-filter-box"
