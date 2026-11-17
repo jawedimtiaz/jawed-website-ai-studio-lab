@@ -714,3 +714,47 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 - GAIS workspace connected to the new feature branch: not yet verified.
 - No GAIS import, sync, push, pull, code edit or deployment has been performed in this phase.
 - Immediate next action: user inspects the Import from GitHub dialog and reports whether the exact feature branch is available. Stop before importing if not.
+
+
+## 21. Phase 3.2 — Studio HQ frontend/backend dependency inventory (17 November 2026)
+
+### Verified branch checkpoint
+- Feature branch: `feat/studio-hq-ui-20261117`.
+- Latest branch commit verified by GitHub: `f74502308a8f62119b9e400ba1f89c1b799bab11`.
+- The branch remains a documentation-only continuation of the PR #54 head; no application UI source files have been changed on this branch.
+- Correction to Phase 3.1: its “latest commit” reference `ddc1b4c3f44a621e440de182390f64aef2576d9e` is the parent of the current documentation commit, not the current branch head.
+
+### Frontend inventory
+- `src/pages/StudioHqPage.tsx` is approximately 79 KB and currently combines authentication/session handling, CRM, project/task/milestone workflows, approvals and QA in one React component.
+- It uses Firebase Auth directly via `src/lib/firebase.ts`, obtains Firebase ID tokens, and sends same-origin requests with `credentials: 'same-origin'` and `cache: 'no-store'`.
+- The page authenticates through `POST /api/hq/session`; it only loads CRM and project data after the server returns an authorized identity.
+- `src/lib/hqSessionLifecycle.ts` tracks session generations and request sequence tokens to prevent stale approval/QA responses being applied after a session change.
+- `src/App.tsx` lazy-loads the page at `/studio-hq` and suppresses the public Header, Footer, AI widget and PWA prompt on this private route.
+- `src/context/AuthContext.tsx` is a separate site-wide Firebase/Firestore admin context. It checks a Firestore `admins` document and is not the Studio HQ API's authoritative owner authorization. Do not substitute it for server-side HQ authorization.
+- `src/data/toolsData.ts` does not contain the private HQ entry card; PR #55 keeps its proposed card separate from the public tools catalogue.
+
+### Backend/API inventory
+- Worker routes include session, clients, projects, project tasks/milestones, project approvals/QA, quotations, invoices and payments/refunds.
+- Backend modules: `functions/api/hq/session.js`, `clients.js`, `projects.js`, `release.js`, `financial.js`; shared auth/API/rate-limit modules are under `functions/lib/`.
+- All protected handlers depend on the same-origin guard, Firebase ID-token verification, the `hq_users` owner enrollment row, the dedicated `HQ_DB` D1 binding, and rate-limit bindings. Mutation handlers use owner authorization guards and audit statements in D1 batches.
+- Firebase token verification is pinned to Firebase project `refined-actor-skhlb`, validates RS256 signatures/claims and a two-email allowlist. The database enrollment check is an additional independent requirement.
+- `wrangler.jsonc` on this branch declares `HQ_DB` as `jawed-studio-hq`, preview D1 as `jawed-studio-hq-preview`, and candidate rate-limit namespaces. Namespace ownership/uniqueness and live binding availability remain unresolved deployment gates.
+- Financial API operations include quotation list/create/get/update/status/convert; invoice list/create/get/issue; invoice payment list/create; and payment refunds. Financial operations also use the same owner auth, D1 and rate-limit foundation. The current StudioHqPage does not yet provide a financial UI.
+- Migrations are `migrations/hq/0001_studio_hq_schema.sql` and additive `0002_financial_management.sql`. They are source files only; no remote D1 migration was run during this phase.
+
+### UI redesign implications
+- First UI iteration should be a presentation/layout refactor of the existing private page, preserving its auth lifecycle, request paths, request payloads, validation, loading/error states and current CRM/project/approval/QA interactions.
+- Do not add financial screens to the UI until a separate financial workflow review and acceptance criteria are completed.
+- Suggested navigation areas for design review: Overview, Clients, Projects & Delivery, Approvals, QA. Financial Management can remain a future/locked module until its UI and workflows are reviewed.
+- Dashboard KPI cards must be derived from loaded API data only. Do not fabricate revenue, pipeline, task or client counts.
+- The current component's 79 KB size makes incremental extraction into focused components safer than a wholesale rewrite. First extract visual components without changing API behavior, then redesign one section at a time.
+
+### Current PR and branch safeguards
+- PR #54 remains open and draft; do not merge, deploy or migrate.
+- PR #55 remains open and draft, targeting the PR #54 branch; do not merge before its dependency is resolved.
+- Feature branch `feat/studio-hq-ui-20261117` is not protected. Continue to use reviewed commits and a draft PR; do not force-push.
+- No new repository, Firebase project, Worker, D1 database, domain, secret, owner enrollment or live Cloudflare setting was created/changed in this phase.
+
+### Next action
+- Resolve the GAIS GitHub import workflow for the exact feature branch. The user must inspect whether `feat/studio-hq-ui-20261117` is selectable and whether the import is synchronized. Stop before importing if the exact branch or sync behavior is unclear.
+- Once the source workspace is safely connected, prepare the UI information architecture and visual specification before editing application files.
