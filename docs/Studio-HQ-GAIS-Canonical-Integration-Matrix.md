@@ -618,3 +618,71 @@ Preserve the stricter canonical request authorization and response cache control
 - Clients/Projects have the clearest path after adapters; Financial, Operations, Analytics and Settings need additional canonical design.
 - This register is a plan, not evidence that defects have been fixed.
 - No application code, D1 data, migrations, tests, PRs or deployments were changed in this phase.
+
+
+## Phase 3A — Isolated canonical project API implementation design
+
+**Scope:** Further source inspection of the canonical project/task/milestone implementation and its imports. No application code was changed and no tests were run.
+
+### 1. Verified canonical implementation structure
+
+The canonical PR #54 implementation is not split into standalone task and milestone endpoint modules. It is implemented in `functions/api/hq/projects.js` and exposes:
+- `handleHqProjects` — performs IP-level rate limiting, owner authorization, then delegates.
+- `handleAuthorizedHqProjects` — performs database availability checks, owner-scoped rate limiting and routes the authorized request.
+- `validateProject`, `validateTask`, `validateMilestone` — strict allowlist and value validation.
+
+Project-scoped task and milestone routes are handled as nested paths:
+- `/api/hq/projects/:projectId/tasks` — GET/POST
+- `/api/hq/projects/:projectId/tasks/:taskId` — PATCH
+- `/api/hq/projects/:projectId/milestones` — GET/POST
+- `/api/hq/projects/:projectId/milestones/:milestoneId` — PATCH
+
+The canonical implementation uses lowercase database enums, project-scoped validation, owner UID assignment, D1 mutation guard statements, and audit statements in the same D1 batch. It uses soft archival rather than hard deletion.
+
+### 2. Required canonical dependencies
+
+The canonical `projects.js` imports:
+- `authorizeHqOwner`, `hqJson`, `readHqJson`, `requireHqDatabase`, `ownerAuthorizationGuardStatement`, `auditStatement`, and `conditionalAuditStatement` from `functions/lib/hqApi.js`.
+- `checkHqRateLimit` from `functions/lib/hqRateLimit.js`.
+
+The canonical `hqApi.js` imports Firebase verification from `functions/lib/hqAuth.js`; that verifier imports `jose`. Therefore a safe isolated copy requires the complete compatible helper/auth dependency set and the declared `jose` package dependency. Copying only `projects.js` would leave unresolved or unsafe imports.
+
+The current GAIS main `functions/lib/hqApi.js` is a different implementation with legacy helper names and behavior. Replacing it in place would break GAIS endpoint modules that still import those legacy names. Do not overwrite the shared helper file as a shortcut.
+
+### 3. Route and method behavior
+
+Canonical nested task/milestone operations are project-scoped and do not support hard DELETE:
+- Task/milestone list and create are nested under a project.
+- Updates use PATCH with both project ID and child ID.
+- Unsupported method/path combinations return 404/405 from the canonical dispatcher.
+- The existing Worker has top-level compatibility aliases for task/milestone collections that require a projectId query parameter; those aliases still call the canonical project handler.
+
+GAIS task/milestone components and older standalone endpoint files expect different request shapes, status labels and CRUD affordances. A UI adapter is required; do not route GAIS calls directly to the canonical handlers without adapting them.
+
+### 4. Integration design decision
+
+Use a separately named canonical module family on the integration branch so existing GAIS imports remain stable:
+- `functions/lib/hqCanonicalAuth.js`
+- `functions/lib/hqCanonicalApi.js`
+- `functions/lib/hqCanonicalRateLimit.js`
+- `functions/api/hq/canonicalProjects.js`
+
+The copied modules must preserve the reviewed canonical implementation and only change relative import paths needed for isolation. Do not rename exports or relax authorization behavior. Add the canonical `jose` dependency and test command through a separately reviewed package manifest update.
+
+Then route only the supported project/task/milestone path patterns to `canonicalProjects.js` in the integration Worker, before the legacy GAIS catch-all router. Preserve canonical session behavior and do not expose GAIS enrollment. Before route activation, add tests proving:
+- canonical routes reach the canonical dispatcher;
+- unsupported paths/methods do not fall through to GAIS handlers;
+- canonical auth, same-origin, rate-limit and D1 owner guards remain in force;
+- project/task/milestone CRUD uses the canonical schema and lowercase enums;
+- no DELETE route hard-deletes project tasks or milestones.
+
+### 5. Important implementation caveat
+
+The canonical source has project detail aggregation that references adjacent modules/tables, including onboarding items. Before enabling the entire project-detail GET response on the GAIS branch, verify every referenced table exists in canonical D1. The integration should initially limit scope to the project/task/milestone operations required by the UI and avoid querying GAIS-only tables.
+
+### Phase 3A conclusion
+
+- Canonical project/task/milestone code can be isolated without replacing GAIS shared helpers, but the complete helper/auth/rate-limit dependency family must be isolated with it.
+- The route integration must be explicit and must precede the legacy GAIS router.
+- The first implementation batch is now sufficiently specified; it is still not implemented or tested.
+- No application code, D1 data, migrations, tests, PRs or deployments were changed.
