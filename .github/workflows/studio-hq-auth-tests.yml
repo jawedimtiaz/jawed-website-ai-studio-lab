@@ -1,6 +1,7 @@
 name: Studio HQ Firebase Auth Tests
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feat/studio-hq-firebase-auth
