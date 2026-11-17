@@ -242,7 +242,7 @@ test('Worker preserves global security headers on AI and contact-log API respons
     assert.equal(response.headers.get('x-frame-options'),'DENY');
     assert.equal(response.headers.get('x-content-type-options'),'nosniff');
     assert.match(response.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
-    assert.equal(response.headers.get('cross-origin-opener-policy'),'same-origin-allow-popups');
+    assert.equal(response.headers.get('cross-origin-opener-policy'),'same-origin');
   }
 });
 
