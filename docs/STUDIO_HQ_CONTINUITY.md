@@ -625,3 +625,55 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 
 ### Current verification boundary
 - This is stronger local/CI migration evidence, but not a remote D1 compatibility test. Keep preview and production migration execution behind explicit approval and a backup/restore plan.
+
+## 19. Phase 3.0 — Studio HQ UI workstream handoff (17 November 2026)
+
+### Purpose and scope
+- The next development priority is the Studio HQ dashboard UI, not further expansion of backend scope.
+- Target: improve the private `/studio-hq` experience with a professional, responsive business-management dashboard while preserving the existing API contracts, Firebase authentication, server-side owner authorization, data model and security controls.
+- Intended dashboard areas include overview, clients/CRM, projects and delivery, tasks/milestones, approvals, QA, quotations, invoices, payments and business operations. Do not assume every module is already exposed in the current UI; inspect API and page capabilities before implementing each area.
+- Treat all data as private business/customer information. Use synthetic/mock data for visual development until an explicitly approved and verified test environment is available.
+
+### New isolated UI development branch
+- Created GitHub branch: `feat/studio-hq-ui-20261117`.
+- Repository: `jawedimtiaz/jawed-website-ai-studio-lab`.
+- Branch starting commit: `9d795a2f1adea44a9ca38acc8cadcf1f09ac83a9`, the exact canonical PR #54 head verified immediately before branch creation.
+- Branch creation succeeded through the GitHub connector.
+- No application source files, configuration, database migrations, secrets or deployment settings were changed when creating this branch.
+- The existing continuity document is being updated on this new branch to preserve the handoff.
+
+### Canonical source review on the new branch
+- Read `src/pages/StudioHqPage.tsx`, `src/App.tsx`, `src/data/toolsData.ts` and the existing continuity document from `feat/studio-hq-ui-20261117`.
+- Confirmed that `StudioHqPage.tsx` already implements Google sign-in, server-side session verification through `/api/hq/session`, and owner-only rendering after the server returns an authorized identity.
+- Confirmed that the page contains existing client management, project management, project tasks and milestones, customer approvals and QA checklist workflows.
+- Confirmed `src/App.tsx` already lazy-loads the Studio HQ page at `/studio-hq` and suppresses the public site header/footer on that route.
+- The current page is a large component with substantial inline styling. This is the primary UI refactoring/design target; do not rewrite its authentication or data operations merely to change presentation.
+- The existing Tools listing is driven by `src/data/toolsData.ts`; PR #55 is a separate proposed entry-card change and remains dependent on PR #54.
+
+### GAIS workspace warning
+- The previously inspected Google AI Studio Build workspace `jawed-website-Lab` is stale, connected to the Lab repository's `main` branch, and lacks Git metadata in its local `/app/applet` snapshot.
+- Its code snapshot predates PR #51 and does not represent the canonical PR #54 source.
+- The GAIS import dialog previously showed no branch selector and warned that imported code would not remain synced with GitHub.
+- Do not edit the stale workspace, import it as if it were the new branch, unlink/relink GitHub, force-sync, or assume Build mode has switched branches.
+- Although the new GitHub branch now exists, a safe and verified way to open that exact branch in GAIS has not yet been established. Do not claim GAIS is connected to the new branch.
+
+### Current pull-request and release boundaries
+- PR #54 remains the canonical backend/security/schema foundation, open, draft and unmerged. Latest verified head at branch creation: `9d795a2f1adea44a9ca38acc8cadcf1f09ac83a9`.
+- PR #55 remains a separate draft proposal for the private Studio HQ entry card and is based on the PR #54 canonical branch. It must not be merged ahead of its dependency.
+- Do not merge PR #54 or #55, deploy a Worker, run D1 migrations, provision/change rate-limit resources, enroll an owner, change secrets, or use real customer/financial records without explicit approval.
+- Existing CI evidence and its boundaries are recorded in the preceding sections. In particular, successful dry-runs and in-memory SQLite tests do not prove preview/live Worker runtime behavior or remote D1 migration compatibility.
+
+### Pending work — execute in this order
+1. **Resolve the GAIS source workflow.** Establish whether GAIS can open the exact `feat/studio-hq-ui-20261117` branch. If it cannot, use GAIS only for design/specification or generated component proposals and apply reviewed changes through GitHub on this branch. Do not use the stale workspace.
+2. **Baseline the current UI.** Inspect the complete existing Studio HQ page, styles, shared components, icon library and package scripts on this branch. Record existing behavior and API calls before editing.
+3. **Agree the dashboard information architecture.** Define sidebar/navigation, overview KPIs, module sections, responsive behavior, empty/loading/error states and visual design tokens. Do not invent live metrics or imply unavailable backend modules work.
+4. **Implement in small UI-only increments.** Preserve authentication, authorization, API request semantics, validation and data contracts. Avoid backend, Wrangler, D1, secrets and customer data changes unless a separately identified defect blocks the UI and is approved.
+5. **Run evidence-based checks.** Run the repository's relevant lint/typecheck/build/tests and inspect the diff. Report exact commands and outcomes; do not claim browser/device testing unless actually performed.
+6. **Review the branch and prepare a draft PR** targeting the canonical PR #54 branch. Do not merge or deploy without explicit approval.
+7. **Later release readiness:** resolve rate-limit namespace ownership/uniqueness, complete preview runtime/auth verification, prepare and approve the D1 backup/restore and migration plan, establish controlled owner enrollment, and resolve the AdSense workflow status if all repository gates are required.
+
+### Handoff rule for a new chat
+- Start from repository `jawedimtiaz/jawed-website-ai-studio-lab`, branch `feat/studio-hq-ui-20261117`.
+- Treat GitHub as the source of truth. First fetch the branch head and this continuity document before making changes.
+- The immediate next task is pending item 1: safely resolve GAIS access to this exact branch. No dashboard UI implementation has started on this branch.
+- Keep Studio HQ Lab, Kaushal (`jawedimtiaz/advocate-kaushal-kishor`), Jewellery (`jawedimtiaz/ka-sons-jewellers`) and personal production website (`jawedimtiaz/jawed-website`) strictly separate.
