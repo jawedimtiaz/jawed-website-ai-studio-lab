@@ -362,3 +362,78 @@ Canonical migration 0001 already contains `clients`, `client_contacts`, `project
 - **Onboarding and Support:** GAIS-only tables; no direct canonical table exists.
 - **GAIS migration 0003:** must not be applied to the existing HQ D1.
 - **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
+
+
+## Phase 2J — Development, Analytics and Settings review
+
+**Scope:** Read-only review of GAIS Development, Analytics and Settings UI/API contracts against canonical PR #54 schema and release API. No application code, settings, D1 data or deployments were changed.
+
+### 1. Development module — repositories, deployments and release history
+
+GAIS UI exposes:
+- Repository metadata: project, repository name/URL, main and development branches, hosting platform, preview/production URLs, health status and notes.
+- Deployment log: project, repository, environment, version tag, branch, commit SHA, URL, status and release notes.
+- Release History subview, which is presented as a third tab but loads the same deployment/repository collections in the current UI implementation; it does not call a distinct release-history endpoint in the inspected component.
+
+Canonical migration 0001 already defines `repositories` and `deployments`, so these concepts have a direct schema foundation. However, the columns and allowed values differ:
+
+| Concept | GAIS UI / handler | Canonical schema | Required mapping |
+|---|---|---|---|
+| Repository name | `repo_name` | `repository_full_name` | Map and validate owner/repo identifier |
+| Repository URL | `repo_url` | `repository_url` | Direct concept; validate HTTPS URL |
+| Main branch | `main_branch` | `default_branch` | Map |
+| Development branch | `dev_branch` | No equivalent column | UI-only metadata or separately reviewed schema extension |
+| Hosting platform | `hosting_platform` | `provider` (github/gitlab/other) | Not equivalent; hosting provider needs separate field if required |
+| Preview/production URLs | Repository metadata fields | Deployment records carry `deployment_url` and `environment` | Model URLs as deployment history, not static repository columns |
+| Health | `deployment_status` | Deployment `status` per deployment record | Derive repository health from latest verified deployment; do not duplicate unverified health |
+| Deployment version | `version_tag` | No version-tag column | Store in release notes or add a reviewed field |
+| Deployment status | Title-case Succeeded/Failed etc. | pending/building/success/failed/rolled-back/cancelled | Explicit enum adapter |
+| Actor | GAIS stores owner email in `deployed_by` | `initiated_by` owner UID FK | Server-derived UID only |
+| Verification | Not equivalent in GAIS form | `verified_by`, `verified_at`, `verification_notes` | Preserve canonical verification evidence |
+
+Canonical schema includes deployment environment values preview/staging/production and status values pending/building/success/failed/rolled-back/cancelled. GAIS uses its own environment/status vocabulary. A deliberate mapping is required. A deployment record must not be described as verified merely because a user entered a URL or selected a success status.
+
+Canonical PR #54 `release.js` is a consolidated release workflow, not a drop-in version of the GAIS `repositories.js` and `deployments.js` endpoints. It includes canonical approval and QA operations with owner guards, audit statements and evidence URL validation. Repositories/deployments have schema coverage, but endpoint/UI integration still needs exact route and payload mapping.
+
+### 2. Analytics — GAIS assumptions do not match canonical schema
+
+GAIS `AnalyticsSection` expects `/api/hq/analytics` to return:
+- Summary: total revenue, total expenses, net profit, total outstanding and overdue outstanding.
+- Monthly revenue/expense series.
+- Customer performance, project performance and outstanding invoices.
+
+The GAIS analytics handler queries GAIS financial and operations columns, including `payments.payment_date`, `payments.status`, `invoices.paid_amount_minor`, `invoices.balance_due_minor`, `invoices.issue_date`, `invoices.due_date`, `expenses`, and GAIS title-case task/QA states.
+
+Canonical schema instead uses `payments.paid_at`, `invoices.amount_paid_minor`, `invoices.issued_on`, `invoices.due_on`, canonical payment archival/refund records, and lowercase task/QA states. Canonical schema does not currently contain an `expenses` table. Therefore the GAIS analytics SQL is incompatible with canonical D1 and cannot be reused.
+
+There is no dedicated canonical analytics handler in PR #54. Analytics should be implemented as read-only aggregates over canonical tables after financial calculations and expense support have been settled. Revenue must account for payment archival/refunds; outstanding must be derived consistently from invoice totals, payments and refunds; project metrics must use canonical task/QA enums. Expenses and profit reporting must clearly indicate whether expense tracking has been implemented—do not report a fabricated zero expense total as a true profit figure.
+
+### 3. Settings and audit — separate configuration from security controls
+
+GAIS Settings UI includes:
+- Owner profile display (current authenticated owner).
+- Security overview (allowed email list, enrolled owners, auth mode and audit count).
+- Editable workspace defaults (studio name, owner name, contact email, website, currency, tax rate, invoice terms and quotation validity).
+- Audit log search/list.
+
+GAIS `settings.js` reads/writes `studio_settings` and queries audit log fields such as `actor_email`, `entity_type`, `action`, and `entity_id`. GAIS migration 0003 creates `studio_settings`; canonical PR #54 migration 0001 does not. Canonical audit log structure and shared audit statements must be used instead of assuming GAIS audit columns.
+
+Canonical owner allowlist and authentication policy are security configuration, not editable workspace preferences. They must remain server-controlled (Worker environment/secret configuration and enrolled owner records) and must never be editable through the GAIS settings form. The canonical schema has `hq_users` and `audit_logs`, but no generic workspace settings table in the inspected migration. A safe workspace-preferences feature therefore needs a new, narrowly scoped canonical schema/API design and must exclude security-critical values.
+
+### 4. Integration decisions
+
+1. Preserve canonical repository/deployment schema and owner UID/verification semantics; create explicit UI adapters for names, enums and status labels.
+2. Treat deployment/release history as recorded metadata, not an action that deploys code. Actual Cloudflare deployment remains a separate privileged workflow and must not be triggered by this dashboard.
+3. Build a read-only canonical analytics API only after invoice/payment/refund and expense data models are stable. Do not port GAIS SQL.
+4. Keep owner allowlists, auth mode, rate-limit configuration, Firebase settings and D1 bindings outside editable workspace settings.
+5. If workspace preferences are needed, add a dedicated canonical preferences table with strict field allowlists, bounded values, server-derived actor UID and audit statement. Do not apply GAIS migration 0003.
+6. Audit-log search must adapt to canonical audit columns and must not expose tokens, secrets or sensitive request payloads.
+7. Add tests for deployment enum/actor validation, URL evidence, release approval requirements, analytics reconciliation against payments/refunds, and settings field allowlists.
+
+### Phase 2J findings
+
+- **Repositories/deployments:** canonical schema exists; GAIS fields and enums differ. Canonical release API is a different workflow and requires explicit route/payload integration.
+- **Release History:** the GAIS UI's inspected third tab currently reuses deployment/repository data; no separate history endpoint was found in the component.
+- **Analytics:** GAIS SQL is incompatible with canonical financial columns and assumes GAIS expenses; no canonical analytics endpoint exists yet.
+- **Settings:** GAIS relies on a table absent from canonical schema. Security configuration must remain server-controlled; workspace preferences require a separate additive design.
+- **No application code, migrations, D1 writes, automated tests, or deployments were performed in this phase.
