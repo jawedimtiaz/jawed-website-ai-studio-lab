@@ -1130,31 +1130,37 @@ tr:last-child td {
     border-left-color: #e11d48;
   }
 
+  .project-card[data-status-category="Active"] .status-badge__pill,
   .status-badge--active {
     background-color: #eff6ff;
     color: #1e40af;
     border-color: #bfdbfe;
   }
+  .project-card[data-status-category="Completed"] .status-badge__pill,
   .status-badge--completed {
     background-color: #ecfdf5;
     color: #065f46;
     border-color: #a7f3d0;
   }
+  .project-card[data-status-category="On Hold"] .status-badge__pill,
   .status-badge--on-hold {
     background-color: #fffbeb;
     color: #78350f;
     border-color: #fcd34d;
   }
+  .project-card[data-status-category="Maintenance"] .status-badge__pill,
   .status-badge--maintenance {
     background-color: #eef2ff;
     color: #3730a3;
     border-color: #c7d2fe;
   }
+  .project-card[data-status-category="Lead"] .status-badge__pill,
   .status-badge--lead {
     background-color: #f1f5f9;
     color: #1e293b;
     border-color: #cbd5e1;
   }
+  .project-card[data-status-category="Cancelled"] .status-badge__pill,
   .status-badge--cancelled {
     background-color: #fff1f2;
     color: #9f1239;
