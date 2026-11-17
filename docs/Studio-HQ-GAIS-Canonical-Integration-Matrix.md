@@ -525,3 +525,96 @@ Preserve the stricter canonical request authorization and response cache control
 - **Configuration:** GAIS main Wrangler config is missing canonical HQ D1 and rate-limit bindings; unsafe to deploy.
 - **Dependencies/tests:** GAIS main package manifest lacks canonical `jose` dependency and canonical test script; GAIS reported test results do not validate canonical implementation.
 - **Deployment status:** no deploy or migration occurred. The current integration work remains documentation-only.
+
+## Phase 2L — Prioritized integration defect register and acceptance checklist
+
+**Purpose:** Convert the read-only comparisons in Phases 2F–2K into a controlled implementation backlog. Documentation/planning only; no application code, D1 records, migrations, CI workflows or deployments were changed.
+
+### A. Release-blocking defects
+
+| ID | Priority | Defect | Required resolution | Acceptance evidence |
+|---|---|---|---|---|
+| HQ-001 | P0 | GAIS handlers use an incompatible auth/helper contract | Rebuild supported endpoints on canonical owner authorization, same-origin checks, owner guard, bounded parsing, rate limits and audit statements | Tests reject unauthenticated, wrong-origin, unenrolled and disabled owners; mutation guard and audit are atomic |
+| HQ-002 | P0 | GAIS Wrangler config omits canonical HQ D1 and rate-limit bindings | Reconcile config and independently verify actual preview resources | Config validation and read-only Cloudflare inventory |
+| HQ-003 | P0 | GAIS and canonical migrations 0001/0002 define different schemas | Preserve canonical migration history; never apply GAIS 0002/0003; use newly numbered reviewed migrations only | Migration diff and isolated preview D1 schema tests |
+| HQ-004 | P0 | GAIS router imports incompatible handlers and exposes enrollment | Build an explicit canonical route allowlist; do not expose session enrollment | Route/method tests and enrollment denial |
+| HQ-005 | P0 | Canonical task/milestone handlers conflict with canonical migration table/column names and enums | Correct handlers to project_tasks/project_milestones and canonical lowercase enums | CRUD, archive, project validation and enum tests |
+| HQ-006 | P0 | GAIS financial models differ from canonical schema; proposals/expenses are absent canonically | Build typed adapters; design proposals/expenses separately; preserve refund/idempotency semantics | Totals, rounding, refunds, duplicate requests, numbering and ownership tests |
+| HQ-007 | P0 | GAIS package manifest lacks canonical jose dependency and test:hq-auth script | Reconcile dependencies and canonical tests on integration branch | Clean install, build, typecheck and canonical test command pass |
+| HQ-008 | P0 | Live rate-limit bindings were previously absent while canonical auth expects fail-closed bindings | Verify/provision approved bindings before preview | Read-only inventory and authorized preview limiter tests |
+
+### B. High-priority functional gaps
+
+| ID | Priority | Defect | Required resolution | Acceptance evidence |
+|---|---|---|---|---|
+| HQ-009 | P1 | Client/project/task/milestone payloads and response envelopes differ | Typed adapters for fields, enums, dates and envelopes | Contract tests for operations and UI states |
+| HQ-010 | P1 | Approvals and QA same-name tables have different fields, enums and actor semantics | Adapt UI to canonical approval and QA evidence models; derive actor UID server-side | Enum, evidence URL, decision and immutable actor tests |
+| HQ-011 | P1 | Maintenance field/enum differences | Complete canonical handler/table comparison and adapter | Schema/API contract and lifecycle tests |
+| HQ-012 | P1 | Onboarding and Support have no canonical tables | Design canonical schema, retention and lifecycle before implementation | Threat review, additive migration and audit/archive tests |
+| HQ-013 | P1 | Repository/deployment fields and enums differ | Map canonical deployment verification; keep actual deployment outside dashboard | Metadata action cannot deploy; actor UID and evidence tests |
+| HQ-014 | P1 | Analytics SQL uses incompatible financial columns and absent expenses | Implement read-only aggregates after financial model stabilizes; account for refunds | Fixture-based invoice/payment/refund reconciliation |
+| HQ-015 | P1 | Settings requires absent studio_settings and overlaps security configuration | Design narrowly scoped preferences; keep auth, allowlist, secrets and bindings server-controlled | Field allowlist and audit tests |
+| HQ-016 | P1 | GAIS destructive delete/reversal differs from canonical archive/refund model | Replace with explicit archive/refund workflows | Financial history retained and reversal audited |
+
+### C. Product and quality gaps
+
+| ID | Priority | Defect | Required resolution | Acceptance evidence |
+|---|---|---|---|---|
+| HQ-017 | P2 | Release History tab reuses deployment/repository data | Decide whether a separate release timeline is required | Real canonical records distinguish release approval from deployment |
+| HQ-018 | P2 | UI status labels differ from canonical enums | Centralize typed conversion and reject unknown states | Unit tests for valid and unknown values |
+| HQ-019 | P2 | Integrated dashboard responsive/accessibility behavior not verified | Browser QA after preview is functional | Desktop/mobile, keyboard and accessibility evidence |
+| HQ-020 | P2 | Private page/API headers differ between Worker versions | Preserve canonical auth and private response policy on every route | Header tests for private page and nested API routes |
+
+### D. Implementation order and gates
+
+**Gate 0 — Repository and environment protection**
+- Work only on feat/studio-hq-gais-integration-20261117.
+- Keep PR #54, PR #55, PR #26 and PR #27 unchanged.
+- Do not push integration work to main.
+- No production deployment, live D1 migration, owner enrollment or paid service changes.
+- Inspect branch base and changed-file diff before each implementation batch.
+
+**Gate 1 — Repair canonical foundation**
+- Resolve HQ-005 task/milestone handler/schema mismatch.
+- Reconcile canonical auth/rate-limit dependencies, test scripts and Worker config.
+- Define allowlisted routes for session, clients, projects, tasks, milestones and read-only overview.
+- Do not expose enrollment.
+- Run canonical tests and build; record actual output.
+
+**Gate 2 — Connect the first UI slice**
+- Adapt dashboard shell/navigation to canonical session and service contracts.
+- Connect read-only Overview, Clients, Projects, Tasks and Milestones.
+- Hide unsupported modules or clearly mark unavailable; never render fabricated data.
+- Verify owner-only access and private headers in isolated preview.
+
+**Gate 3 — Add business and operations**
+- Financial adapters and tests.
+- Approvals/QA/Maintenance adapters.
+- Add proposals, expenses, onboarding and support only through separately reviewed additive schema/API changes.
+
+**Gate 4 — Governance and analytics**
+- Repository/deployment/release adapters.
+- Read-only analytics after financial integrity is proven.
+- Workspace preferences and audit-log UI using canonical schema.
+- Responsive, accessibility, security and regression QA.
+
+### E. Definition of done for each implementation batch
+
+1. Exact changed files and rationale recorded.
+2. Canonical schema and route contract reviewed.
+3. Typecheck and production build pass.
+4. Relevant unit/API/auth/rate-limit tests pass.
+5. No secrets in source, logs, bundles or committed artifacts.
+6. Unauthorized, wrong-origin and invalid-payload cases fail safely.
+7. Owner guard and audit behavior verified for mutations.
+8. Preview uses isolated D1 and rate-limit resources.
+9. Public Lab tools and customer project separation remain intact.
+10. No production action without explicit approval.
+
+### Phase 2L conclusion
+
+- The implementation is **not ready for deployment**.
+- First resolve the canonical task/milestone handler/schema mismatch and establish the canonical auth/config/test foundation before connecting the GAIS dashboard.
+- Clients/Projects have the clearest path after adapters; Financial, Operations, Analytics and Settings need additional canonical design.
+- This register is a plan, not evidence that defects have been fixed.
+- No application code, D1 data, migrations, tests, PRs or deployments were changed in this phase.
