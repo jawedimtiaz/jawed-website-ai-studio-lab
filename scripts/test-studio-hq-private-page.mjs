@@ -18,17 +18,27 @@ test('Studio HQ has an explicit private route and hides public chrome', () => {
   assert.match(app, /!isStudioHq\s*&&\s*<PwaInstallPrompt\s*\/>/);
 });
 
-test('Studio HQ Google popup auth has narrowly scoped compatible security headers', () => {
-  for (const source of [workerEntry, headers]) {
-    assert.ok(source.includes('same-origin-allow-popups'));
-    assert.ok(source.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"));
-    assert.ok(source.includes('https://identitytoolkit.googleapis.com'));
-    assert.ok(source.includes('https://securetoken.googleapis.com'));
-    assert.ok(source.includes('https://firestore.googleapis.com'));
-    assert.ok(source.includes("script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com https://apis.google.com;"));
-  }
-  assert.ok(headers.includes('Cross-Origin-Opener-Policy: same-origin-allow-popups'));
-  assert.ok(!headers.includes("frame-src 'none'"));
+test('Public routes retain strict global security headers while Google popup compatibility is scoped to Studio HQ', () => {
+  assert.ok(headers.includes('Cross-Origin-Opener-Policy: same-origin'));
+  assert.ok(headers.includes("frame-src 'none'"));
+  assert.ok(!headers.includes('same-origin-allow-popups'));
+  assert.ok(!headers.includes('https://refined-actor-skhlb.firebaseapp.com'));
+
+  const privateHelper = workerEntry.slice(
+    workerEntry.indexOf('function addPrivatePageHeaders'),
+    workerEntry.indexOf('export default')
+  );
+  assert.ok(privateHelper.includes("headers.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups')"));
+  assert.ok(privateHelper.includes("frame-src 'self' https://refined-actor-skhlb.firebaseapp.com"));
+  for (const origin of [
+    'https://identitytoolkit.googleapis.com',
+    'https://securetoken.googleapis.com',
+    'https://firestore.googleapis.com',
+    'https://www.googleapis.com'
+  ]) assert.ok(privateHelper.includes(origin), 'HQ-only CSP must allow ' + origin);
+  assert.ok(privateHelper.includes('https://apis.google.com'));
+  assert.ok(workerEntry.includes("'Content-Security-Policy': \"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'none';"));
+  assert.ok(workerEntry.includes("pathname === '/studio-hq' || pathname.startsWith('/studio-hq/')"));
 });
 test('Studio HQ session checks the canonical API response and does not cache requests', () => {
   assert.match(page, /fetch\(['"]\/api\/hq\/session['"]/);
