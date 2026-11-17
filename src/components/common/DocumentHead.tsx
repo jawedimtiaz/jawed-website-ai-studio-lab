@@ -15,6 +15,35 @@ export const DocumentHead: React.FC = () => {
 
     // Normalize path by stripping trailing slash for matching
     const cleanPath = pathname.replace(/\/$/, '') || '/';
+    const isPrivateHq = cleanPath === '/studio-hq' || cleanPath.startsWith('/studio-hq/');
+
+    if (isPrivateHq) {
+      document.title = 'Studio HQ | Jawed Web Studio';
+      let metaDesc = document.querySelector('meta[name="description"]');
+      if (!metaDesc) {
+        metaDesc = document.createElement('meta');
+        metaDesc.setAttribute('name', 'description');
+        document.head.appendChild(metaDesc);
+      }
+      metaDesc.setAttribute('content', 'Private Business Management HQ for Jawed Web Studio.');
+
+      let metaRobots = document.querySelector('meta[name="robots"]');
+      if (!metaRobots) {
+        metaRobots = document.createElement('meta');
+        metaRobots.setAttribute('name', 'robots');
+        document.head.appendChild(metaRobots);
+      }
+      metaRobots.setAttribute('content', 'noindex, nofollow');
+
+      document.querySelector('link[rel="canonical"]')?.remove();
+      document.querySelector('script[type="application/ld+json"]')?.remove();
+      return;
+    } else {
+      const metaRobots = document.querySelector('meta[name="robots"]');
+      if (metaRobots) {
+        metaRobots.setAttribute('content', 'index, follow');
+      }
+    }
 
     if (cleanPath === '/') {
       title = 'Jawed Imtiaz | IT Support & Workplace Technology';

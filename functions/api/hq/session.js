@@ -1,13 +1,16 @@
 // functions/api/hq/session.js
-// Studio HQ Session API Endpoint
+// Studio HQ Session & Controlled Enrollment Endpoint
 
-import { verifyAndAuthorizeOwner, jsonResponse } from '../../lib/hqApi.js';
+import {
+  verifyAndAuthorizeOwner,
+  controlledOwnerBootstrap,
+  jsonResponse,
+  hqOptionsResponse
+} from '../../lib/hqApi.js';
 
 export async function onRequestGet({ request, env }) {
-  const auth = await verifyAndAuthorizeOwner(request, env);
-  if (!auth.authorized) {
-    return auth.response;
-  }
+  const auth = await verifyAndAuthorizeOwner(request, env, { rateLimitKind: 'session' });
+  if (!auth.authorized) return auth.response;
 
   return jsonResponse({
     success: true,
@@ -18,10 +21,13 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const auth = await verifyAndAuthorizeOwner(request, env);
-  if (!auth.authorized) {
-    return auth.response;
+  const url = new URL(request.url);
+  if (url.pathname.endsWith('/enroll') || url.pathname.endsWith('/enroll/')) {
+    return controlledOwnerBootstrap(request, env);
   }
+
+  const auth = await verifyAndAuthorizeOwner(request, env, { rateLimitKind: 'session' });
+  if (!auth.authorized) return auth.response;
 
   return jsonResponse({
     success: true,
@@ -33,13 +39,5 @@ export async function onRequestPost({ request, env }) {
 }
 
 export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'access-control-allow-headers': 'content-type, authorization',
-      'access-control-max-age': '86400'
-    }
-  });
+  return hqOptionsResponse('GET, POST, OPTIONS');
 }

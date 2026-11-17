@@ -4,13 +4,16 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../lib/firebase';
 
 const BOOTSTRAPPED_TECH_EMAIL = 'jawedimtiaz@gmail.com';
+export const STUDIO_HQ_ALLOWED_EMAILS = ['jawedimtiaz@gmail.com', 'jawed@jawed.co.in'];
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   isTech: boolean;
+  isStudioEmail: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
   authError: string | null;
 }
 
@@ -18,8 +21,10 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   isTech: false,
+  isStudioEmail: false,
   signInWithGoogle: async () => {},
   logout: async () => {},
+  getIdToken: async () => null,
   authError: null
 });
 
@@ -27,6 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTech, setIsTech] = useState(false);
+  const [isStudioEmail, setIsStudioEmail] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,8 +41,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthError(null);
 
       if (currentUser) {
+        const lowerEmail = currentUser.email?.trim().toLowerCase() || '';
+        setIsStudioEmail(Boolean(currentUser.emailVerified && STUDIO_HQ_ALLOWED_EMAILS.includes(lowerEmail)));
+
         // Check if bootstrapped technician or has admin doc
-        const isBootstrapped = currentUser.email?.toLowerCase() === BOOTSTRAPPED_TECH_EMAIL.toLowerCase();
+        const isBootstrapped = lowerEmail === BOOTSTRAPPED_TECH_EMAIL.toLowerCase();
         if (isBootstrapped) {
           setIsTech(true);
         } else {
@@ -49,6 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         setIsTech(false);
+        setIsStudioEmail(false);
       }
 
       setLoading(false);
@@ -82,8 +92,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const getIdToken = async (forceRefresh = false) => {
+    if (!auth.currentUser) return null;
+    try {
+      return await auth.currentUser.getIdToken(forceRefresh);
+    } catch {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, isTech, signInWithGoogle, logout, authError }}>
+    <AuthContext.Provider value={{ user, loading, isTech, isStudioEmail, signInWithGoogle, logout, getIdToken, authError }}>
       {children}
     </AuthContext.Provider>
   );

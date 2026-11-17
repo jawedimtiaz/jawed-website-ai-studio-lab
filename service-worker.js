@@ -53,6 +53,7 @@ const isDynamicRequest = (request) => {
   if (url.origin !== self.location.origin) return true;
   if (request.method !== 'GET') return true;
   if (url.pathname.startsWith('/api/')) return true;
+  if (url.pathname === '/studio-hq' || url.pathname.startsWith('/studio-hq/')) return true;
   return false;
 };
 

@@ -1,30 +1,50 @@
 // tests/hq-authorization.test.js
-// Automated Unit & Integration Tests for Studio HQ Owner Authorization Hardening
+// Automated Unit & Security Tests for Studio HQ Cryptographic Authorization & Hardening
 
-import { test, describe } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
-import { verifyFirebaseToken, decodeJwt } from '../functions/lib/hqAuth.js';
-import { verifyAndAuthorizeOwner, auditLog } from '../functions/lib/hqApi.js';
-import { onRequestGet as sessionGet, onRequestPost as sessionPost } from '../functions/api/hq/session.js';
-import { onRequestGet as clientsGet, onRequestPost as clientsPost } from '../functions/api/hq/clients.js';
-import { onRequestGet as projectsGet, onRequestPost as projectsPost } from '../functions/api/hq/projects.js';
+import { verifyFirebaseToken, clearJwksCacheForTests } from '../functions/lib/hqAuth.js';
+import { verifyAndAuthorizeOwner, controlledOwnerBootstrap } from '../functions/lib/hqApi.js';
+import { createLocalD1, applyHqMigrations } from '../functions/lib/localD1.js';
+import { onRequestGet as sessionGet } from '../functions/api/hq/session.js';
+import { onRequestGet as clientsGet } from '../functions/api/hq/clients.js';
+import { onRequestGet as projectsGet } from '../functions/api/hq/projects.js';
 
-const PROJECT_ID = 'ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb';
+const PROJECT_ID = 'refined-actor-skhlb';
+const KEY_ID = 'test-rs256-key-1';
 
-/**
- * Creates a mock Base64URL-encoded RS256 JWT for testing.
- */
-function createMockToken({
+// Generate ephemeral RSA-2048 keypair in memory for cryptographic JWT signing tests
+const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048
+});
+const publicJwk = {
+  ...publicKey.export({ format: 'jwk' }),
+  kid: KEY_ID,
+  alg: 'RS256',
+  use: 'sig'
+};
+
+function toBase64Url(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(JSON.stringify(input), 'utf8');
+  return buf.toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function createSignedJwt({
   uid = 'owner-uid-123',
   email = 'jawedimtiaz@gmail.com',
   emailVerified = true,
   exp = Math.floor(Date.now() / 1000) + 3600,
+  iat = Math.floor(Date.now() / 1000) - 30,
+  auth_time = Math.floor(Date.now() / 1000) - 30,
   iss = `https://securetoken.google.com/${PROJECT_ID}`,
   aud = PROJECT_ID,
-  alg = 'RS256'
+  alg = 'RS256',
+  kid = KEY_ID,
+  tamperSignature = false
 } = {}) {
-  const header = { alg, typ: 'JWT' };
+  const header = { alg, typ: 'JWT', ...(kid !== undefined ? { kid } : {}) };
   const payload = {
     iss,
     aud,
@@ -32,284 +52,271 @@ function createMockToken({
     user_id: uid,
     email,
     email_verified: emailVerified,
+    name: 'Jawed Owner',
     exp,
-    auth_time: Math.floor(Date.now() / 1000) - 10
+    iat,
+    auth_time
   };
 
-  const toB64Url = (obj) =>
-    Buffer.from(JSON.stringify(obj))
-      .toString('base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+  const signingInput = `${toBase64Url(header)}.${toBase64Url(payload)}`;
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(signingInput);
+  signer.end();
+  let signature = signer.sign(privateKey);
 
-  return `${toB64Url(header)}.${toB64Url(payload)}.mockSignatureString123`;
-}
-
-/**
- * In-Memory Mock D1 Database Implementation for Node Tests.
- */
-class MockD1Database {
-  constructor(initialUsers = [], initialAuditLogs = [], initialClients = [], initialProjects = []) {
-    this.users = new Map(initialUsers.map((u) => [u.id, { ...u }]));
-    this.auditLogs = [...initialAuditLogs];
-    this.clients = new Map(initialClients.map((c) => [c.id, { ...c }]));
-    this.projects = new Map(initialProjects.map((p) => [p.id, { ...p }]));
+  if (tamperSignature) {
+    signature[0] = signature[0] ^ 0xff;
   }
 
-  prepare(sql) {
-    const db = this;
-    let boundParams = [];
+  return `${signingInput}.${toBase64Url(signature)}`;
+}
 
-    const stmt = {
-      bind(...params) {
-        boundParams = params;
-        return stmt;
-      },
+function createFreshTestDb() {
+  const db = createLocalD1(':memory:');
+  applyHqMigrations(db);
+  return db;
+}
 
-      async first() {
-        if (sql.includes('SELECT id, email, role, status')) {
-          const uid = boundParams[0];
-          return db.users.get(uid) || null;
-        }
-        if (sql.includes('SELECT COUNT(*) as total FROM hq_users')) {
-          return { total: db.users.size };
-        }
-        return null;
-      },
+describe('Studio HQ Cryptographic Auth & Owner Authorization Suite', () => {
+  let originalFetch;
 
-      async all() {
-        if (sql.includes('FROM hq_clients')) {
-          return { results: Array.from(db.clients.values()) };
-        }
-        if (sql.includes('FROM hq_projects')) {
-          return { results: Array.from(db.projects.values()) };
-        }
-        return { results: [] };
-      },
-
-      async run() {
-        if (sql.includes('INSERT INTO hq_users')) {
-          const [id, email, role, status, created_at, updated_at, last_login_at] = boundParams;
-          if (!db.users.has(id)) {
-            db.users.set(id, { id, email, role, status, created_at, updated_at, last_login_at });
+  beforeEach(() => {
+    clearJwksCacheForTests();
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('securetoken@system.gserviceaccount.com')) {
+        return new Response(JSON.stringify({ keys: [publicJwk] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'public, max-age=3600'
           }
-          return { meta: { changes: 1 } };
-        }
-
-        if (sql.includes('UPDATE hq_users')) {
-          const [last_login_at, updated_at, id] = boundParams;
-          const user = db.users.get(id);
-          // Crucial test requirement: UPDATE hq_users SET ... WHERE status = 'active'
-          if (user && user.status === 'active') {
-            user.last_login_at = last_login_at;
-            user.updated_at = updated_at;
-            return { meta: { changes: 1 } };
-          }
-          return { meta: { changes: 0 } };
-        }
-
-        if (sql.includes('INSERT INTO hq_audit_logs')) {
-          const [id, user_id, action, status, details, ip_address, created_at] = boundParams;
-          db.auditLogs.push({ id, user_id, action, status, details, ip_address, created_at });
-          return { meta: { changes: 1 } };
-        }
-
-        if (sql.includes('INSERT INTO hq_clients')) {
-          const [id, name, company, email, phone, status, created_at, updated_at] = boundParams;
-          db.clients.set(id, { id, name, company, email, phone, status, created_at, updated_at });
-          return { meta: { changes: 1 } };
-        }
-
-        if (sql.includes('INSERT INTO hq_projects')) {
-          const [id, client_id, title, description, status, budget, created_at, updated_at] = boundParams;
-          db.projects.set(id, { id, client_id, title, description, status, budget, created_at, updated_at });
-          return { meta: { changes: 1 } };
-        }
-
-        return { meta: { changes: 0 } };
+        });
       }
+      throw new Error(`Unexpected external fetch in unit test: ${url}`);
     };
+  });
 
-    return stmt;
-  }
-}
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    clearJwksCacheForTests();
+  });
 
-describe('Studio HQ Owner Authorization Hardening Suite', () => {
-  const env = {
+  const baseEnv = {
+    ENVIRONMENT: 'test',
     FIREBASE_PROJECT_ID: PROJECT_ID,
-    HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com'
+    HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com,jawed@jawed.co.in'
   };
 
-  test('1. Authorized active owner succeeds', async () => {
-    const db = new MockD1Database([
-      { id: 'uid-active-1', email: 'jawedimtiaz@gmail.com', role: 'owner', status: 'active', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'uid-active-1', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
+  test('1. Real RS256 JWKS verification succeeds for both allowlisted owner emails', async () => {
+    const db = createFreshTestDb();
+    const now = new Date().toISOString();
+    await db
+      .prepare(`INSERT INTO hq_users (uid, email, display_name, status, created_at, last_seen_at) VALUES (?, ?, ?, 'active', ?, ?)`)
+      .bind('uid-gmail', 'jawedimtiaz@gmail.com', 'Jawed Gmail', now, now)
+      .run();
+    await db
+      .prepare(`INSERT INTO hq_users (uid, email, display_name, status, created_at, last_seen_at) VALUES (?, ?, ?, 'active', ?, ?)`)
+      .bind('uid-domain', 'jawed@jawed.co.in', 'Jawed Domain', now, now)
+      .run();
 
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, true);
-    assert.equal(result.owner.id, 'uid-active-1');
-    assert.equal(result.owner.status, 'active');
+    for (const [uid, email] of [
+      ['uid-gmail', 'jawedimtiaz@gmail.com'],
+      ['uid-domain', 'jawed@jawed.co.in']
+    ]) {
+      const token = createSignedJwt({ uid, email });
+      const req = new Request('https://lab.jawed.co.in/api/hq/session', {
+        headers: { authorization: `Bearer ${token}` }
+      });
+      const res = await verifyAndAuthorizeOwner(req, { ...baseEnv, HQ_DB: db });
+      assert.equal(res.authorized, true);
+      assert.equal(res.owner.uid, uid);
+      assert.equal(res.owner.email, email);
+      assert.equal(res.owner.status, 'active');
+    }
+    db.close();
   });
 
-  test('2. Disabled owner is rejected with HTTP 403 OWNER_DISABLED', async () => {
-    const db = new MockD1Database([
-      { id: 'uid-disabled-1', email: 'jawedimtiaz@gmail.com', role: 'owner', status: 'disabled', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'uid-disabled-1', email: 'jawedimtiaz@gmail.com' });
+  test('2. Tampered RS256 signature is rejected with 401 INVALID_SIGNATURE', async () => {
+    const token = createSignedJwt({ tamperSignature: true });
+    const result = await verifyFirebaseToken(token, baseEnv);
+    assert.equal(result.valid, false);
+    assert.equal(result.code, 'INVALID_SIGNATURE');
+  });
+
+  test('3. Unknown signing key ID (kid) is rejected with 401 UNKNOWN_KID', async () => {
+    const token = createSignedJwt({ kid: 'unknown-kid-999' });
+    const result = await verifyFirebaseToken(token, baseEnv);
+    assert.equal(result.valid, false);
+    assert.equal(result.code, 'UNKNOWN_KID');
+  });
+
+  test('4. Non-RS256 algorithm (HS256) and expired tokens are rejected', async () => {
+    const badAlg = createSignedJwt({ alg: 'HS256' });
+    const algRes = await verifyFirebaseToken(badAlg, baseEnv);
+    assert.equal(algRes.valid, false);
+    assert.equal(algRes.code, 'INVALID_ALGORITHM');
+
+    const expired = createSignedJwt({ exp: Math.floor(Date.now() / 1000) - 60 });
+    const expRes = await verifyFirebaseToken(expired, baseEnv);
+    assert.equal(expRes.valid, false);
+    assert.equal(expRes.code, 'TOKEN_EXPIRED');
+
+    const unverified = createSignedJwt({ emailVerified: false });
+    const unvRes = await verifyFirebaseToken(unverified, baseEnv);
+    assert.equal(unvRes.valid, false);
+    assert.equal(unvRes.code, 'EMAIL_UNVERIFIED');
+  });
+
+  test('5. Un-enrolled owner fails closed with 403 OWNER_NOT_ENROLLED (no implicit auto-enroll)', async () => {
+    const db = createFreshTestDb();
+    const token = createSignedJwt({ uid: 'uid-new-1', email: 'jawedimtiaz@gmail.com' });
     const req = new Request('https://lab.jawed.co.in/api/hq/session', {
       headers: { authorization: `Bearer ${token}` }
     });
 
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
+    const result = await verifyAndAuthorizeOwner(req, { ...baseEnv, HQ_DB: db });
     assert.equal(result.authorized, false);
-
-    const body = await result.response.json();
     assert.equal(result.response.status, 403);
-    assert.equal(body.error.code, 'OWNER_DISABLED');
-  });
-
-  test('3. First-owner bootstrap enrollment creates active owner when DB is empty', async () => {
-    const db = new MockD1Database([]); // Empty DB
-    const token = createMockToken({ uid: 'uid-first-owner', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
-
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, true);
-    assert.equal(result.owner.id, 'uid-first-owner');
-    assert.equal(result.owner.status, 'active');
-
-    // Verify audit log entry
-    const audit = db.auditLogs.find((l) => l.action === 'OWNER_ENROLLED');
-    assert.ok(audit);
-    assert.equal(audit.user_id, 'uid-first-owner');
-  });
-
-  test('4. Missing owner rejected when owners already exist in DB', async () => {
-    const db = new MockD1Database([
-      { id: 'existing-owner', email: 'jawedimtiaz@gmail.com', role: 'owner', status: 'active', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'unregistered-uid', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
-
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, false);
-
     const body = await result.response.json();
-    assert.equal(result.response.status, 403);
     assert.equal(body.error.code, 'OWNER_NOT_ENROLLED');
+
+    const countRow = await db.prepare('SELECT COUNT(*) as total FROM hq_users').first();
+    assert.equal(Number(countRow.total), 0);
+
+    const audit = await db
+      .prepare(`SELECT action FROM audit_logs WHERE action = 'OWNER_ENROLLMENT_REJECTED'`)
+      .first();
+    assert.ok(audit);
+    db.close();
   });
 
-  test('5. Email mismatch between Firebase token and stored D1 record is rejected with HTTP 403', async () => {
-    const db = new MockD1Database([
-      { id: 'uid-mismatch', email: 'different@gmail.com', role: 'owner', status: 'active', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'uid-mismatch', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
+  test('6. Controlled bootstrap respects ALLOW_CONTROLLED_BOOTSTRAP and non-empty hq_users gate', async () => {
+    const db = createFreshTestDb();
+    const token1 = createSignedJwt({ uid: 'uid-boot-1', email: 'jawedimtiaz@gmail.com' });
+    const token2 = createSignedJwt({ uid: 'uid-boot-2', email: 'jawed@jawed.co.in' });
 
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, false);
+    // Disabled by default
+    const disabledRes = await controlledOwnerBootstrap(
+      new Request('https://lab.jawed.co.in/api/hq/session/enroll', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token1}` }
+      }),
+      { ...baseEnv, HQ_DB: db }
+    );
+    assert.equal(disabledRes.status, 403);
+    assert.equal((await disabledRes.json()).error.code, 'BOOTSTRAP_DISABLED');
 
-    const body = await result.response.json();
-    assert.equal(result.response.status, 403);
-    assert.equal(body.error.code, 'EMAIL_MISMATCH');
+    // Enabled when explicitly set and table is empty
+    const enabledRes = await controlledOwnerBootstrap(
+      new Request('https://lab.jawed.co.in/api/hq/session/enroll', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token1}` }
+      }),
+      { ...baseEnv, ALLOW_CONTROLLED_BOOTSTRAP: 'true', HQ_DB: db }
+    );
+    assert.equal(enabledRes.status, 201);
+    const bootBody = await enabledRes.json();
+    assert.equal(bootBody.enrolled, true);
+    assert.equal(bootBody.owner.uid, 'uid-boot-1');
+
+    // Subsequent bootstrap rejected when owner already exists
+    const secondRes = await controlledOwnerBootstrap(
+      new Request('https://lab.jawed.co.in/api/hq/session/enroll', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token2}` }
+      }),
+      { ...baseEnv, ALLOW_CONTROLLED_BOOTSTRAP: 'true', HQ_DB: db }
+    );
+    assert.equal(secondRes.status, 403);
+    assert.equal((await secondRes.json()).error.code, 'OWNER_ALREADY_EXISTS');
+    db.close();
   });
 
-  test('6. Unauthorized Firebase account (not in allowlist) is rejected with HTTP 403', async () => {
-    const db = new MockD1Database([]);
-    const token = createMockToken({ uid: 'attacker-uid', email: 'attacker@evil.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
+  test('7. Disabled owner rejected (403 OWNER_DISABLED) and cannot be reactivated or query endpoints', async () => {
+    const db = createFreshTestDb();
+    const now = new Date().toISOString();
+    await db
+      .prepare(`INSERT INTO hq_users (uid, email, display_name, status, created_at, last_seen_at) VALUES (?, ?, ?, 'disabled', ?, ?)`)
+      .bind('uid-disabled', 'jawedimtiaz@gmail.com', 'Disabled Owner', now, now)
+      .run();
 
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, false);
+    const token = createSignedJwt({ uid: 'uid-disabled', email: 'jawedimtiaz@gmail.com' });
+    const headers = { authorization: `Bearer ${token}` };
+    const env = { ...baseEnv, HQ_DB: db };
 
-    const body = await result.response.json();
-    assert.equal(result.response.status, 403);
-    assert.equal(body.error.code, 'UNAUTHORIZED_EMAIL');
+    const sRes = await sessionGet({ request: new Request('https://lab.jawed.co.in/api/hq/session', { headers }), env });
+    assert.equal(sRes.status, 403);
+    assert.equal((await sRes.json()).error.code, 'OWNER_DISABLED');
+
+    const cRes = await clientsGet({ request: new Request('https://lab.jawed.co.in/api/hq/clients', { headers }), env });
+    assert.equal(cRes.status, 403);
+
+    const pRes = await projectsGet({ request: new Request('https://lab.jawed.co.in/api/hq/projects', { headers }), env });
+    assert.equal(pRes.status, 403);
+
+    const row = await db.prepare('SELECT status FROM hq_users WHERE uid = ?').bind('uid-disabled').first();
+    assert.equal(row.status, 'disabled');
+    db.close();
   });
 
-  test('7. Missing HQ_DB binding fails closed with HTTP 503 DATABASE_UNAVAILABLE', async () => {
-    const token = createMockToken({ uid: 'uid-active-1', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      headers: { authorization: `Bearer ${token}` }
-    });
+  test('8. Email mismatch between token and D1 row fails closed with 403 EMAIL_MISMATCH', async () => {
+    const db = createFreshTestDb();
+    const now = new Date().toISOString();
+    await db
+      .prepare(`INSERT INTO hq_users (uid, email, display_name, status, created_at, last_seen_at) VALUES (?, ?, ?, 'active', ?, ?)`)
+      .bind('uid-mismatch', 'jawed@jawed.co.in', 'Mismatch Owner', now, now)
+      .run();
 
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: null });
-    assert.equal(result.authorized, false);
-
-    const body = await result.response.json();
-    assert.equal(result.response.status, 503);
-    assert.equal(body.error.code, 'DATABASE_UNAVAILABLE');
+    const token = createSignedJwt({ uid: 'uid-mismatch', email: 'jawedimtiaz@gmail.com' });
+    const res = await verifyAndAuthorizeOwner(
+      new Request('https://lab.jawed.co.in/api/hq/session', { headers: { authorization: `Bearer ${token}` } }),
+      { ...baseEnv, HQ_DB: db }
+    );
+    assert.equal(res.authorized, false);
+    assert.equal(res.response.status, 403);
+    assert.equal((await res.response.json()).error.code, 'EMAIL_MISMATCH');
+    db.close();
   });
 
-  test('8. Disabled owner status CANNOT be reactivated by login attempt', async () => {
-    const db = new MockD1Database([
-      { id: 'disabled-user', email: 'jawedimtiaz@gmail.com', role: 'owner', status: 'disabled', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'disabled-user', email: 'jawedimtiaz@gmail.com' });
-    const req = new Request('https://lab.jawed.co.in/api/hq/session', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` }
-    });
-
-    const result = await verifyAndAuthorizeOwner(req, { ...env, HQ_DB: db });
-    assert.equal(result.authorized, false);
-
-    // Verify stored user status remains 'disabled' in D1
-    const storedUser = db.users.get('disabled-user');
-    assert.equal(storedUser.status, 'disabled');
+  test('9. Non-allowlisted email rejected with 403 UNAUTHORIZED_EMAIL', async () => {
+    const db = createFreshTestDb();
+    const token = createSignedJwt({ uid: 'attacker-uid', email: 'attacker@example.com' });
+    const res = await verifyAndAuthorizeOwner(
+      new Request('https://lab.jawed.co.in/api/hq/session', { headers: { authorization: `Bearer ${token}` } }),
+      { ...baseEnv, HQ_DB: db }
+    );
+    assert.equal(res.authorized, false);
+    assert.equal(res.response.status, 403);
+    assert.equal((await res.response.json()).error.code, 'UNAUTHORIZED_EMAIL');
+    db.close();
   });
 
-  test('9. Disabled owner cannot access Session, CRM Clients, or Projects APIs', async () => {
-    const db = new MockD1Database([
-      { id: 'disabled-user', email: 'jawedimtiaz@gmail.com', role: 'owner', status: 'disabled', created_at: Date.now(), updated_at: Date.now() }
-    ]);
-    const token = createMockToken({ uid: 'disabled-user', email: 'jawedimtiaz@gmail.com' });
+  test('10. Missing HQ_DB or missing production rate limit bindings fail closed with 503', async () => {
+    const token = createSignedJwt({ uid: 'uid-active', email: 'jawedimtiaz@gmail.com' });
     const headers = { authorization: `Bearer ${token}` };
 
-    const ctx = { request: new Request('https://lab.jawed.co.in/api/hq/session', { headers }), env: { ...env, HQ_DB: db } };
+    const missingDbRes = await verifyAndAuthorizeOwner(
+      new Request('https://lab.jawed.co.in/api/hq/session', { headers }),
+      { ...baseEnv, HQ_DB: null }
+    );
+    assert.equal(missingDbRes.authorized, false);
+    assert.equal(missingDbRes.response.status, 503);
+    assert.equal((await missingDbRes.response.json()).error.code, 'DATABASE_UNAVAILABLE');
 
-    const sessionRes = await sessionGet(ctx);
-    assert.equal(sessionRes.status, 403);
-
-    const clientsRes = await clientsGet({ ...ctx, request: new Request('https://lab.jawed.co.in/api/hq/clients', { headers }) });
-    assert.equal(clientsRes.status, 403);
-
-    const projectsRes = await projectsGet({ ...ctx, request: new Request('https://lab.jawed.co.in/api/hq/projects', { headers }) });
-    assert.equal(projectsRes.status, 403);
-  });
-
-  test('10. Concurrent first-owner enrollment cannot create unauthorized access', async () => {
-    const db = new MockD1Database([]); // Empty DB
-    const token1 = createMockToken({ uid: 'owner-1', email: 'jawedimtiaz@gmail.com' });
-    const token2 = createMockToken({ uid: 'owner-2', email: 'jawedimtiaz@gmail.com' });
-
-    const req1 = new Request('https://lab.jawed.co.in/api/hq/session', { headers: { authorization: `Bearer ${token1}` } });
-    const req2 = new Request('https://lab.jawed.co.in/api/hq/session', { headers: { authorization: `Bearer ${token2}` } });
-
-    // Execute first owner enrollment
-    const res1 = await verifyAndAuthorizeOwner(req1, { ...env, HQ_DB: db });
-    assert.equal(res1.authorized, true);
-    assert.equal(res1.owner.id, 'owner-1');
-
-    // Attempt second owner enrollment concurrently (DB is no longer empty)
-    const res2 = await verifyAndAuthorizeOwner(req2, { ...env, HQ_DB: db });
-    assert.equal(res2.authorized, false);
-
-    const body2 = await res2.response.json();
-    assert.equal(res2.response.status, 403);
-    assert.equal(body2.error.code, 'OWNER_NOT_ENROLLED');
+    const db = createFreshTestDb();
+    const prodNoLimiterRes = await verifyAndAuthorizeOwner(
+      new Request('https://lab.jawed.co.in/api/hq/session', { headers }),
+      {
+        ENVIRONMENT: 'production',
+        FIREBASE_PROJECT_ID: PROJECT_ID,
+        HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com,jawed@jawed.co.in',
+        HQ_DB: db
+      }
+    );
+    assert.equal(prodNoLimiterRes.authorized, false);
+    assert.equal(prodNoLimiterRes.response.status, 503);
+    assert.equal((await prodNoLimiterRes.response.json()).error.code, 'RATE_LIMIT_UNAVAILABLE');
+    db.close();
   });
 });

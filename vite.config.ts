@@ -394,10 +394,94 @@ function portfolioApiDevPlugin(): Plugin {
   };
 }
 
+function studioHqApiDevPlugin(): Plugin {
+  let localDbPromise: Promise<any> | null = null;
+
+  async function getLocalDb() {
+    if (!localDbPromise) {
+      localDbPromise = (async () => {
+        const { createLocalD1, applyHqMigrations } = await import('./functions/lib/localD1.js');
+        const db = createLocalD1(path.resolve('.data', 'studio-hq-local.sqlite'));
+        applyHqMigrations(db, path.resolve('migrations', 'hq'));
+        return db;
+      })();
+    }
+    return localDbPromise;
+  }
+
+  return {
+    name: 'studio-hq-api-dev',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const rawUrl = req.url || '/';
+        const pathname = rawUrl.split('?')[0];
+        if (!pathname.startsWith('/api/hq/') && pathname !== '/api/hq') {
+          return next();
+        }
+
+        try {
+          const { dispatchHqApiRequest } = await import('./functions/lib/hqRouter.js');
+          const db = await getLocalDb();
+          const method = (req.method || 'GET').toUpperCase();
+
+          let bodyBuffer: Buffer | undefined;
+          if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+            const chunks: Buffer[] = [];
+            await new Promise<void>((resolve, reject) => {
+              req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+              req.on('end', () => resolve());
+              req.on('error', reject);
+            });
+            bodyBuffer = Buffer.concat(chunks);
+          }
+
+          const fullUrl = `http://${req.headers.host || 'localhost:3000'}${rawUrl}`;
+          const headers = new Headers();
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (Array.isArray(v)) {
+              for (const item of v) headers.append(k, item);
+            } else if (typeof v === 'string') {
+              headers.set(k, v);
+            }
+          }
+
+          const webRequest = new Request(fullUrl, {
+            method,
+            headers,
+            body: bodyBuffer && bodyBuffer.length > 0 ? new Uint8Array(bodyBuffer) : undefined
+          });
+
+          const env = {
+            HQ_DB: db,
+            ENVIRONMENT: 'dev-local',
+            FIREBASE_PROJECT_ID: 'refined-actor-skhlb',
+            HQ_ALLOWED_OWNER_EMAILS: 'jawedimtiaz@gmail.com,jawed@jawed.co.in',
+            ALLOW_CONTROLLED_BOOTSTRAP: 'true'
+          };
+
+          const webResponse = await dispatchHqApiRequest(pathname, { request: webRequest, env });
+          res.statusCode = webResponse.status;
+          webResponse.headers.forEach((value, key) => {
+            res.setHeader(key, value);
+          });
+          const text = await webResponse.text();
+          res.end(text);
+        } catch (err: any) {
+          console.error('[Studio HQ Dev Middleware Error]', err);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ success: false, error: { code: 'DEV_SERVER_ERROR', message: err?.message || 'Internal dev server error' } }));
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    studioHqApiDevPlugin(),
     contactApiDevPlugin(),
     hardwareDiagnosticPlugin(),
     portfolioApiDevPlugin()
