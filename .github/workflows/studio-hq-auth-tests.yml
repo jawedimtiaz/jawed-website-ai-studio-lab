@@ -7,6 +7,7 @@ on:
       - feat/studio-hq-firebase-auth
       - fix/phase-2-7j-hq-auth-d1-alignment
       - fix/phase-2-7m-canonical-d1-compatibility-20261114
+      - feat/studio-hq-tools-entry-20261117
   pull_request:
     branches:
       - main
