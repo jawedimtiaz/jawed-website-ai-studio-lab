@@ -686,3 +686,49 @@ The canonical source has project detail aggregation that references adjacent mod
 - The route integration must be explicit and must precede the legacy GAIS router.
 - The first implementation batch is now sufficiently specified; it is still not implemented or tested.
 - No application code, D1 data, migrations, tests, PRs or deployments were changed.
+
+
+## Phase 3B — Isolated canonical API foundation added
+
+**Scope:** Added a separate copy of the canonical auth/API/rate-limit/project implementation and a test-only canonical schema fixture on the integration branch. The existing GAIS helpers, router, Worker route dispatch and Wrangler configuration were not changed.
+
+### 1. Files added
+
+| File | Purpose |
+|---|---|
+| `functions/lib/hqCanonicalAuth.js` | Isolated Firebase/JWT verifier copied from canonical PR #54 |
+| `functions/lib/hqCanonicalApi.js` | Isolated same-origin, owner authorization, bounded JSON, D1 guard and audit helpers |
+| `functions/lib/hqCanonicalRateLimit.js` | Isolated fail-closed canonical rate-limit implementation |
+| `functions/api/hq/canonicalProjects.js` | Isolated canonical projects/tasks/milestones handler |
+| `tests/fixtures/hq-canonical-schema.sql` | Test-only copy of canonical migration 0001; not configured as a Wrangler migration |
+| `tests/hq-canonical-projects.test.js` | Canonical project/task/milestone tests adapted to the isolated module and fixture |
+
+The package manifest now declares `jose@6.1.2` and a `test:hq-canonical-projects` command.
+
+### 2. Isolation and safety verification
+
+- All four canonical modules use the isolated `hqCanonical*` helper family; they do not import the GAIS legacy `hqApi.js`, `hqAuth.js` or `hqRateLimit.js`.
+- The GAIS legacy helper files were not overwritten.
+- Existing `functions/lib/hqRouter.js` and `worker.js` were not changed; the new canonical project handler is not yet reachable from live routes.
+- Existing `migrations/hq/0001...` and other migration files were not changed.
+- The copied SQL is under `tests/fixtures`; Wrangler does not use this path as its migrations directory.
+- No D1 query, migration, data write, owner enrollment, Worker binding change or deployment was performed.
+- No existing PR was modified.
+
+### 3. Verification status
+
+**Source-level checks completed:** inspected the new module imports, confirmed canonical helper imports resolve within the isolated family, confirmed the test import points to `functions/api/hq/canonicalProjects.js`, and confirmed the fixture path is separate from Wrangler migrations.
+
+**Not yet verified:** dependency installation, Node runtime compatibility, TypeScript/build, execution of `npm run test:hq-canonical-projects`, route dispatch, preview D1 compatibility, and browser UI behavior. GitHub source writes are not evidence that these tests passed.
+
+### 4. Next safe gate
+
+Before adding Worker routes:
+1. Run dependency installation and `npm run test:hq-canonical-projects` in a clean checkout of this branch using Node 22 or compatible Workers tooling.
+2. Fix any test/runtime failures on this branch only.
+3. Add route dispatch tests and then wire only the project-scoped canonical paths.
+4. Keep the canonical module family isolated until the rest of the GAIS handlers are migrated or retired.
+
+### Phase 3B conclusion
+
+The isolated canonical API foundation and its test fixture are committed, but are **not yet routed or deployment-ready**. No test execution is claimed.
