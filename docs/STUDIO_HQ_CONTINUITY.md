@@ -477,3 +477,28 @@ Unless a valid environment override is supplied (none was established by this re
 
 ### Next review
 Perform a final read-only release review of rate-limit namespace provisioning/uniqueness and the preview-versus-production D1 migration plan. Keep PR #54 draft until these operational gates are resolved and an explicit approval is obtained.
+
+
+## 15. Phase 2.7N — named preview environment binding gap (17 November 2026)
+
+### Finding
+- Read the Cloudflare Wrangler environments documentation: bindings and environment variables are non-inheritable. A named environment must declare the bindings it uses explicitly.
+- Source: https://developers.cloudflare.com/workers/wrangler/environments/
+- Current PR #54 `wrangler.jsonc` defines `env.preview` with preview Worker name, preview vars and a separate preview D1 database.
+- The `env.preview` block does not declare `AI` or any of the three `ratelimits` bindings. The top-level declarations therefore cannot be assumed to be present in the named preview environment.
+- The successful Auth workflow ran the default `wrangler deploy --dry-run` only. It listed `HQ_DB`, `AI`, `ASSETS` and all three rate-limit bindings for the default environment. It did not validate `--env preview`.
+
+### Consequence
+- Do not treat the preview Worker as ready for Studio HQ API testing. The missing preview rate-limit bindings can cause the HQ API's fail-closed rate limiter to return 503. Code that expects `env.AI` may also fail in the named preview environment.
+- Preview assets binding behavior should be confirmed by a dedicated Wrangler preview dry-run rather than inferred from the default dry-run.
+
+### Required next action
+1. Review the exact Wrangler preview configuration semantics for each binding used by the Worker.
+2. Decide whether preview should have isolated rate-limit namespaces or deliberately share counters with the Lab Worker. Do not invent new namespace IDs or reuse production IDs without a documented decision.
+3. Add the necessary preview bindings only after the namespace strategy is resolved.
+4. Add a CI validation step for `wrangler deploy --dry-run --env preview` and inspect its output for the preview D1, AI, Assets and rate-limit bindings.
+5. Keep PR #54 draft; no deployment, migration or Cloudflare resource mutation was performed during this review.
+
+### Namespace inventory limitation
+- Cloudflare's API OpenAPI search exposed zone-level WAF rate-limit rule endpoints, not a read-only account-wide inventory of Workers Rate Limiting binding namespace IDs.
+- The current deployed Worker inventory is not a complete account-wide namespace registry. Namespace ID uniqueness/ownership therefore remains unverified and must not be claimed as confirmed.
