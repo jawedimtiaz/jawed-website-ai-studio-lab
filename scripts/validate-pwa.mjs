@@ -13,5 +13,5 @@ for(const s of ["192x192","512x512"])if(!m?.icons?.some(i=>i.sizes===s))fail.pus
 const sw=exists("service-worker.js")?read("service-worker.js"):"";
 for(const token of ['caches.open(CACHE_NAME)','self.skipWaiting()','self.clients.claim()','request.mode==="navigate"','url.pathname.startsWith("/api/")','request.method!=="GET"','const cached=await caches.match(request)','const home=await caches.match("/")','caches.match("/offline.html")'])if(!sw.includes(token))fail.push("Service worker missing "+token);
 const main=read("assets/js/main.js");if(!main.includes('navigator.serviceWorker.register("/service-worker.js"'))fail.push("main.js service-worker registration missing");if(!main.includes('rel="manifest"'))fail.push("main.js manifest injection missing");if(!main.includes('theme-color'))fail.push("main.js theme-color injection missing");
-const index=read("index.html");if(!index.includes('<link rel="manifest" href="/manifest.json">'))fail.push("index.html manifest link missing");
+const index=read("index.html");if(!/<link\\s+rel=["']manifest["']\\s+href=["']\\/manifest\\.json["']\\s*\\/?\\s*>/i.test(index))fail.push("index.html manifest link missing");
 if(fail.length){console.error("PWA validation FAILED");fail.forEach(x=>console.error(" - "+x));process.exit(1)}console.log("PWA validation PASSED");
