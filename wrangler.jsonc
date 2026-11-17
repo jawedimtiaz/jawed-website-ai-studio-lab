@@ -33,12 +33,41 @@
         "ENVIRONMENT": "preview",
         "CANONICAL_ORIGIN": "https://lab.jawed.co.in"
       },
+      "ai": {
+        "binding": "AI"
+      },
       "d1_databases": [
         {
           "binding": "HQ_DB",
           "database_name": "jawed-studio-hq-preview",
           "database_id": "623a828d-2909-47e7-a228-130b4eeefef5",
           "migrations_dir": "migrations/hq"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "HQ_SESSION_LIMITER",
+          "namespace_id": "620261117",
+          "simple": {
+            "limit": 10,
+            "period": 60
+          }
+        },
+        {
+          "name": "HQ_WRITE_LIMITER",
+          "namespace_id": "620261118",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "HQ_RATE_LIMITER",
+          "namespace_id": "620261119",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
         }
       ]
     }
