@@ -600,3 +600,28 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 - Reverted the trigger change in commit `4c6782236e7a10a602a3839ca9a8b6fa003a4829`; the workflow's original trigger configuration is restored.
 - Do not count run `44054326158` as a test failure in the AdSense validator itself; it produced no job result. The earlier AdSense run `44054052736` remains cancelled, so a fresh successful AdSense result is still outstanding.
 - No production or Cloudflare resources were affected by this workflow-only experiment.
+
+
+## 18. Phase 2.7P — financial migration test coverage gap corrected (17 November 2026)
+
+### Read-only migration review
+- Reviewed `migrations/hq/0001_studio_hq_schema.sql` and `migrations/hq/0002_financial_management.sql`.
+- Both migrations are additive in their current content: table/index creation and append-only audit triggers. No `DROP TABLE`, `DROP COLUMN`, or destructive data rewrite was found in these two files.
+- The preview D1 database remains separate; no remote D1 query or migration was run as part of this review.
+
+### Test coverage defect identified
+- The prior `scripts/test-hq-migration.mjs` read and executed only `0001_studio_hq_schema.sql`.
+- The CI workflow `.github/workflows/studio-hq-d1-schema.yml` invoked that script, so the financial migration `0002_financial_management.sql` was not being executed by the schema CI test despite being present in the migration directory.
+- This was a test-coverage gap, not an observed production schema failure.
+
+### Correction and exact evidence
+- Updated `scripts/test-hq-migration.mjs` to execute both migrations in order against an isolated in-memory SQLite database.
+- Expanded expected schema validation from 17 to 23 tables, including the six financial tables introduced by migration 0002.
+- Added a financial constraint test that creates a quotation and line item, creates an invoice linked to the quotation, and verifies the unique one-invoice-per-quotation constraint rejects a second invoice.
+- Commit: `e99df0d211ba81029a271e5260e8d52983451cd8`.
+- GitHub Actions D1 Schema Validation run `44054536233`, job `133940373492`: migration test completed successfully.
+- Exact output: `Studio HQ D1 schema validation passed: both migrations, 23 tables, archive/restore, financial constraints, FK restrictions, append-only audit, JSON validation.`
+- This test uses isolated in-memory SQLite. It does not migrate or write to the live or preview D1 databases.
+
+### Current verification boundary
+- This is stronger local/CI migration evidence, but not a remote D1 compatibility test. Keep preview and production migration execution behind explicit approval and a backup/restore plan.
