@@ -423,3 +423,11 @@ Unless a valid environment override is supplied (none was established by this re
 - GitHub had not yet returned workflow runs or combined status checks for the latest head when this record was written. Do not treat the latest configuration or knowledge-freshness updates as CI-verified.
 - Next required verification: run the AI Regression Gate and Studio HQ Firebase Auth Tests against the latest branch head; confirm Wrangler dry-run output explicitly lists all three rate-limit bindings.
 - Keep PR #54 draft and do not merge, deploy, migrate D1, enroll owners, or alter customer/financial records until all checks pass and the remaining release prerequisites are reviewed.
+
+
+### Manual CI verification access — 17 November 2026
+- The GitHub connector did not return workflow runs or combined status checks for the newer commits, so their validation must not be inferred from the earlier successful run.
+- The AI Regression Gate already supports `workflow_dispatch`.
+- Added `workflow_dispatch` to `.github/workflows/studio-hq-auth-tests.yml` so the Studio HQ auth/build/Wrangler dry-run gate can also be run manually against the current candidate branch.
+- Workflow change commit: `71f046df56db9a7f7711a7682235ea6cdef9a4cb`.
+- Manual runs are still pending. The exact current branch must be selected when dispatching both workflows.
