@@ -390,3 +390,238 @@ Additional read-only inspection confirmed:
 - Current-main `functions/lib/hqAuth.js` hardcodes a different `DEFAULT_PROJECT_ID` (`ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb`).
 
 Unless a valid environment override is supplied (none was established by this read-only review), current-main auth would reject tokens issued for the actual Lab Firebase project even after signature verification is repaired. The project ID must have one authoritative source and be validated against the client Firebase config and deployed Worker configuration. Do not print or expose Firebase private credentials; the client config project ID is public configuration, not a secret.
+
+
+## 13. Phase 2.7N — PR #54 release-gate reconciliation (17 November 2026)
+
+### Branch and review status
+- Active candidate: PR #54, `reconcile/studio-hq-canonical-main-20261117`.
+- PR remains draft, open and unmerged. No production deployment or D1 migration was performed.
+- Latest review identified two release-gate issues in addition to the earlier schema/authentication reconciliation.
+
+### Cloudflare Rate Limiting bindings restored in source configuration
+- The PR #54 `wrangler.jsonc` omitted all three rate-limit bindings even though the HQ API handlers fail closed when a required binding is absent.
+- Restored the existing candidate values from the earlier unmerged PR #51 configuration:
+  - `HQ_SESSION_LIMITER`, namespace `620261114`, 10 requests / 60 seconds.
+  - `HQ_WRITE_LIMITER`, namespace `620261115`, 30 requests / 60 seconds.
+  - `HQ_RATE_LIMITER`, namespace `620261116`, 120 requests / 60 seconds.
+- Commit: `c07df215e4ede7d0e61274d805e3984ad0de711c`.
+- Read-only Cloudflare account inspection found two deployed Worker scripts. Neither currently exposes a Rate Limiting binding. This is not an authoritative registry of every namespace ID ever used; account-wide uniqueness must remain a deployment prerequisite.
+- The source change has not yet been verified by a new Wrangler dry run or a deployed runtime test.
+
+### AI knowledge freshness gate reviewed
+- PR #54 CI failed the AI knowledge coverage validator because the recorded review date was 2026-11-14 while the tracked grounding sources `index.html` and `src/data/toolsData.ts` had later commits.
+- Reviewed the homepage metadata and the tool metadata corresponding to the affected sitemap entries against the current knowledge summaries. The current summaries remain consistent with the reviewed tool descriptions/purposes; no unsupported feature claims were added.
+- Updated `assets/data/ai-knowledge.json` review date to `2026-11-17`.
+- Regenerated `functions/lib/ai-knowledge-data.js` from the JSON source and verified byte-for-byte expected serialization.
+- Commits: `74c2bedd8d5d2a1fcf9d6b6dcb8566e58b7aed59` and `0729416dd3681e64e1ba519dd203851d69c684c4`.
+
+### Current verification state
+- Earlier PR #54 head `e5c394e22338171f4a37cdc61fa7ce45852002e9`: 8 retrieved workflow checks passed; AI Regression Gate failed on stale knowledge review metadata.
+- On that earlier head, Studio HQ auth workflow reported 132 tests passed, 0 failed. Wrangler dry run recognized `HQ_DB`, but did not list any Rate Limiting bindings.
+- Latest branch head: `0729416dd3681e64e1ba519dd203851d69c684c4`.
+- GitHub had not yet returned workflow runs or combined status checks for the latest head when this record was written. Do not treat the latest configuration or knowledge-freshness updates as CI-verified.
+- Next required verification: run the AI Regression Gate and Studio HQ Firebase Auth Tests against the latest branch head; confirm Wrangler dry-run output explicitly lists all three rate-limit bindings.
+- Keep PR #54 draft and do not merge, deploy, migrate D1, enroll owners, or alter customer/financial records until all checks pass and the remaining release prerequisites are reviewed.
+
+
+### Manual CI verification access — 17 November 2026
+- The GitHub connector did not return workflow runs or combined status checks for the newer commits, so their validation must not be inferred from the earlier successful run.
+- The AI Regression Gate already supports `workflow_dispatch`.
+- Added `workflow_dispatch` to `.github/workflows/studio-hq-auth-tests.yml` so the Studio HQ auth/build/Wrangler dry-run gate can also be run manually against the current candidate branch.
+- Workflow change commit: `71f046df56db9a7f7711a7682235ea6cdef9a4cb`.
+- Manual runs are still pending. The exact current branch must be selected when dispatching both workflows.
+
+
+## 14. Phase 2.7N — latest PR #54 CI verification (17 November 2026)
+
+### Exact branch head and workflow results
+- Candidate branch: `reconcile/studio-hq-canonical-main-20261117`.
+- Verified head SHA: `b7ae6923caefbe6a3722df5113342a2f8eec0aa8`.
+- PR #54 remains open, draft and unmerged. No merge, deployment, D1 migration, secret change or live Worker configuration change was performed.
+- GitHub Actions returned 9 completed workflow runs for this exact SHA; all 9 concluded `success`:
+  - Security Baseline Gate — run `44052716483`.
+  - Studio HQ Firebase Auth Tests — run `44052716608`.
+  - Studio HQ D1 Schema Validation — run `44052716488`.
+  - AI Regression Gate — run `44052716477`.
+  - PWA Reliability Gate — run `44052716563`.
+  - Deployment Runtime Reliability Gate — run `44052716553`.
+  - Site Integrity Gate — run `44052716562`.
+  - AdSense Readiness Gate — run `44052716527`.
+  - Security Supply Chain Gate — run `44052716598`.
+- These were GitHub pull-request-triggered workflow runs on the exact branch head; a separate manual dispatch was not needed for this verification.
+
+### Auth/build/Wrangler job evidence
+- Studio HQ Auth job ID: `133934242552`; completed successfully.
+- Test output: 132 tests, 132 passed, 0 failed.
+- TypeScript and production build step passed.
+- Wrangler `deploy --dry-run` passed.
+- Wrangler output explicitly listed:
+  - `HQ_DB` — D1 database `jawed-studio-hq`.
+  - `HQ_SESSION_LIMITER` — 10 requests / 60 seconds.
+  - `HQ_WRITE_LIMITER` — 30 requests / 60 seconds.
+  - `HQ_RATE_LIMITER` — 120 requests / 60 seconds.
+  - `AI` and `ASSETS`.
+- This verifies that the PR's Wrangler configuration parses and the dry-run recognizes all three rate-limit bindings. It does not provision those bindings on the live Worker or prove live API behavior.
+
+### AI regression gate evidence
+- AI Regression Gate run `44052716477`, job `133934320052`, completed successfully on the same SHA.
+- Site integrity validation and AI regression matrix steps passed.
+
+### Remaining release blockers
+1. Rate-limit namespace IDs `620261114`, `620261115`, and `620261116` were reused from an earlier unmerged candidate configuration. The deployed Worker inventory showed no currently configured rate-limit bindings, but that is not a complete account-wide historical namespace registry. Confirm uniqueness/ownership before provisioning or deployment.
+2. The live Lab Worker has not been updated with these bindings; protected HQ APIs must be treated as unavailable/fail-closed until a separately approved deployment/configuration change and live verification.
+3. The preview D1 database remains separate and no preview or production migration was applied.
+4. The backup/restore drill and RTO/RPO remain outstanding.
+5. PR #54 remains draft. Do not merge, deploy, migrate D1, enroll an owner, or alter customer/financial records without explicit approval.
+
+### Next review
+Perform a final read-only release review of rate-limit namespace provisioning/uniqueness and the preview-versus-production D1 migration plan. Keep PR #54 draft until these operational gates are resolved and an explicit approval is obtained.
+
+
+## 15. Phase 2.7N — named preview environment binding gap (17 November 2026)
+
+### Finding
+- Read the Cloudflare Wrangler environments documentation: bindings and environment variables are non-inheritable. A named environment must declare the bindings it uses explicitly.
+- Source: https://developers.cloudflare.com/workers/wrangler/environments/
+- Current PR #54 `wrangler.jsonc` defines `env.preview` with preview Worker name, preview vars and a separate preview D1 database.
+- The `env.preview` block does not declare `AI` or any of the three `ratelimits` bindings. The top-level declarations therefore cannot be assumed to be present in the named preview environment.
+- The successful Auth workflow ran the default `wrangler deploy --dry-run` only. It listed `HQ_DB`, `AI`, `ASSETS` and all three rate-limit bindings for the default environment. It did not validate `--env preview`.
+
+### Consequence
+- Do not treat the preview Worker as ready for Studio HQ API testing. The missing preview rate-limit bindings can cause the HQ API's fail-closed rate limiter to return 503. Code that expects `env.AI` may also fail in the named preview environment.
+- Preview assets binding behavior should be confirmed by a dedicated Wrangler preview dry-run rather than inferred from the default dry-run.
+
+### Required next action
+1. Review the exact Wrangler preview configuration semantics for each binding used by the Worker.
+2. Decide whether preview should have isolated rate-limit namespaces or deliberately share counters with the Lab Worker. Do not invent new namespace IDs or reuse production IDs without a documented decision.
+3. Add the necessary preview bindings only after the namespace strategy is resolved.
+4. Add a CI validation step for `wrangler deploy --dry-run --env preview` and inspect its output for the preview D1, AI, Assets and rate-limit bindings.
+5. Keep PR #54 draft; no deployment, migration or Cloudflare resource mutation was performed during this review.
+
+### Namespace inventory limitation
+- Cloudflare's API OpenAPI search exposed zone-level WAF rate-limit rule endpoints, not a read-only account-wide inventory of Workers Rate Limiting binding namespace IDs.
+- The current deployed Worker inventory is not a complete account-wide namespace registry. Namespace ID uniqueness/ownership therefore remains unverified and must not be claimed as confirmed.
+
+
+## 16. Phase 2.7O — refined preview binding analysis (17 November 2026)
+
+### Corrections to the initial preview note
+- Cloudflare's Wrangler configuration reference lists `assets` as an inheritable key. Do not state that `ASSETS` must be duplicated under `env.preview`; the top-level assets configuration can be inherited.
+- The definite missing preview bindings in the current config are `AI` and the rate-limiting bindings. Preview already has its own explicit `HQ_DB` D1 binding and its own `ENVIRONMENT` / `CANONICAL_ORIGIN` vars.
+- Sources:
+  - https://developers.cloudflare.com/workers/wrangler/configuration/
+  - https://developers.cloudflare.com/workers/wrangler/environments/
+
+### Rate-limit isolation finding
+- Cloudflare documents that two bindings sharing the same `namespace_id` in one account share counters for the same key across Workers.
+- Cloudflare also states that rate-limit namespace IDs are unique within the account and that rate-limit bindings are not currently visible in the Cloudflare dashboard.
+- Source: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+- Therefore, using the three Lab namespace IDs in preview would share counters whenever the same key is used. It is not acceptable to describe that arrangement as isolated preview rate limiting.
+- The current account inspection cannot provide a complete account-wide historical namespace registry. Do not invent new IDs or claim account-wide uniqueness without evidence.
+- A potential code-level isolation approach is to add an explicit environment prefix to every rate-limit key while deliberately sharing the namespace IDs. This would separate counters for identical user/IP keys across `lab` and `preview`, but it still shares the same namespace resource and should be adopted only after reviewing every call site and tests. A distinct namespace per environment is cleaner if account-wide uniqueness can be established.
+- No Wrangler or rate-limit code was changed as part of this review.
+
+### Current preview config status
+- `env.preview` has its own Worker name, vars and D1 database.
+- `AI` is currently only declared at the top level and is a binding; Cloudflare's environment rules say bindings are non-inheritable. It must be explicitly declared in the preview environment if preview code reads `env.AI`.
+- The three `ratelimits` are currently declared only at top level. Confirm Wrangler v4.160.1's exact schema/behavior for `ratelimits` inside a named environment before editing the config; do not assume the property can be nested based only on the generic binding rule.
+- `assets` is inheritable and remains top-level.
+- The existing auth workflow runs only the default-environment Wrangler dry-run. It does not currently run `wrangler deploy --dry-run --env preview`.
+
+### Next technical verification
+1. Resolve the exact Wrangler 4.160.1 schema behavior for `ai` and `ratelimits` in named environments using the installed package/schema or a no-deploy CI dry-run.
+2. Add a preview dry-run and assertions to CI so the preview build verifies `HQ_DB`, `AI`, `ASSETS` and rate-limit bindings in the resolved preview configuration.
+3. Choose and test the rate-limit isolation strategy before introducing any namespace IDs or changing limiter key construction.
+4. Keep PR #54 draft and do not deploy, migrate D1 or mutate Cloudflare resources.
+
+
+## 17. Phase 2.7O — preview bindings implemented and dry-run verified (17 November 2026)
+
+### Wrangler 4.160.1 source-level confirmation
+- Inspected Cloudflare Workers SDK configuration source used by Wrangler:
+  - `packages/workers-utils/src/config/environment.ts` explicitly marks `ai` and `ratelimits` as `@nonInheritable` and says each must be specified in every named environment.
+  - The same source explicitly marks `assets` as `@inheritable`.
+- This confirms the correct preview binding contract: explicit preview `ai` and `ratelimits`; inherit top-level `assets`; retain the preview-specific `HQ_DB` and vars.
+- Source file: https://github.com/cloudflare/workers-sdk/blob/main/packages/workers-utils/src/config/environment.ts
+
+### Preview configuration changes
+- Updated `wrangler.jsonc` on PR #54 branch:
+  - Added `ai.binding = "AI"` inside `env.preview`.
+  - Added preview-specific `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER` declarations.
+  - Selected candidate preview namespace IDs `620261117`, `620261118`, and `620261119`, respectively.
+  - Preserved the existing preview D1 database `jawed-studio-hq-preview` and preview vars.
+  - Did not duplicate `assets`; it is inherited from top-level config.
+- Config commit: `143941edfaf2a1c512be631ce3b23227eb6607a1`.
+- The candidate namespace IDs were selected after read-only inspection found only two deployed Workers in the account and neither currently exposes rate-limit bindings. The inventory is not an authoritative historical namespace registry; account-wide historical uniqueness is not proven. Do not deploy or provision these namespaces until this remaining release prerequisite is accepted/verified.
+
+### CI validation added
+- Updated `.github/workflows/studio-hq-auth-tests.yml` to run:
+  `npx wrangler deploy --dry-run --env preview --outdir .wrangler-preview-dry-run`.
+- Added assertions that the preview dry-run output lists `HQ_DB`, `AI`, `ASSETS`, `HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, and `HQ_RATE_LIMITER`.
+- Updated the gRPC artifact scan to inspect the preview dry-run bundle as well.
+- Workflow commits: `bdc1eb6c5427b716a0e505811939afc92ebda3d6` and `1558ae97970870de15bee7e4a387f74e58246905`.
+
+### Exact CI evidence on latest application/configuration head
+- Candidate head at verification: `1558ae97970870de15bee7e4a387f74e58246905`.
+- Studio HQ Firebase Auth Tests run `44054052747`, job `133938691478`: completed successfully.
+- Auth/API tests: 132 passed, 0 failed.
+- TypeScript and production build: passed.
+- Default Wrangler dry-run: passed and listed production/default D1, AI, three rate limit bindings and ASSETS.
+- Preview Wrangler dry-run: passed and listed:
+  - `HQ_DB (jawed-studio-hq-preview)`
+  - `AI`
+  - `HQ_SESSION_LIMITER` (10/60s)
+  - `HQ_WRITE_LIMITER` (30/60s)
+  - `HQ_RATE_LIMITER` (120/60s)
+  - `ASSETS`
+  - `ENVIRONMENT="preview"`
+  - `CANONICAL_ORIGIN="https://lab.jawed.co.in"`
+- gRPC artifact scan inspected 48 text artifacts and found no `@grpc/grpc-js` or gRPC server-auth markers.
+- These were dry-runs only. No preview Worker was deployed and no D1 migration or Cloudflare resource mutation occurred.
+
+### Remaining workflow state
+- On exact head `1558ae97970870de15bee7e4a387f74e58246905`, eight retrieved workflows had completed successfully; AdSense Readiness Gate was still pending with no job payload returned at the last check. Do not claim the full workflow set is green until that run reaches a completed success conclusion.
+- The preview config and CI validation are now proven by Wrangler dry-run, but preview runtime integration/auth and D1 migration execution remain untested.
+- PR #54 remains draft. Do not merge, deploy, migrate D1, enroll an owner or mutate customer/financial records without explicit approval.
+
+
+### CI follow-up — AdSense workflow terminal state (17 November 2026)
+- Rechecked all nine workflow runs for application/configuration head `1558ae97970870de15bee7e4a387f74e58246905`.
+- Eight workflows completed successfully.
+- AdSense Readiness Gate run `44054052736` completed with conclusion `cancelled`, not success and not failure. No job payload was available for that run.
+- Therefore the exact result is **8 success, 1 cancelled**. Do not describe the entire nine-workflow suite as green.
+- The cancellation does not invalidate the independently successful Studio HQ Auth job or preview Wrangler dry-run. The AdSense gate must be rerun successfully if the release process requires every repository gate green.
+
+
+### AdSense workflow dispatch experiment and rollback (17 November 2026)
+- To obtain a fresh AdSense readiness result after the earlier cancelled run, briefly added `workflow_dispatch` to `.github/workflows/adsense-readiness.yml`.
+- The resulting push-triggered run `44054326158` failed immediately with the workflow path as its run name and returned no job payload. No validator job ran and no AdSense readiness result was produced.
+- Reverted the trigger change in commit `4c6782236e7a10a602a3839ca9a8b6fa003a4829`; the workflow's original trigger configuration is restored.
+- Do not count run `44054326158` as a test failure in the AdSense validator itself; it produced no job result. The earlier AdSense run `44054052736` remains cancelled, so a fresh successful AdSense result is still outstanding.
+- No production or Cloudflare resources were affected by this workflow-only experiment.
+
+
+## 18. Phase 2.7P — financial migration test coverage gap corrected (17 November 2026)
+
+### Read-only migration review
+- Reviewed `migrations/hq/0001_studio_hq_schema.sql` and `migrations/hq/0002_financial_management.sql`.
+- Both migrations are additive in their current content: table/index creation and append-only audit triggers. No `DROP TABLE`, `DROP COLUMN`, or destructive data rewrite was found in these two files.
+- The preview D1 database remains separate; no remote D1 query or migration was run as part of this review.
+
+### Test coverage defect identified
+- The prior `scripts/test-hq-migration.mjs` read and executed only `0001_studio_hq_schema.sql`.
+- The CI workflow `.github/workflows/studio-hq-d1-schema.yml` invoked that script, so the financial migration `0002_financial_management.sql` was not being executed by the schema CI test despite being present in the migration directory.
+- This was a test-coverage gap, not an observed production schema failure.
+
+### Correction and exact evidence
+- Updated `scripts/test-hq-migration.mjs` to execute both migrations in order against an isolated in-memory SQLite database.
+- Expanded expected schema validation from 17 to 23 tables, including the six financial tables introduced by migration 0002.
+- Added a financial constraint test that creates a quotation and line item, creates an invoice linked to the quotation, and verifies the unique one-invoice-per-quotation constraint rejects a second invoice.
+- Commit: `e99df0d211ba81029a271e5260e8d52983451cd8`.
+- GitHub Actions D1 Schema Validation run `44054536233`, job `133940373492`: migration test completed successfully.
+- Exact output: `Studio HQ D1 schema validation passed: both migrations, 23 tables, archive/restore, financial constraints, FK restrictions, append-only audit, JSON validation.`
+- This test uses isolated in-memory SQLite. It does not migrate or write to the live or preview D1 databases.
+
+### Current verification boundary
+- This is stronger local/CI migration evidence, but not a remote D1 compatibility test. Keep preview and production migration execution behind explicit approval and a backup/restore plan.
