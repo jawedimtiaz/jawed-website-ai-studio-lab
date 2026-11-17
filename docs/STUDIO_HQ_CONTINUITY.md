@@ -592,3 +592,11 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 - AdSense Readiness Gate run `44054052736` completed with conclusion `cancelled`, not success and not failure. No job payload was available for that run.
 - Therefore the exact result is **8 success, 1 cancelled**. Do not describe the entire nine-workflow suite as green.
 - The cancellation does not invalidate the independently successful Studio HQ Auth job or preview Wrangler dry-run. The AdSense gate must be rerun successfully if the release process requires every repository gate green.
+
+
+### AdSense workflow dispatch experiment and rollback (17 November 2026)
+- To obtain a fresh AdSense readiness result after the earlier cancelled run, briefly added `workflow_dispatch` to `.github/workflows/adsense-readiness.yml`.
+- The resulting push-triggered run `44054326158` failed immediately with the workflow path as its run name and returned no job payload. No validator job ran and no AdSense readiness result was produced.
+- Reverted the trigger change in commit `4c6782236e7a10a602a3839ca9a8b6fa003a4829`; the workflow's original trigger configuration is restored.
+- Do not count run `44054326158` as a test failure in the AdSense validator itself; it produced no job result. The earlier AdSense run `44054052736` remains cancelled, so a fresh successful AdSense result is still outstanding.
+- No production or Cloudflare resources were affected by this workflow-only experiment.
