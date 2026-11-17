@@ -502,3 +502,35 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 ### Namespace inventory limitation
 - Cloudflare's API OpenAPI search exposed zone-level WAF rate-limit rule endpoints, not a read-only account-wide inventory of Workers Rate Limiting binding namespace IDs.
 - The current deployed Worker inventory is not a complete account-wide namespace registry. Namespace ID uniqueness/ownership therefore remains unverified and must not be claimed as confirmed.
+
+
+## 16. Phase 2.7O — refined preview binding analysis (17 November 2026)
+
+### Corrections to the initial preview note
+- Cloudflare's Wrangler configuration reference lists `assets` as an inheritable key. Do not state that `ASSETS` must be duplicated under `env.preview`; the top-level assets configuration can be inherited.
+- The definite missing preview bindings in the current config are `AI` and the rate-limiting bindings. Preview already has its own explicit `HQ_DB` D1 binding and its own `ENVIRONMENT` / `CANONICAL_ORIGIN` vars.
+- Sources:
+  - https://developers.cloudflare.com/workers/wrangler/configuration/
+  - https://developers.cloudflare.com/workers/wrangler/environments/
+
+### Rate-limit isolation finding
+- Cloudflare documents that two bindings sharing the same `namespace_id` in one account share counters for the same key across Workers.
+- Cloudflare also states that rate-limit namespace IDs are unique within the account and that rate-limit bindings are not currently visible in the Cloudflare dashboard.
+- Source: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+- Therefore, using the three Lab namespace IDs in preview would share counters whenever the same key is used. It is not acceptable to describe that arrangement as isolated preview rate limiting.
+- The current account inspection cannot provide a complete account-wide historical namespace registry. Do not invent new IDs or claim account-wide uniqueness without evidence.
+- A potential code-level isolation approach is to add an explicit environment prefix to every rate-limit key while deliberately sharing the namespace IDs. This would separate counters for identical user/IP keys across `lab` and `preview`, but it still shares the same namespace resource and should be adopted only after reviewing every call site and tests. A distinct namespace per environment is cleaner if account-wide uniqueness can be established.
+- No Wrangler or rate-limit code was changed as part of this review.
+
+### Current preview config status
+- `env.preview` has its own Worker name, vars and D1 database.
+- `AI` is currently only declared at the top level and is a binding; Cloudflare's environment rules say bindings are non-inheritable. It must be explicitly declared in the preview environment if preview code reads `env.AI`.
+- The three `ratelimits` are currently declared only at top level. Confirm Wrangler v4.160.1's exact schema/behavior for `ratelimits` inside a named environment before editing the config; do not assume the property can be nested based only on the generic binding rule.
+- `assets` is inheritable and remains top-level.
+- The existing auth workflow runs only the default-environment Wrangler dry-run. It does not currently run `wrangler deploy --dry-run --env preview`.
+
+### Next technical verification
+1. Resolve the exact Wrangler 4.160.1 schema behavior for `ai` and `ratelimits` in named environments using the installed package/schema or a no-deploy CI dry-run.
+2. Add a preview dry-run and assertions to CI so the preview build verifies `HQ_DB`, `AI`, `ASSETS` and rate-limit bindings in the resolved preview configuration.
+3. Choose and test the rate-limit isolation strategy before introducing any namespace IDs or changing limiter key construction.
+4. Keep PR #54 draft and do not deploy, migrate D1 or mutate Cloudflare resources.
