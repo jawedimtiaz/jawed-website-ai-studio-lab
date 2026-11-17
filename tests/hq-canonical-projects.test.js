@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { validateProject, validateTask, validateMilestone, handleAuthorizedHqProjects } from './canonicalProjects.js';
+import { validateProject, validateTask, validateMilestone, handleAuthorizedHqProjects } from '../functions/api/hq/canonicalProjects.js';
 
 class TestD1 {
   constructor() {
