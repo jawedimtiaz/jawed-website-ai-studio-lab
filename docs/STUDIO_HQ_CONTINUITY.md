@@ -677,3 +677,40 @@ Perform a final read-only release review of rate-limit namespace provisioning/un
 - Treat GitHub as the source of truth. First fetch the branch head and this continuity document before making changes.
 - The immediate next task is pending item 1: safely resolve GAIS access to this exact branch. No dashboard UI implementation has started on this branch.
 - Keep Studio HQ Lab, Kaushal (`jawedimtiaz/advocate-kaushal-kishor`), Jewellery (`jawedimtiaz/ka-sons-jewellers`) and personal production website (`jawedimtiaz/jawed-website`) strictly separate.
+
+## 20. Phase 3.1 — Google AI Studio GitHub workflow research (17 November 2026)
+
+### Current official documentation reviewed
+- Reviewed Google's current Build mode documentation: https://ai.google.dev/gemini-api/docs/aistudio-build-mode
+- The documentation describes importing an existing GitHub repository through Build mode's Add files (+) menu, and describes GitHub two-way sync: push changes from AI Studio and pull changes made externally through the GitHub tab in Settings.
+- Google Developers also announced support for syncing to and from GitHub: https://www.linkedin.com/posts/googledevelopers_syncing-to-and-from-github-is-now-supported-activity-7497759644719816707-ETWy
+- The current public documentation does not clearly specify whether the Import from GitHub dialog supports selecting a non-default branch at import time. Therefore branch-selection support for `feat/studio-hq-ui-20261117` is not yet proven.
+- The prior UI screenshot evidence from the user's GAIS workspace showed an import flow with a warning that the imported copy would not stay synced. The current documented two-way sync capability may have evolved since that screenshot; do not assume the old behavior or new behavior without inspecting the live UI.
+
+### New branch integrity check
+- Read GitHub branch ref `feat/studio-hq-ui-20261117` after the continuity-document update.
+- Latest commit at verification: `ddc1b4c3f44a621e440de182390f64aef2576d9e`.
+- Its parent is exactly the canonical PR #54 starting commit: `9d795a2f1adea44a9ca38acc8cadcf1f09ac83a9`.
+- The branch exists and points to the documentation commit. No UI source implementation has been committed.
+- Branch protection is not enabled on this feature branch. Continue to use careful PR review and do not push unreviewed or force-pushed changes.
+
+### Safe next verification in the user's GAIS UI
+1. Open Google AI Studio Build mode.
+2. Use Add files (+) → Import from GitHub and select repository `jawedimtiaz/jawed-website-ai-studio-lab`.
+3. Inspect the repository/branch selection UI. If the exact branch `feat/studio-hq-ui-20261117` is explicitly selectable, verify that exact branch is selected before proceeding.
+4. Stop before confirming import if the branch cannot be selected, if the interface warns that the copy will not sync, or if the selected ref is `main` or another branch. Do not import the wrong branch.
+5. If the exact branch is selectable and the import screen confirms the expected source, proceed only after reviewing any displayed sync/overwrite warning. Do not push or overwrite anything yet.
+6. After opening the workspace, verify the imported source includes the latest continuity document and the canonical Studio HQ page/auth implementation. Check GitHub settings/status for the connected repository and selected branch before any code edit.
+
+### Source and evidence
+- Google AI Studio Build mode documentation: https://ai.google.dev/gemini-api/docs/aistudio-build-mode
+- Google Developers GitHub sync announcement: https://www.linkedin.com/posts/googledevelopers_syncing-to-and-from-github-is-now-supported-activity-7497759644719816707-ETWy
+- Google AI Developers Forum discussion confirms the import workflow and GitHub linking flow can vary by workspace state: https://discuss.ai.google.dev/t/github-sync-fails-and-existing-repository-cannot-be-reconnected-in-google-ai-studio/179488
+- Treat community forum reports as operational anecdotes, not as authoritative product specifications.
+
+### Current status
+- Official two-way sync capability: documented by Google.
+- Exact feature-branch selection during import: not yet verified.
+- GAIS workspace connected to the new feature branch: not yet verified.
+- No GAIS import, sync, push, pull, code edit or deployment has been performed in this phase.
+- Immediate next action: user inspects the Import from GitHub dialog and reports whether the exact feature branch is available. Stop before importing if not.
