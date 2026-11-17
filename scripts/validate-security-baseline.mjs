@@ -6,7 +6,7 @@ const headers=fs.readFileSync("_headers","utf8");
 const redirects=fs.readFileSync("_redirects","utf8");
 const routes=JSON.parse(fs.readFileSync("_routes.json","utf8"));
 const deploymentContract=JSON.parse(fs.readFileSync("config/deployment-runtime-contract.json","utf8"));
-const deploymentHeaders=deploymentContract.required_security_headers;
+const deploymentHeaders=deploymentContract.required_worker_security_headers;
 assert.equal(Array.isArray(deploymentHeaders)&&deploymentHeaders.length>0,true,"Deployment security-header contract must be non-empty");
 assert.equal(deploymentHeaders.every(value=>typeof value==="string"&&value.trim().length>0),true,"Deployment security-header contract must contain non-empty strings");
 
