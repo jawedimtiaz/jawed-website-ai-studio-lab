@@ -4,6 +4,8 @@ import { dispatchHqApiRequest } from './functions/lib/hqRouter.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
+  '/kaandsons': 'https://fix-p0-105-accessibility-qa.ka-sons-jewellers-demo.pages.dev/',
+  '/kaandsons/': 'https://fix-p0-105-accessibility-qa.ka-sons-jewellers-demo.pages.dev/',
   '/index.html': '/',
   '/About_Me.html': '/about/',
   '/Feedback.html': '/contact/',
