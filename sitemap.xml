@@ -106,7 +106,7 @@
     <priority>0.7</priority>
   </url>
 
-  <!-- Interactive Tools (12) -->
+  <!-- Interactive Tools (15) -->
   <url>
     <loc>https://jawed.co.in/tools/service-desk-note-formatter/</loc>
     <lastmod>2026-10-17</lastmod>
@@ -189,6 +189,12 @@
     <loc>https://jawed.co.in/tools/finance-planning-workspace/</loc>
     <lastmod>2026-10-17</lastmod>
     <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://jawed.co.in/tools/portfolio-tracker/</loc>
+    <lastmod>2026-11-18</lastmod>
+    <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
 

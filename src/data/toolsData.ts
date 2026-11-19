@@ -505,8 +505,8 @@ export const toolsList: ToolItem[] = [
     eyebrow: 'Tool · Finance & Planning · Institutional Portfolio',
     benefit: 'Track Indian equities, mutual funds, US stocks, LRS limits, and watchlist theses via Demo Mode or live Google Sheets sync',
     description: 'Track Indian equities, mutual funds, US stocks, LRS limits, and watchlist theses via Demo Mode or live Google Sheets sync',
-    tags: ['Portfolio Tracker', 'US Equities', 'Mutual Funds', 'LRS Limits', 'Asset Allocation', 'Watchlist', 'Investment Thesis'],
-    estimatedTime: '3 min',
+    tags: ['Portfolio', 'Asset Allocation', 'US & India Stocks', 'LRS Tracker'],
+    estimatedTime: '4 min',
     path: '/tools/portfolio-tracker/',
     purpose: 'Provide institutional-grade portfolio analytics, benchmark comparison against S&P 500 and QQQ, LRS limit monitoring, and investment thesis documentation for multi-asset investors.',
     steps: [
