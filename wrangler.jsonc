@@ -15,5 +15,12 @@
   "vars": {
     "ENVIRONMENT": "lab",
     "CANONICAL_ORIGIN": "https://lab.jawed.co.in"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "HQ_DB",
+      "database_name": "jawed-studio-hq",
+      "database_id": "d9ec83ea-7114-4179-af8e-a22ba5494508"
+    }
+  ]
 }
