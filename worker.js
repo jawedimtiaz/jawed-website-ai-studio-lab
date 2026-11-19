@@ -167,7 +167,7 @@ export default {
         // GAS web apps commonly expose query parameters more reliably than custom auth headers.
         // Keep the token server-side in Cloudflare and never expose it to the browser.
         const upstreamUrl = new URL(feedUrl);
-        upstreamUrl.searchParams.set('key', feedToken);
+        upstreamUrl.searchParams.set('token', feedToken);
         const upstream = await fetch(upstreamUrl.toString(), { method: 'GET', headers: { 'accept': 'application/json', 'authorization': `Bearer ${feedToken}` }, signal: AbortSignal.timeout(15000) });
         const body = await upstream.text();
         if (!upstream.ok) return addSecurityHeaders(new Response(JSON.stringify({ error: 'Portfolio feed returned an error', upstreamStatus: upstream.status }), { status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname);
