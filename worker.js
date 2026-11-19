@@ -164,7 +164,49 @@ export default {
       return addSecurityHeaders(res, pathname);
     }
 
-    // 6. Reject other /api/* with standard 404 JSON
+    // 6. Secure portfolio feed proxy (secrets configured as Worker secrets)
+    if (pathname === '/api/portfolio' || pathname === '/api/portfolio/') {
+      if (request.method !== 'GET') {
+        return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), {
+          status: 405,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'allow': 'GET' }
+        }), pathname);
+      }
+      if (!env?.PORTFOLIO_FEED_URL || !env?.PORTFOLIO_FEED_TOKEN) {
+        return addSecurityHeaders(new Response(JSON.stringify({ success: false, error: 'Portfolio feed is not configured.' }), {
+          status: 503, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+        }), pathname);
+      }
+      try {
+        const feedUrl = new URL(env.PORTFOLIO_FEED_URL);
+        feedUrl.searchParams.set('token', env.PORTFOLIO_FEED_TOKEN);
+        const upstream = await fetch(feedUrl.toString(), {
+          method: 'GET', headers: { 'accept': 'application/json' }, signal: AbortSignal.timeout(15000)
+        });
+        if (!upstream.ok) {
+          console.error('Portfolio upstream HTTP status:', upstream.status);
+          return addSecurityHeaders(new Response(JSON.stringify({ success: false, error: 'Portfolio source temporarily unavailable.' }), {
+            status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+          }), pathname);
+        }
+        const payload = await upstream.json();
+        if (!payload || payload.success !== true || !payload.data) {
+          return addSecurityHeaders(new Response(JSON.stringify({ success: false, error: 'Portfolio source returned an invalid feed.' }), {
+            status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+          }), pathname);
+        }
+        return addSecurityHeaders(new Response(JSON.stringify(payload), {
+          status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store' }
+        }), pathname);
+      } catch (error) {
+        console.error('Portfolio proxy failure:', error);
+        return addSecurityHeaders(new Response(JSON.stringify({ success: false, error: 'Portfolio source could not be reached.' }), {
+          status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+        }), pathname);
+      }
+    }
+
+    // 7. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
