@@ -10,15 +10,18 @@ import {
 } from 'lucide-react';
 import { PortfolioData, CurrencyCode } from '../../types/portfolio';
 import { formatPortfolioValue } from '../../services/portfolioService';
+import { PrivateMoney } from './PrivateMoney';
 
 interface RetirementRoadmapTabProps {
   data: PortfolioData;
   currency: CurrencyCode;
+  privacyMode?: boolean;
 }
 
 export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
   data,
-  currency
+  currency,
+  privacyMode = false
 }) => {
   const { retirement, summary, allocation, meta } = data;
   const usdInr = meta.usdInr || 95.41;
@@ -166,10 +169,20 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                   Current Accumulated Corpus
                 </span>
                 <span className="text-xl font-bold text-sky-400">
-                  {formatPortfolioValue(summary.totalValueInr, currency, usdInr)}
+                  <PrivateMoney
+                    value={formatPortfolioValue(summary.totalValueInr, currency, usdInr)}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
                 <span className="text-[11px] text-slate-500 block mt-0.5">
-                  {formatPortfolioValue(summary.totalValueInr, currency, usdInr, { compact: true })}
+                  <PrivateMoney
+                    value={formatPortfolioValue(summary.totalValueInr, currency, usdInr, {
+                      compact: true
+                    })}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
               </div>
 
@@ -178,12 +191,20 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                   Target Retirement Corpus
                 </span>
                 <span className="text-xl font-bold text-slate-100">
-                  {formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr, {
-                    compact: true
-                  })}
+                  <PrivateMoney
+                    value={formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr, {
+                      compact: true
+                    })}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
                 <span className="text-[11px] text-slate-500 block mt-0.5">
-                  {formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr)}
+                  <PrivateMoney
+                    value={formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr)}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
               </div>
 
@@ -192,7 +213,13 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                   Remaining Funding Gap
                 </span>
                 <span className="text-xl font-bold text-slate-300">
-                  {formatPortfolioValue(remainingCorpusInr, currency, usdInr, { compact: true })}
+                  <PrivateMoney
+                    value={formatPortfolioValue(remainingCorpusInr, currency, usdInr, {
+                      compact: true
+                    })}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
                 <span className="text-[11px] text-emerald-400 block mt-0.5">
                   {retirement.currentProgressPct.toFixed(1)}% Completed
@@ -207,7 +234,14 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                   Corpus Completion: {retirement.currentProgressPct.toFixed(1)}%
                 </span>
                 <span className="text-slate-400">
-                  Target: {formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr, { compact: true })}
+                  Target:{' '}
+                  <PrivateMoney
+                    value={formatPortfolioValue(retirement.targetCorpusInr, currency, usdInr, {
+                      compact: true
+                    })}
+                    currency={currency}
+                    privacyMode={privacyMode}
+                  />
                 </span>
               </div>
               <div className="relative w-full h-3.5 bg-slate-800 rounded-full overflow-hidden">
@@ -218,10 +252,10 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
               </div>
               <div className="flex justify-between text-[10px] font-mono tabular-nums text-slate-500 pt-1">
                 <span>0%</span>
-                <span>10% (₹50L)</span>
-                <span>20% (₹1Cr)</span>
-                <span>50% (₹2.5Cr)</span>
-                <span>100% (₹5Cr)</span>
+                <span>{privacyMode ? '10%' : '10% (₹50L)'}</span>
+                <span>{privacyMode ? '20%' : '20% (₹1Cr)'}</span>
+                <span>{privacyMode ? '50%' : '50% (₹2.5Cr)'}</span>
+                <span>{privacyMode ? '100%' : '100% (₹5Cr)'}</span>
               </div>
             </div>
           </div>
@@ -354,7 +388,13 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                     </div>
                     <div className="text-right font-mono tabular-nums shrink-0">
                       <div className="text-sm font-bold text-sky-400">
-                        {formatPortfolioValue(ms.targetInr, currency, usdInr, { compact: true })}
+                        <PrivateMoney
+                          value={formatPortfolioValue(ms.targetInr, currency, usdInr, {
+                            compact: true
+                          })}
+                          currency={currency}
+                          privacyMode={privacyMode}
+                        />
                       </div>
                       <div className="text-[11px] text-emerald-400">
                         {ms.achieved
@@ -374,7 +414,12 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                   <div className="flex justify-between text-[11px] font-mono tabular-nums text-slate-400">
                     <span>Current Fill: {pctOfMilestone.toFixed(1)}%</span>
                     <span>
-                      Target: {formatPortfolioValue(ms.targetInr, currency, usdInr)}
+                      Target:{' '}
+                      <PrivateMoney
+                        value={formatPortfolioValue(ms.targetInr, currency, usdInr)}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
                     </span>
                   </div>
                 </div>
@@ -401,7 +446,11 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
               <div className="flex justify-between mb-1.5">
                 <label className="text-slate-300 font-medium">Monthly India SIP (₹)</label>
                 <span className="font-mono tabular-nums text-sky-400 font-semibold">
-                  ₹{monthlySipInr.toLocaleString('en-IN')}
+                  <PrivateMoney
+                    value={`₹${monthlySipInr.toLocaleString('en-IN')}`}
+                    currency="INR"
+                    privacyMode={privacyMode}
+                  />
                 </span>
               </div>
               <input
@@ -419,7 +468,11 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
               <div className="flex justify-between mb-1.5">
                 <label className="text-slate-300 font-medium">Quarterly US LRS ($)</label>
                 <span className="font-mono tabular-nums text-indigo-400 font-semibold">
-                  ${quarterlyLrsUsd.toLocaleString('en-US')}
+                  <PrivateMoney
+                    value={`$${quarterlyLrsUsd.toLocaleString('en-US')}`}
+                    currency="USD"
+                    privacyMode={privacyMode}
+                  />
                 </span>
               </div>
               <input
@@ -490,14 +543,22 @@ export const RetirementRoadmapTab: React.FC<RetirementRoadmapTabProps> = ({
                         {row.year} <span className="text-slate-500 font-normal">(+{row.ageOffset}Y)</span>
                       </td>
                       <td className="py-2.5 text-right text-slate-300">
-                        {formatPortfolioValue(row.annualContributionInr, currency, usdInr, {
-                          compact: true
-                        })}
+                        <PrivateMoney
+                          value={formatPortfolioValue(row.annualContributionInr, currency, usdInr, {
+                            compact: true
+                          })}
+                          currency={currency}
+                          privacyMode={privacyMode}
+                        />
                       </td>
                       <td className="py-2.5 text-right font-bold text-sky-400">
-                        {formatPortfolioValue(row.endBalanceInr, currency, usdInr, {
-                          compact: true
-                        })}
+                        <PrivateMoney
+                          value={formatPortfolioValue(row.endBalanceInr, currency, usdInr, {
+                            compact: true
+                          })}
+                          currency={currency}
+                          privacyMode={privacyMode}
+                        />
                       </td>
                       <td className="py-2.5 text-right text-emerald-400 font-semibold">
                         {row.progressPct.toFixed(1)}%

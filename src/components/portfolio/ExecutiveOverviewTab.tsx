@@ -10,10 +10,14 @@ import {
 } from 'lucide-react';
 import { PortfolioData, CurrencyCode } from '../../types/portfolio';
 import { formatPortfolioValue } from '../../services/portfolioService';
+import { PrivateMoney } from './PrivateMoney';
+import { RebalancingCalculatorPanel } from './RebalancingCalculatorPanel';
 
 interface ExecutiveOverviewTabProps {
   data: PortfolioData;
   currency: CurrencyCode;
+  privacyMode?: boolean;
+  highlightRebalancing?: boolean;
   onNavigateTab: (tab: 'overview' | 'holdings' | 'watchlist' | 'research' | 'retirement') => void;
 }
 
@@ -27,6 +31,8 @@ const SLICE_COLORS = [
 export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
   data,
   currency,
+  privacyMode = false,
+  highlightRebalancing = false,
   onNavigateTab
 }) => {
   const [activeSliceIdx, setActiveSliceIdx] = useState<number | null>(null);
@@ -184,7 +190,11 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
         const val = minVal + t * range;
         return {
           y: getY(val),
-          label: formatPortfolioValue(val, currency, usdInr, { compact: true })
+          label: privacyMode
+            ? currency === 'USD'
+              ? '$ ••K'
+              : '₹ ••L'
+            : formatPortfolioValue(val, currency, usdInr, { compact: true })
         };
       });
 
@@ -207,7 +217,7 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
         yTicks
       };
     }
-  }, [chartSeries, chartMode, currency, usdInr]);
+  }, [chartSeries, chartMode, currency, usdInr, privacyMode]);
 
   const activeSnap =
     hoveredSnapIdx !== null && chartSeries[hoveredSnapIdx]
@@ -226,11 +236,20 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
           </div>
           <div>
             <div className="text-2xl sm:text-3xl font-bold text-slate-100 font-mono tabular-nums tracking-tight">
-              {formatPortfolioValue(summary.totalValueInr, currency, usdInr)}
+              <PrivateMoney
+                value={formatPortfolioValue(summary.totalValueInr, currency, usdInr)}
+                currency={currency}
+                privacyMode={privacyMode}
+              />
             </div>
             <div className="mt-2 flex items-center justify-between text-xs text-slate-400 font-mono tabular-nums">
               <span>
-                Invested: {formatPortfolioValue(summary.investedValueInr, currency, usdInr, { compact: true })}
+                Invested:{' '}
+                <PrivateMoney
+                  value={formatPortfolioValue(summary.investedValueInr, currency, usdInr, { compact: true })}
+                  currency={currency}
+                  privacyMode={privacyMode}
+                />
               </span>
               <span className="text-sky-400">{summary.investedPct.toFixed(1)}% Deployed</span>
             </div>
@@ -250,8 +269,12 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                   summary.unrealizedPnlInr >= 0 ? 'text-emerald-400' : 'text-rose-400'
                 }`}
               >
-                {summary.unrealizedPnlInr >= 0 ? '+' : ''}
-                {formatPortfolioValue(summary.unrealizedPnlInr, currency, usdInr)}
+                <PrivateMoney
+                  prefix={summary.unrealizedPnlInr >= 0 ? '+' : ''}
+                  value={formatPortfolioValue(summary.unrealizedPnlInr, currency, usdInr)}
+                  currency={currency}
+                  privacyMode={privacyMode}
+                />
               </span>
               <span
                 className={`inline-flex items-center gap-0.5 text-xs font-semibold font-mono tabular-nums ${
@@ -278,7 +301,11 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
           </div>
           <div>
             <div className="text-2xl sm:text-3xl font-bold text-slate-100 font-mono tabular-nums tracking-tight">
-              {formatPortfolioValue(summary.cashBalanceInr, currency, usdInr)}
+              <PrivateMoney
+                value={formatPortfolioValue(summary.cashBalanceInr, currency, usdInr)}
+                currency={currency}
+                privacyMode={privacyMode}
+              />
             </div>
             <div className="mt-2 flex items-center justify-between text-xs text-slate-400 font-mono tabular-nums">
               <span>{(100 - summary.investedPct).toFixed(1)}% Liquid Buffer</span>
@@ -302,7 +329,11 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
           <div>
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-2xl sm:text-3xl font-bold text-slate-100 font-mono tabular-nums tracking-tight">
-                ${meta.lrsUsedUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                <PrivateMoney
+                  value={`$${meta.lrsUsedUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+                  currency="USD"
+                  privacyMode={privacyMode}
+                />
               </span>
               <span className="text-xs text-slate-400 font-mono tabular-nums">
                 / ${(meta.lrsAnnualLimitUsd / 1000).toFixed(0)}K Cap
@@ -316,9 +347,21 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-xs text-slate-400 font-mono tabular-nums">
-              <span>Remitted: ₹{(meta.lrsUsedInr / 100000).toFixed(2)}L</span>
+              <span>
+                Remitted:{' '}
+                <PrivateMoney
+                  value={`₹${(meta.lrsUsedInr / 100000).toFixed(2)}L`}
+                  currency="INR"
+                  privacyMode={privacyMode}
+                />
+              </span>
               <span className="text-indigo-400">
-                ${lrsRemainingUsd.toLocaleString('en-US')} Headroom
+                <PrivateMoney
+                  value={`$${lrsRemainingUsd.toLocaleString('en-US')}`}
+                  currency="USD"
+                  privacyMode={privacyMode}
+                />{' '}
+                Headroom
               </span>
             </div>
           </div>
@@ -386,18 +429,30 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                     {selectedSegment ? selectedSegment.category : 'Total Portfolio'}
                   </span>
                   <span className="text-lg font-bold text-slate-100 font-mono tabular-nums mt-0.5">
-                    {selectedSegment
-                      ? `${selectedSegment.pct.toFixed(1)}%`
-                      : formatPortfolioValue(summary.totalValueInr, currency, usdInr, {
+                    {selectedSegment ? (
+                      `${selectedSegment.pct.toFixed(1)}%`
+                    ) : (
+                      <PrivateMoney
+                        value={formatPortfolioValue(summary.totalValueInr, currency, usdInr, {
                           compact: true
                         })}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
+                    )}
                   </span>
                   <span className="text-[11px] text-sky-400 font-mono tabular-nums mt-0.5">
-                    {selectedSegment
-                      ? formatPortfolioValue(selectedSegment.valueInr, currency, usdInr, {
+                    {selectedSegment ? (
+                      <PrivateMoney
+                        value={formatPortfolioValue(selectedSegment.valueInr, currency, usdInr, {
                           compact: true
-                        })
-                      : `${summary.investedPct.toFixed(1)}% Invested`}
+                        })}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
+                    ) : (
+                      `${summary.investedPct.toFixed(1)}% Invested`
+                    )}
                   </span>
                 </div>
               </div>
@@ -433,7 +488,11 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                         {seg.pct.toFixed(1)}%
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {formatPortfolioValue(seg.valueInr, currency, usdInr, { compact: true })}
+                        <PrivateMoney
+                          value={formatPortfolioValue(seg.valueInr, currency, usdInr, { compact: true })}
+                          currency={currency}
+                          privacyMode={privacyMode}
+                        />
                       </div>
                     </div>
                   </button>
@@ -466,7 +525,11 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                     <td className="py-2.5 font-medium text-slate-200">{seg.category}</td>
                     <td className="py-2.5 text-slate-400">{seg.role}</td>
                     <td className="py-2.5 text-right font-mono tabular-nums text-slate-200">
-                      {formatPortfolioValue(seg.valueInr, currency, usdInr)}
+                      <PrivateMoney
+                        value={formatPortfolioValue(seg.valueInr, currency, usdInr)}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
                     </td>
                     <td className="py-2.5 text-right font-mono tabular-nums font-semibold text-sky-400">
                       {seg.pct.toFixed(1)}%
@@ -529,8 +592,12 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                 <div>
                   <span className="text-slate-400 block font-sans text-[11px]">Portfolio Value</span>
                   <span className="text-sky-400 font-semibold">
-                    {formatPortfolioValue(activeSnap.totalValueInr, currency, usdInr)} (
-                    {activeSnap.portGrowthPct >= 0 ? '+' : ''}
+                    <PrivateMoney
+                      value={formatPortfolioValue(activeSnap.totalValueInr, currency, usdInr)}
+                      currency={currency}
+                      privacyMode={privacyMode}
+                    />{' '}
+                    ({activeSnap.portGrowthPct >= 0 ? '+' : ''}
                     {activeSnap.portGrowthPct.toFixed(1)}%)
                   </span>
                 </div>
@@ -582,7 +649,9 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                         x={svgChart.padLeft - 6}
                         y={t.y + 4}
                         textAnchor="end"
-                        className="fill-slate-500 text-[10px] font-mono"
+                        className={`fill-slate-500 text-[10px] font-mono ${
+                          chartMode === 'absolute' && privacyMode ? 'monetary-value privacy-blur' : ''
+                        }`.trim()}
                       >
                         {t.label}
                       </text>
@@ -685,8 +754,18 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
                     )}
                   </div>
                   <span className="font-mono tabular-nums text-[11px] text-slate-400">
-                    US Equity Sleeve: ${activeSnap?.usEquityUsd.toLocaleString('en-US')} · US Cash: $
-                    {activeSnap?.cashUsd.toLocaleString('en-US')}
+                    US Equity Sleeve:{' '}
+                    <PrivateMoney
+                      value={`$${activeSnap?.usEquityUsd.toLocaleString('en-US')}`}
+                      currency="USD"
+                      privacyMode={privacyMode}
+                    />{' '}
+                    · US Cash:{' '}
+                    <PrivateMoney
+                      value={`$${activeSnap?.cashUsd.toLocaleString('en-US')}`}
+                      currency="USD"
+                      privacyMode={privacyMode}
+                    />
                   </span>
                 </div>
               </div>
@@ -711,6 +790,14 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Portfolio Rebalancing & Capital Deployment Calculator */}
+      <RebalancingCalculatorPanel
+        data={data}
+        currency={currency}
+        privacyMode={privacyMode}
+        highlighted={highlightRebalancing}
+      />
     </div>
   );
 };

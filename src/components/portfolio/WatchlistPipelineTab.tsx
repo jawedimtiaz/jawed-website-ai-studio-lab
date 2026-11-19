@@ -13,10 +13,12 @@ import {
 } from 'lucide-react';
 import { PortfolioData, WatchlistItem, CurrencyCode } from '../../types/portfolio';
 import { formatPortfolioValue } from '../../services/portfolioService';
+import { PrivateMoney, getPrivacyMask } from './PrivateMoney';
 
 interface WatchlistPipelineTabProps {
   data: PortfolioData;
   currency: CurrencyCode;
+  privacyMode?: boolean;
   onAddWatchlistItem: (item: WatchlistItem) => void;
   onDeployWatchlistTranche: (item: WatchlistItem) => void;
 }
@@ -24,6 +26,7 @@ interface WatchlistPipelineTabProps {
 export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
   data,
   currency,
+  privacyMode = false,
   onAddWatchlistItem,
   onDeployWatchlistTranche
 }) => {
@@ -115,10 +118,11 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
 
   const handleTriggerDeploy = (item: WatchlistItem) => {
     onDeployWatchlistTranche(item);
+    const amountLabel = privacyMode
+      ? getPrivacyMask(currency)
+      : formatAllocatedCapital(item.allocatedCapitalUsd);
     setDeployedBanner(
-      `Simulated Tranche Deployment: ${item.ticker} (${formatAllocatedCapital(
-        item.allocatedCapitalUsd
-      )}) moved from Watchlist into Active Holdings.`
+      `Simulated Tranche Deployment: ${item.ticker} (${amountLabel}) moved from Watchlist into Active Holdings.`
     );
     setTimeout(() => setDeployedBanner(null), 6000);
   };
@@ -147,7 +151,11 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
         <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-400 mb-1">Total Pipeline Capital Earmarked</div>
           <div className="text-2xl font-bold text-slate-100 font-mono tabular-nums">
-            {formatAllocatedCapital(pipelineStats.totalAllocatedUsd)}
+            <PrivateMoney
+              value={formatAllocatedCapital(pipelineStats.totalAllocatedUsd)}
+              currency={currency}
+              privacyMode={privacyMode}
+            />
           </div>
           <div className="text-[11px] text-slate-400 font-mono tabular-nums mt-1">
             Across {data.watchlist.length} high-conviction targets
@@ -180,7 +188,12 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
             {pipelineStats.cashCoveragePct.toFixed(1)}%
           </div>
           <div className="text-[11px] text-slate-400 font-mono tabular-nums mt-1">
-            Cash: {formatPortfolioValue(data.summary.cashBalanceInr, currency, usdInr)}
+            Cash:{' '}
+            <PrivateMoney
+              value={formatPortfolioValue(data.summary.cashBalanceInr, currency, usdInr)}
+              currency={currency}
+              privacyMode={privacyMode}
+            />
           </div>
         </div>
       </div>
@@ -330,7 +343,11 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
                     <div>
                       <span className="text-slate-400">Allocated Capital: </span>
                       <strong className="text-slate-100 font-mono tabular-nums">
-                        {formatAllocatedCapital(item.allocatedCapitalUsd)}
+                        <PrivateMoney
+                          value={formatAllocatedCapital(item.allocatedCapitalUsd)}
+                          currency={currency}
+                          privacyMode={privacyMode}
+                        />
                       </strong>
                     </div>
                     <div className="flex items-center gap-1 text-emerald-400 font-medium">
@@ -352,7 +369,12 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
                 {/* Simulate Execution Action */}
                 <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
                   <span className="text-[11px] text-slate-400 font-mono tabular-nums">
-                    USD Budget: ${item.allocatedCapitalUsd.toLocaleString('en-US')}
+                    USD Budget:{' '}
+                    <PrivateMoney
+                      value={`$${item.allocatedCapitalUsd.toLocaleString('en-US')}`}
+                      currency="USD"
+                      privacyMode={privacyMode}
+                    />
                   </span>
                   <button
                     type="button"
@@ -418,7 +440,11 @@ export const WatchlistPipelineTab: React.FC<WatchlistPipelineTabProps> = ({
                       {item.drawdownPct.toFixed(1)}%
                     </td>
                     <td className="py-3.5 px-3 text-right font-mono tabular-nums font-semibold text-sky-400">
-                      {formatAllocatedCapital(item.allocatedCapitalUsd)}
+                      <PrivateMoney
+                        value={formatAllocatedCapital(item.allocatedCapitalUsd)}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
                     </td>
                     <td className="py-3.5 px-3">
                       <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">

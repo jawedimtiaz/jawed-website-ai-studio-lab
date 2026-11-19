@@ -15,6 +15,13 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
   let ToolsPage;
   let ToolDetailPage;
   let PortfolioDashboardPage;
+  let ExecutiveOverviewTab;
+  let HoldingsAnalyticsTab;
+  let WatchlistPipelineTab;
+  let RetirementRoadmapTab;
+  let MOCK_PORTFOLIO_DATA;
+  let computeRebalancePlan;
+  let DEFAULT_TARGET_WEIGHTS;
   let MemoryRouter;
   let Route;
   let Routes;
@@ -43,6 +50,12 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
         export { ToolsPage } from ${JSON.stringify(path.resolve('src/pages/ToolsPage.tsx'))};
         export { ToolDetailPage } from ${JSON.stringify(path.resolve('src/pages/ToolDetailPage.tsx'))};
         export { PortfolioDashboardPage } from ${JSON.stringify(path.resolve('src/pages/PortfolioDashboardPage.tsx'))};
+        export { ExecutiveOverviewTab } from ${JSON.stringify(path.resolve('src/components/portfolio/ExecutiveOverviewTab.tsx'))};
+        export { HoldingsAnalyticsTab } from ${JSON.stringify(path.resolve('src/components/portfolio/HoldingsAnalyticsTab.tsx'))};
+        export { WatchlistPipelineTab } from ${JSON.stringify(path.resolve('src/components/portfolio/WatchlistPipelineTab.tsx'))};
+        export { RetirementRoadmapTab } from ${JSON.stringify(path.resolve('src/components/portfolio/RetirementRoadmapTab.tsx'))};
+        export { MOCK_PORTFOLIO_DATA } from ${JSON.stringify(path.resolve('src/services/portfolioService.ts'))};
+        export { computeRebalancePlan, DEFAULT_TARGET_WEIGHTS } from ${JSON.stringify(path.resolve('src/components/portfolio/RebalancingCalculatorPanel.tsx'))};
         export { MemoryRouter, Route, Routes } from 'react-router-dom';
       `,
       'utf8'
@@ -65,6 +78,13 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     ToolsPage = mod.ToolsPage;
     ToolDetailPage = mod.ToolDetailPage;
     PortfolioDashboardPage = mod.PortfolioDashboardPage;
+    ExecutiveOverviewTab = mod.ExecutiveOverviewTab;
+    HoldingsAnalyticsTab = mod.HoldingsAnalyticsTab;
+    WatchlistPipelineTab = mod.WatchlistPipelineTab;
+    RetirementRoadmapTab = mod.RetirementRoadmapTab;
+    MOCK_PORTFOLIO_DATA = mod.MOCK_PORTFOLIO_DATA;
+    computeRebalancePlan = mod.computeRebalancePlan;
+    DEFAULT_TARGET_WEIGHTS = mod.DEFAULT_TARGET_WEIGHTS;
     MemoryRouter = mod.MemoryRouter;
     Route = mod.Route;
     Routes = mod.Routes;
@@ -211,5 +231,155 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
       return content.includes('portfolio-tracker') && content.includes('Multi-Asset Portfolio Tracker');
     });
     assert.ok(combinedBundleHasTracker, 'Built dist/assets/*.js bundle must contain portfolio-tracker registration');
+  });
+
+  it('6. PortfolioDashboardPage renders .dashboard-control-bar with Privacy Blur toggle and Rebalancing Calculator with persisted localStorage privacy support', () => {
+    globalThis.localStorage.clear();
+    const defaultHtml = renderToStaticMarkup(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/tools/portfolio-tracker/'] },
+        React.createElement(PortfolioDashboardPage)
+      )
+    );
+
+    assert.ok(
+      defaultHtml.includes('dashboard-control-bar'),
+      'Header must include .dashboard-control-bar container'
+    );
+    assert.ok(
+      defaultHtml.includes('data-testid="privacy-blur-toggle"') && defaultHtml.includes('Privacy Blur'),
+      'Header must render Privacy Blur toggle inside .dashboard-control-bar'
+    );
+    assert.ok(
+      defaultHtml.includes('data-testid="control-bar-rebalance-btn"') &&
+        defaultHtml.includes('id="portfolio-rebalancing-panel"') &&
+        defaultHtml.includes('data-testid="rebalancing-calculator-panel"') &&
+        defaultHtml.includes('Portfolio Rebalancing &amp; Capital Deployment') &&
+        defaultHtml.includes('Target Sum: 100.0% (Valid)'),
+      'Executive Overview and .dashboard-control-bar must wire the Portfolio Rebalancing & Capital Deployment panel with valid 100% default sum'
+    );
+    assert.ok(
+      !defaultHtml.includes('data-privacy-masked="true"') && !defaultHtml.includes('monetary-value privacy-blur'),
+      'Monetary figures must not have privacy-blur class when Privacy Blur is off'
+    );
+
+    // Simulate persisted Privacy Mode enabled in localStorage
+    globalThis.localStorage.setItem('jawed_portfolio_privacy_mode', 'true');
+    const privateHtml = renderToStaticMarkup(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/tools/portfolio-tracker/'] },
+        React.createElement(PortfolioDashboardPage)
+      )
+    );
+    globalThis.localStorage.removeItem('jawed_portfolio_privacy_mode');
+
+    assert.ok(
+      privateHtml.includes('Privacy Blur: On') && privateHtml.includes('aria-pressed="true"'),
+      'Header toggle must reflect active state when persisted privacy blur is enabled'
+    );
+    assert.ok(
+      privateHtml.includes('monetary-value privacy-blur') &&
+        privateHtml.includes('data-privacy-masked="true"') &&
+        privateHtml.includes('₹ ••,••,•••'),
+      'Executive Overview must apply privacy-blur CSS class to monetary values when Privacy Blur is on'
+    );
+    assert.ok(
+      privateHtml.includes('93.4% Deployed') && privateHtml.includes('+17.72%'),
+      'Percentages and status labels must remain 100% legible when Privacy Blur is on'
+    );
+  });
+
+  it('7. Privacy Blur Mode masks monetary values across Holdings, Watchlist, and Retirement tabs while preserving tickers and percentages', () => {
+    const holdingsHtml = renderToStaticMarkup(
+      React.createElement(HoldingsAnalyticsTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'USD',
+        privacyMode: true,
+        onAddHolding: () => {}
+      })
+    );
+    assert.ok(holdingsHtml.includes('$ ••,•••'), 'Holdings tab must mask USD monetary values');
+    assert.ok(
+      holdingsHtml.includes('NVDA') && holdingsHtml.includes('On Track'),
+      'Holdings tab must keep tickers and status badges readable in Privacy Mode'
+    );
+
+    const watchlistHtml = renderToStaticMarkup(
+      React.createElement(WatchlistPipelineTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        privacyMode: true,
+        onAddWatchlistItem: () => {},
+        onDeployWatchlistTranche: () => {}
+      })
+    );
+    assert.ok(watchlistHtml.includes('₹ ••,••,•••'), 'Watchlist tab must mask earmarked INR capital');
+    assert.ok(
+      watchlistHtml.includes('MSFT') && watchlistHtml.includes('Ready to Deploy'),
+      'Watchlist tab must keep tickers and deployment stages readable in Privacy Mode'
+    );
+
+    const retirementHtml = renderToStaticMarkup(
+      React.createElement(RetirementRoadmapTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        privacyMode: true
+      })
+    );
+    assert.ok(retirementHtml.includes('₹ ••,••,•••'), 'Retirement tab must mask corpus and milestone INR figures');
+    assert.ok(
+      !retirementHtml.includes('(₹50L)') && retirementHtml.includes('10%'),
+      'Retirement progress ticks must hide monetary suffixes while keeping percentage markers readable'
+    );
+  });
+
+  it('8. computeRebalancePlan accurately computes pure rebalancing, fresh capital deployment, and invalid weight validation', () => {
+    // Pure rebalancing (freshCapitalInr = 0) with default 35 / 25 / 30 / 10
+    const purePlan = computeRebalancePlan(MOCK_PORTFOLIO_DATA, DEFAULT_TARGET_WEIGHTS, 0);
+    assert.equal(purePlan.targetSum, 100);
+    assert.equal(purePlan.isValidSum, true);
+    assert.equal(purePlan.rows.length, 4);
+    assert.ok(
+      Math.abs(purePlan.totalBuyInr - purePlan.totalTrimInr) < 1,
+      'Pure rebalancing buys and trims must balance to zero net cash'
+    );
+
+    const inRow = purePlan.rows.find((r) => r.key === 'indianEquities');
+    const cashRow = purePlan.rows.find((r) => r.key === 'cashLiquid');
+    assert.equal(inRow.actionType, 'trim', 'Overweight Indian Equities (38.1% vs 35%) must recommend Trim');
+    assert.equal(cashRow.actionType, 'buy', 'Underweight Cash & Liquid (6.6% vs 10%) must recommend Buy');
+
+    // Fresh capital deployment (+₹5,00,000)
+    const freshPlan = computeRebalancePlan(MOCK_PORTFOLIO_DATA, DEFAULT_TARGET_WEIGHTS, 500000);
+    assert.equal(freshPlan.projectedTotalInr, freshPlan.currentTotalInr + 500000);
+    const netActionSum = freshPlan.rows.reduce((sum, r) => sum + r.actionAmountInr, 0);
+    assert.ok(
+      Math.abs(netActionSum - 500000) < 1,
+      `Net sum of Buy/Trim actions must equal fresh capital ₹500,000 (got ${netActionSum})`
+    );
+
+    // Tax-aware Cash-Only (No Sell) deployment (+₹5,00,000)
+    const cashOnlyPlan = computeRebalancePlan(
+      MOCK_PORTFOLIO_DATA,
+      DEFAULT_TARGET_WEIGHTS,
+      500000,
+      'cash-only'
+    );
+    assert.equal(cashOnlyPlan.totalTrimInr, 0, 'Cash-Only mode must never recommend trimming existing holdings');
+    assert.ok(
+      Math.abs(cashOnlyPlan.totalBuyInr - 500000) < 1,
+      `Cash-Only mode must deploy 100% of fresh capital ₹500,000 (got ${cashOnlyPlan.totalBuyInr})`
+    );
+
+    // Invalid target sum detection (110%)
+    const invalidPlan = computeRebalancePlan(
+      MOCK_PORTFOLIO_DATA,
+      { indianEquities: 40, mutualFunds: 30, usEquities: 30, cashLiquid: 10 },
+      0
+    );
+    assert.equal(invalidPlan.targetSum, 110);
+    assert.equal(invalidPlan.isValidSum, false);
   });
 });
