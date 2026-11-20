@@ -1,35 +1,31 @@
 import fs from "node:fs";
 
 const contract=JSON.parse(fs.readFileSync("config/production-monitoring-contract.json","utf8"));
-const smoke=JSON.parse(fs.readFileSync("config/production-smoke-contract.json","utf8"));
+const workflowDir=".github/workflows";
+const removedWorkflowPaths=[
+  "production-smoke-reliability.yml",
+  "production-ai-get-reliability.yml",
+  "production-ai-post-reliability.yml",
+  "production-static-assets.yml"
+];
 const failures=[];
-const validWorkflowPath=typeof contract.production_smoke_workflow==="string"&&contract.production_smoke_workflow.startsWith(".github/workflows/")&&!contract.production_smoke_workflow.includes("..")&&!contract.production_smoke_workflow.includes("\\")&&contract.production_smoke_workflow.trim()===contract.production_smoke_workflow;
-if(!validWorkflowPath) failures.push("production_smoke_workflow must be a safe workflow-relative path");
-const workflow=validWorkflowPath?fs.readFileSync(contract.production_smoke_workflow,"utf8"):"";
-if(typeof contract.checks_are_reused_from!=="string"||contract.checks_are_reused_from!=="config/production-smoke-contract.json") failures.push("checks_are_reused_from must identify the production smoke contract");
-
-if(contract.phase!=="39D") failures.push("contract phase must be 39D");
-if(contract.monitoring_mode!=="scheduled-github-actions") failures.push("monitoring mode must remain scheduled GitHub Actions");
-if(contract.cadence!=="every-6-hours") failures.push("cadence must remain every-6-hours");
-if(contract.cron!=="17 */6 * * *") failures.push("contract cron must remain 17 */6 * * *");
-if(contract.manual_dispatch_preserved!==true) failures.push("manual dispatch must remain preserved");
-if(contract.checks_are_reused_from!=="config/production-smoke-contract.json") failures.push("monitoring must reuse the declared production smoke contract");
-if(!workflow.includes("schedule:")) failures.push("production smoke workflow must define a schedule trigger");
-if(!workflow.includes('cron: "17 */6 * * *"')) failures.push("production smoke workflow must use the contracted six-hour cadence");
-if(!workflow.includes("workflow_dispatch:")) failures.push("manual workflow dispatch must remain available");
-if(!workflow.includes("permissions:\n  contents: read")) failures.push("workflow permissions must remain read-only");
-if(!workflow.includes("node scripts/validate-production-smoke.mjs")) failures.push("scheduled monitor must reuse the production smoke validator");
-if(smoke.production_origin!=="https://jawed.co.in") failures.push("production smoke origin drifted");
-if(!Array.isArray(smoke.checks)||smoke.checks.length<1) failures.push("production smoke contract must retain at least one check");
-if(contract.no_new_runtime_dependency!==true) failures.push("39D must not add runtime dependencies");
-if(contract.failure_behavior!=="github-actions-workflow-failure") failures.push("failure behavior must remain GitHub Actions workflow failure");
-if(contract.scope_boundary!=="monitor-production-availability-only") failures.push("scope boundary drifted");
-
+if(contract.phase!=="40A") failures.push("contract phase must be 40A");
+if(contract.scope!=="external-production-monitoring-ownership-boundary") failures.push("scope must describe external production monitoring ownership");
+if(contract.production_origin!=="https://jawed.co.in") failures.push("production origin must remain jawed.co.in");
+if(contract.owner_repository!=="jawedimtiaz/jawed-website") failures.push("personal-site repository must own production monitoring");
+if(contract.monitoring_mode!=="external-owner") failures.push("monitoring mode must be external-owner");
+if(contract.lab_duplicate_workflows_removed!==true) failures.push("Lab duplicate production-monitor workflows must be removed");
+if(contract.checks_are_reused_from!=="jawedimtiaz/jawed-website") failures.push("monitoring checks must be maintained in the personal website repository");
+if(contract.failure_behavior!=="external-owner-github-actions-monitor") failures.push("failure behavior must identify the external monitoring owner");
+if(contract.scope_boundary!=="lab-application-ci-does-not-monitor-personal-production") failures.push("scope boundary drifted");
+for(const workflow of removedWorkflowPaths){
+  if(fs.existsSync(`${workflowDir}/${workflow}`)) failures.push("duplicate Lab production monitor remains: "+workflow);
+}
 if(failures.length){
-  console.error("Production Availability Monitoring Gate FAILED");
+  console.error("Production Monitoring Ownership Gate FAILED");
   for(const failure of failures) console.error("- "+failure);
   process.exit(1);
 }
-console.log("Production Availability Monitoring Gate PASSED");
-console.log("Cadence: "+contract.cadence);
-console.log("Smoke checks reused: "+smoke.checks.length);
+console.log("Production Monitoring Ownership Gate PASSED");
+console.log("Owner: "+contract.owner_repository);
+console.log("Lab duplicate external production workflows: removed");

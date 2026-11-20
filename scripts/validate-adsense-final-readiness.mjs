@@ -12,7 +12,7 @@ const handoff=fs.readFileSync("docs/adsense-activation-handoff.md","utf8");
 const aggregate=fs.readFileSync("scripts/validate-adsense-readiness.mjs","utf8");
 const siteIntegrityWorkflow=fs.readFileSync(".github/workflows/site-integrity.yml","utf8");
 const securityWorkflow=fs.readFileSync(".github/workflows/production-security-headers.yml","utf8");
-const smokeWorkflow=fs.readFileSync(".github/workflows/production-smoke-reliability.yml","utf8");
+const monitoringContract=JSON.parse(fs.readFileSync("config/production-monitoring-contract.json","utf8"));
 const deploymentWorkflow=fs.readFileSync(".github/workflows/deployment-runtime-reliability.yml","utf8");
 function triggerPaths(workflow, trigger){
   const start=workflow.indexOf(trigger);
@@ -58,7 +58,7 @@ const criticalTriggerPaths=[
   "config/adsense-final-performance-gate.json","docs/adsense-content-readiness.md",
   "docs/adsense-technical-activation.md","docs/adsense-activation-contract.md",
   "docs/adsense-activation-handoff.md",".github/workflows/site-integrity.yml",
-  ".github/workflows/production-security-headers.yml",".github/workflows/production-smoke-reliability.yml",
+  ".github/workflows/production-security-headers.yml","config/production-monitoring-contract.json",
   ".github/workflows/deployment-runtime-reliability.yml"
 ];
 for(const path of criticalTriggerPaths){
@@ -118,7 +118,7 @@ assert.equal(handoff.includes("production smoke"),true,"Activation handoff must 
 assert.equal(handoff.includes("deployment runtime"),true,"Activation handoff must require deployment-runtime verification");
 assert.equal(siteIntegrityWorkflow.includes("node scripts/validate-site-integrity.mjs"),true,"Site-integrity workflow contract missing");
 assert.equal(securityWorkflow.includes("node scripts/validate-production-security-headers.mjs"),true,"Production security workflow contract missing");
-assert.equal(smokeWorkflow.includes("node scripts/validate-production-smoke.mjs"),true,"Production smoke workflow contract missing");
+assert.equal(monitoringContract.owner_repository==="jawedimtiaz/jawed-website"&&monitoringContract.scope_boundary==="lab-application-ci-does-not-monitor-personal-production",true,"External production monitoring ownership boundary is missing");
 assert.equal(deploymentWorkflow.includes("node scripts/validate-deployment-runtime-reliability.mjs"),true,"Deployment runtime workflow contract missing");
 assert.equal((workflow.match(/docs\/adsense-activation-handoff\.md/g)||[]).length,2,"Activation handoff must trigger both PR and main-push readiness CI");
 assert.equal(aggregate.includes("Validator count:")&&aggregate.includes("AdSense readiness aggregate gate: PASS"),true,"Aggregate readiness runner is incomplete");
