@@ -1,13 +1,11 @@
 {
-  "phase": "39D",
-  "scope": "production-availability-monitoring",
-  "production_smoke_workflow": ".github/workflows/production-smoke-reliability.yml",
-  "monitoring_mode": "scheduled-github-actions",
-  "cadence": "every-6-hours",
-  "cron": "17 */6 * * *",
-  "checks_are_reused_from": "config/production-smoke-contract.json",
-  "manual_dispatch_preserved": true,
-  "no_new_runtime_dependency": true,
-  "failure_behavior": "github-actions-workflow-failure",
-  "scope_boundary": "monitor-production-availability-only"
+  "phase": "40A",
+  "scope": "external-production-monitoring-ownership-boundary",
+  "production_origin": "https://jawed.co.in",
+  "owner_repository": "jawedimtiaz/jawed-website",
+  "monitoring_mode": "external-owner",
+  "lab_duplicate_workflows_removed": true,
+  "checks_are_reused_from": "jawedimtiaz/jawed-website",
+  "failure_behavior": "external-owner-github-actions-monitor",
+  "scope_boundary": "lab-application-ci-does-not-monitor-personal-production"
 }
