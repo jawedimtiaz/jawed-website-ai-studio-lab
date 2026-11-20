@@ -1,5 +1,7 @@
 // functions/api/hq/settings.js
 // Studio HQ Settings, Security Overview & Audit Logs API
+// Reconciled with Canonical Studio HQ Schema (0001_studio_hq_schema.sql)
+// Uses application defaults, canonical hq_users, and canonical audit_logs. Never writes to non-canonical tables.
 
 import {
   verifyAndAuthorizeOwner,
@@ -32,9 +34,10 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
 
   try {
+    // 1. Audit Logs Query
     if (url.pathname.includes('audit-logs')) {
       const { page, limit, offset } = parsePagination(url, 50, 100);
-      const entityType = url.searchParams.get('entityType') || '';
+      const entityType = (url.searchParams.get('entityType') || '').trim();
       const q = (url.searchParams.get('q') || '').trim().toLowerCase();
 
       const conditions = [];
@@ -64,17 +67,28 @@ export async function onRequestGet({ request, env }) {
       });
     }
 
-    const [settingRow, ownersRows, auditCount] = await Promise.all([
-      db.prepare(`SELECT value_json, updated_at, updated_by FROM studio_settings WHERE key = 'workspace'`).first(),
+    // 2. Settings & Security Overview
+    // Queries canonical hq_users and audit_logs. Gracefully extracts last saved settings from audit trail.
+    const [ownersRows, auditCount, lastSettingsAudit] = await Promise.all([
       db.prepare(`SELECT uid, email, display_name, status, created_at, last_seen_at FROM hq_users ORDER BY created_at ASC`).all(),
-      db.prepare(`SELECT COUNT(*) AS total FROM audit_logs`).first()
+      db.prepare(`SELECT COUNT(*) AS total FROM audit_logs`).first(),
+      db.prepare(
+        `SELECT after_json FROM audit_logs
+         WHERE action = 'SETTINGS_UPDATED' AND entity_type = 'settings'
+         ORDER BY created_at DESC LIMIT 1`
+      ).first().catch(() => null)
     ]);
 
     let settings = { ...DEFAULT_SETTINGS };
-    if (settingRow?.value_json) {
+    if (lastSettingsAudit?.after_json) {
       try {
-        settings = { ...DEFAULT_SETTINGS, ...JSON.parse(settingRow.value_json) };
-      } catch {}
+        const parsed = JSON.parse(lastSettingsAudit.after_json);
+        if (parsed && typeof parsed === 'object') {
+          settings = { ...DEFAULT_SETTINGS, ...parsed };
+        }
+      } catch {
+        // Fallback to DEFAULT_SETTINGS
+      }
     }
 
     return jsonResponse({
@@ -102,7 +116,6 @@ export async function onRequestPut({ request, env }) {
   const body = bodyResult.data;
 
   const db = env.HQ_DB;
-  const nowIso = new Date().toISOString();
   const nextSettings = {
     studioName: cleanString(body.studioName || DEFAULT_SETTINGS.studioName, 120),
     ownerName: cleanString(body.ownerName || DEFAULT_SETTINGS.ownerName, 120),
@@ -114,23 +127,12 @@ export async function onRequestPut({ request, env }) {
     quotationValidityDays: Math.max(1, Math.min(365, Math.round(Number(body.quotationValidityDays ?? 30) || 30)))
   };
 
-  await db
-    .prepare(
-      `INSERT INTO studio_settings (key, value_json, updated_by, updated_at)
-       VALUES ('workspace', ?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET
-         value_json = excluded.value_json,
-         updated_by = excluded.updated_by,
-         updated_at = excluded.updated_at`
-    )
-    .bind(JSON.stringify(nextSettings), auth.owner.email, nowIso)
-    .run();
-
+  // Record settings update in append-only audit log; preserves settings history without inventing D1 schema tables
   await auditLog(db, {
     actorUid: auth.owner.uid,
     actorEmail: auth.owner.email,
     action: 'SETTINGS_UPDATED',
-    entityType: 'studio_settings',
+    entityType: 'settings',
     entityId: 'workspace',
     requestId: auth.requestId,
     ipAddress: auth.ipAddress,

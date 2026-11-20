@@ -42,17 +42,178 @@ export function errorResponse(status, code, message, extra = {}) {
 }
 
 /**
- * Standard CORS preflight response for Studio HQ endpoints.
+ * Resolves the set of allowed web origins for Studio HQ APIs based on the active environment.
+ * Enforces strict environment separation:
+ * - Production ('lab' / 'production'): https://lab.jawed.co.in, https://jawed.co.in
+ * - Preview ('preview'): https://preview.lab.jawed.co.in, https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev
+ * - Development/Test ('dev-local' / 'test'): localhost and 127.0.0.1 origins
+ * - Never allows arbitrary origins; never allows wildcard '*'.
  */
-export function hqOptionsResponse(methods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS') {
+export function getHqAllowedOrigins(env, requestUrl) {
+  const allowed = new Set();
+
+  if (requestUrl) {
+    try {
+      const parsed = new URL(requestUrl);
+      if (parsed.origin && parsed.origin !== 'null') {
+        allowed.add(parsed.origin.toLowerCase());
+      }
+    } catch {}
+  }
+
+  if (env?.CANONICAL_ORIGIN) {
+    try {
+      const canonical = new URL(env.CANONICAL_ORIGIN).origin.toLowerCase();
+      allowed.add(canonical);
+    } catch {}
+  }
+
+  const environment = (env?.ENVIRONMENT || '').toLowerCase();
+  if (environment === 'lab' || environment === 'production') {
+    allowed.add('https://lab.jawed.co.in');
+    allowed.add('https://jawed.co.in');
+  } else if (environment === 'preview') {
+    allowed.add('https://preview.lab.jawed.co.in');
+    allowed.add('https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev');
+  } else if (environment === 'dev-local' || environment === 'test') {
+    allowed.add('http://localhost:5173');
+    allowed.add('http://localhost:3000');
+    allowed.add('http://127.0.0.1:5173');
+    allowed.add('http://127.0.0.1:3000');
+  }
+
+  if (env?.HQ_ALLOWED_ORIGINS) {
+    const custom = String(env.HQ_ALLOWED_ORIGINS)
+      .split(',')
+      .map((o) => o.trim().toLowerCase())
+      .filter(Boolean);
+    for (const c of custom) {
+      try {
+        allowed.add(new URL(c).origin.toLowerCase());
+      } catch {
+        allowed.add(c);
+      }
+    }
+  }
+
+  return allowed;
+}
+
+/**
+ * Validates whether an incoming HTTP request origin is permitted to access private Studio HQ APIs.
+ */
+export function isHqAllowedOrigin(request, env) {
+  if (!request) return false;
+  const origin = request.headers?.get('origin');
+
+  // If no Origin header (same-origin browser navigation, cURL, or server-to-server):
+  if (!origin) {
+    const fetchSite = request.headers?.get('sec-fetch-site');
+    if (fetchSite === 'cross-site') return false;
+    return true;
+  }
+
+  const normalized = origin.trim().toLowerCase();
+  // Reject wildcard or 'null' string origins
+  if (normalized === '*' || normalized === 'null') return false;
+
+  const allowed = getHqAllowedOrigins(env, request.url);
+  if (allowed.has(normalized)) return true;
+
+  try {
+    const reqOrigin = new URL(request.url).origin.toLowerCase();
+    if (normalized === reqOrigin) return true;
+  } catch {}
+
+  const envName = (env?.ENVIRONMENT || '').toLowerCase();
+  if (envName === 'dev-local' || envName === 'test') {
+    try {
+      const parsed = new URL(normalized);
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        return true;
+      }
+    } catch {}
+  }
+
+  return false;
+}
+
+/**
+ * Standard CORS preflight response for Studio HQ endpoints.
+ * Never emits wildcard '*'. Returns 403 for disallowed origins.
+ */
+export function hqOptionsResponse(arg1, arg2) {
+  let request = null;
+  let env = null;
+  let methods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+
+  if (typeof arg1 === 'string') {
+    methods = arg1;
+  } else if (arg1 && typeof arg1 === 'object') {
+    if (arg1.request) {
+      request = arg1.request;
+      env = arg1.env;
+    } else if (typeof arg1.headers?.get === 'function') {
+      request = arg1;
+    }
+    if (typeof arg2 === 'string') {
+      methods = arg2;
+    }
+  }
+
+  if (request) {
+    const origin = request.headers.get('origin');
+    if (origin) {
+      if (!isHqAllowedOrigin(request, env)) {
+        return errorResponse(403, 'ORIGIN_NOT_ALLOWED', 'Origin not allowed for Studio HQ API');
+      }
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'access-control-allow-origin': origin,
+          'access-control-allow-methods': methods,
+          'access-control-allow-headers': 'content-type, authorization, x-idempotency-key',
+          'access-control-max-age': '86400',
+          'vary': 'Origin',
+          'allow': methods,
+          'cache-control': 'no-store, private, max-age=0'
+        }
+      });
+    }
+  }
+
+  // Same-origin or non-browser preflight with no Origin header
   return new Response(null, {
     status: 204,
     headers: {
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': methods,
-      'access-control-allow-headers': 'content-type, authorization, x-idempotency-key',
-      'access-control-max-age': '86400'
+      'allow': methods,
+      'cache-control': 'no-store, private, max-age=0'
     }
+  });
+}
+
+/**
+ * Applies environment-aware CORS headers to private HQ API responses.
+ * Never emits wildcard Access-Control-Allow-Origin: *.
+ * Emits Access-Control-Allow-Origin ONLY when origin is explicitly allowed.
+ */
+export function applyHqCorsHeaders(response, request, env) {
+  if (!response || !request) return response;
+  const origin = request.headers?.get('origin');
+  if (!origin) return response;
+
+  // If origin is not allowed, do NOT attach CORS headers
+  if (!isHqAllowedOrigin(request, env)) {
+    return response;
+  }
+
+  const newHeaders = new Headers(response.headers);
+  newHeaders.set('access-control-allow-origin', origin);
+  newHeaders.set('vary', 'Origin');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders
   });
 }
 
@@ -164,12 +325,12 @@ export async function auditLog(
       .prepare(
         `INSERT INTO audit_logs (
           id, actor_uid, actor_email, action, entity_type, entity_id,
-          request_id, ip_address, before_json, after_json, metadata_json, created_at
+          request_id, ip_hash, before_json, after_json, metadata_json, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
-        String(actorUid || 'system'),
+        actorUid ? String(actorUid) : null,
         String(actorEmail || ''),
         String(action || 'UNKNOWN'),
         String(entityType || 'system'),
@@ -188,31 +349,61 @@ export async function auditLog(
 }
 
 /**
- * Atomically generates sequential human-friendly numbers (e.g. QUO-2026-0001, INV-2026-0001).
+ * Atomically generates sequential human-friendly numbers (e.g. QUO-2627-0001, INV-2627-0001)
+ * aligned with canonical financial_sequences schema (0002_financial_management.sql).
  */
-export async function nextSequenceNumber(db, seqKey, prefix) {
-  const nowIso = new Date().toISOString();
-  const year = nowIso.slice(0, 4);
-  const fullKey = `${seqKey}_${year}`;
+export async function nextSequenceNumber(db, docType = 'invoice', prefix = 'INV') {
+  const now = new Date();
+  const year = now.getFullYear();
+  const nextYearShort = String((year + 1) % 100).padStart(2, '0');
+  const fy = `${year}-${nextYearShort}`;
+  const nowIso = now.toISOString();
+  const canonicalType = docType === 'quotation' ? 'quotation' : 'invoice';
 
-  await db
+  let updated = await db
     .prepare(
-      `INSERT INTO financial_sequences (seq_key, current_value, updated_at)
-       VALUES (?, 1, ?)
-       ON CONFLICT(seq_key) DO UPDATE SET
-         current_value = current_value + 1,
-         updated_at = excluded.updated_at`
+      `UPDATE financial_sequences
+       SET next_number = next_number + 1, updated_at = ?
+       WHERE document_type = ? AND financial_year = ?
+       RETURNING next_number`
     )
-    .bind(fullKey, nowIso)
-    .run();
-
-  const row = await db
-    .prepare(`SELECT current_value FROM financial_sequences WHERE seq_key = ?`)
-    .bind(fullKey)
+    .bind(nowIso, canonicalType, fy)
     .first();
 
-  const num = Number(row?.current_value || 1);
-  return `${prefix}-${year}-${String(num).padStart(4, '0')}`;
+  if (updated && typeof updated.next_number === 'number') {
+    const allocatedNum = updated.next_number - 1;
+    return `${prefix}-${fy.slice(2, 4)}${fy.slice(5, 7)}-${String(allocatedNum).padStart(4, '0')}`;
+  }
+
+  const id = crypto.randomUUID();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO financial_sequences (id, document_type, prefix, financial_year, next_number, updated_at)
+         VALUES (?, ?, ?, ?, 2, ?)`
+      )
+      .bind(id, canonicalType, prefix, fy, nowIso)
+      .run();
+    return `${prefix}-${fy.slice(2, 4)}${fy.slice(5, 7)}-0001`;
+  } catch {
+    updated = await db
+      .prepare(
+        `UPDATE financial_sequences
+         SET next_number = next_number + 1, updated_at = ?
+         WHERE document_type = ? AND financial_year = ?
+         RETURNING next_number`
+      )
+      .bind(nowIso, canonicalType, fy)
+      .first();
+
+    if (updated && typeof updated.next_number === 'number') {
+      const allocatedNum = updated.next_number - 1;
+      return `${prefix}-${fy.slice(2, 4)}${fy.slice(5, 7)}-${String(allocatedNum).padStart(4, '0')}`;
+    }
+
+    const yr = String(year).slice(-2);
+    return `${prefix}-${yr}-${Date.now().toString().slice(-6)}`;
+  }
 }
 
 /**
@@ -235,6 +426,15 @@ export async function verifyAndAuthorizeOwner(request, env, options = {}) {
     if (!preLimit.allowed) {
       return { authorized: false, response: preLimit.response };
     }
+  }
+
+  // 0a. Origin validation: reject cross-origin requests from unauthorized origins
+  const origin = request.headers?.get('origin');
+  if (origin && !isHqAllowedOrigin(request, env)) {
+    return {
+      authorized: false,
+      response: errorResponse(403, 'ORIGIN_NOT_ALLOWED', 'Origin not allowed for Studio HQ API')
+    };
   }
 
   // 1. Extract Bearer token
@@ -299,14 +499,14 @@ export async function verifyAndAuthorizeOwner(request, env, options = {}) {
   // 6. Fail closed if owner is not enrolled in D1 (NEVER auto-enroll on normal API requests)
   if (!userRecord) {
     await auditLog(db, {
-      actorUid: firebaseUser.uid,
+      actorUid: null,
       actorEmail: firebaseUser.email,
       action: 'OWNER_ENROLLMENT_REJECTED',
       entityType: 'hq_users',
       entityId: firebaseUser.uid,
       requestId,
       ipAddress,
-      metadata: { reason: 'owner_not_enrolled' }
+      metadata: { reason: 'owner_not_enrolled', attemptedUid: firebaseUser.uid }
     });
 
     return {

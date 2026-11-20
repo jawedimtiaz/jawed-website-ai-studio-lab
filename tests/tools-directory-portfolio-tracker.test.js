@@ -382,4 +382,31 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     assert.equal(invalidPlan.targetSum, 110);
     assert.equal(invalidPlan.isValidSum, false);
   });
+
+  it('9. Static tools/portfolio-tracker/index.html navigation satisfies parity contract across inline and multiline whitespace variations', () => {
+    const ptHtml = fs.readFileSync(path.resolve('tools/portfolio-tracker/index.html'), 'utf8');
+    const navMatch = ptHtml.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/);
+    assert.ok(navMatch, 'tools/portfolio-tracker/index.html must contain #site-nav navigation element');
+
+    const nav = navMatch[1];
+    const navPattern = /<details class="nav-group">\s*<summary>Explore<\/summary>/;
+
+    // Actual page validation
+    assert.ok(navPattern.test(nav), 'portfolio tracker navigation must match Explore details/summary pattern');
+    assert.ok(nav.includes('<a href="/topics/">Topics</a>'), 'portfolio tracker navigation must link to Topics');
+    assert.ok(nav.includes('<a href="/notes/">Notes</a>'), 'portfolio tracker navigation must link to Notes');
+    assert.ok(nav.includes('<a href="/blog/">Blog</a>'), 'portfolio tracker navigation must link to Blog');
+    assert.ok(nav.includes('<a href="/resources/">Resources</a>'), 'portfolio tracker navigation must link to Resources');
+    assert.ok(/<a href="\/tools\/"(?:\s[^>]*)?>Tools<\/a>/.test(nav), 'portfolio tracker navigation must link to Tools');
+    assert.ok(nav.includes('<a href="/ai/">AI</a>'), 'portfolio tracker navigation must link to AI');
+    assert.ok(nav.includes('<a href="/contact/">Contact</a>'), 'portfolio tracker navigation must link to Contact');
+
+    // Inline markup variation coverage
+    const inlineNav = '<details class="nav-group"><summary>Explore</summary></details>';
+    assert.ok(navPattern.test(inlineNav), 'navPattern must match compact inline HTML markup');
+
+    // Multiline with indentation variation coverage
+    const multilineNav = '<details class="nav-group">\n            <summary>Explore</summary>\n          </details>';
+    assert.ok(navPattern.test(multilineNav), 'navPattern must match multiline HTML markup with arbitrary whitespace');
+  });
 });

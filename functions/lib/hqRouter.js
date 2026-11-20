@@ -25,6 +25,7 @@ import * as maintenanceHandler from '../api/hq/maintenance.js';
 import * as supportHandler from '../api/hq/support.js';
 import * as analyticsHandler from '../api/hq/analytics.js';
 import * as settingsHandler from '../api/hq/settings.js';
+import { isHqAllowedOrigin, applyHqCorsHeaders, errorResponse } from './hqApi.js';
 
 const ROUTE_TABLE = {
   '/api/hq/session': sessionHandler,
@@ -92,5 +93,14 @@ export async function dispatchHqApiRequest(pathname, context) {
     });
   }
 
-  return await fn(context);
+  // Preflight OPTIONS Origin Enforcement: reject unauthorized cross-origin preflight requests immediately
+  if (method === 'OPTIONS' && context.request) {
+    const origin = context.request.headers?.get('origin');
+    if (origin && !isHqAllowedOrigin(context.request, context.env)) {
+      return errorResponse(403, 'ORIGIN_NOT_ALLOWED', 'Origin not allowed for Studio HQ API');
+    }
+  }
+
+  const response = await fn(context);
+  return applyHqCorsHeaders(response, context.request, context.env);
 }

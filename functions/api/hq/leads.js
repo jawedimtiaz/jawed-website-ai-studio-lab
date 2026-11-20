@@ -1,5 +1,6 @@
 // functions/api/hq/leads.js
 // Studio HQ CRM Leads & Atomic Lead-to-Customer Conversion API
+// Reconciled with Canonical Studio HQ Schema (0001_studio_hq_schema.sql & 0002_financial_management.sql)
 
 import {
   verifyAndAuthorizeOwner,
@@ -12,7 +13,40 @@ import {
   auditLog
 } from '../../lib/hqApi.js';
 
-const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
+/**
+ * Maps a canonical clients table row to the HqLead shape expected by Studio HQ frontend.
+ */
+function toLeadRow(row) {
+  let status = 'New';
+  const s = (row.status || '').toLowerCase();
+  if (s === 'prospect') status = 'Qualified';
+  else if (s === 'active') status = 'Converted';
+  else if (s === 'lead') status = 'New';
+  else if (s === 'closed') status = 'Lost';
+  else status = row.status || 'New';
+
+  return {
+    id: row.id,
+    business_name: row.business_name || row.name || '',
+    contact_name: row.name || '',
+    name: row.name || '',
+    email: row.email || '',
+    phone: row.phone || '',
+    category: '',
+    website: row.website_url || '',
+    website_url: row.website_url || '',
+    source: row.source || 'Direct Enquiry',
+    status,
+    canonical_status: row.status,
+    estimated_value_minor: 0,
+    currency: 'INR',
+    notes: row.notes || '',
+    next_follow_up_at: null,
+    converted_client_id: s === 'active' ? row.id : null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
 
 export async function onRequestGet({ request, env }) {
   const auth = await verifyAndAuthorizeOwner(request, env, { rateLimitKind: 'general' });
@@ -20,42 +54,62 @@ export async function onRequestGet({ request, env }) {
 
   const db = env.HQ_DB;
   const url = new URL(request.url);
-  const status = url.searchParams.get('status') || '';
+  const statusParam = (url.searchParams.get('status') || '').trim();
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
   const { page, limit, offset } = parsePagination(url);
 
   try {
-    const conditions = [];
+    const conditions = ['archived_at IS NULL'];
     const params = [];
-    if (status && status !== 'All') {
-      conditions.push('status = ?');
-      params.push(status);
+
+    // Filter by lead status
+    if (!statusParam || statusParam === 'All') {
+      conditions.push("lower(status) IN ('lead', 'prospect')");
+    } else {
+      const sp = statusParam.toLowerCase();
+      if (sp === 'new' || sp === 'lead') {
+        conditions.push("lower(status) = 'lead'");
+      } else if (sp === 'qualified' || sp === 'prospect') {
+        conditions.push("lower(status) = 'prospect'");
+      } else if (sp === 'converted' || sp === 'active') {
+        conditions.push("lower(status) = 'active'");
+      } else if (sp === 'lost' || sp === 'closed') {
+        conditions.push("lower(status) = 'closed'");
+      } else {
+        conditions.push("lower(status) = ?");
+        params.push(sp);
+      }
     }
+
     if (q) {
       conditions.push(
-        '(LOWER(business_name) LIKE ? OR LOWER(contact_name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(source) LIKE ?)'
+        "(LOWER(COALESCE(business_name, '')) LIKE ? OR LOWER(COALESCE(name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? OR LOWER(COALESCE(source, '')) LIKE ?)"
       );
       const pattern = `%${q}%`;
       params.push(pattern, pattern, pattern, pattern);
     }
 
-    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
     const countRow = await db
-      .prepare(`SELECT COUNT(*) AS total FROM leads ${whereClause}`)
+      .prepare(`SELECT COUNT(*) AS total FROM clients ${whereClause}`)
       .bind(...params)
       .first();
+
     const rows = await db
       .prepare(
-        `SELECT * FROM leads ${whereClause}
+        `SELECT * FROM clients ${whereClause}
          ORDER BY updated_at DESC
          LIMIT ? OFFSET ?`
       )
       .bind(...params, limit, offset)
       .all();
 
+    const mappedLeads = (rows.results || []).map(toLeadRow);
+
     return jsonResponse({
       success: true,
-      leads: rows.results || [],
+      leads: mappedLeads,
       total: Number(countRow?.total || 0),
       page,
       limit
@@ -77,74 +131,46 @@ export async function onRequestPost({ request, env }) {
   const db = env.HQ_DB;
   const nowIso = new Date().toISOString();
 
-  // Special action: convert lead to CRM customer (+ optional project)
+  // Special action: convert lead to active customer (+ optional project)
   if (body.action === 'convert') {
     const leadId = cleanString(body.leadId || body.id, 128);
     if (!leadId) return errorResponse(400, 'INVALID_INPUT', 'leadId is required for conversion');
 
-    const lead = await db.prepare(`SELECT * FROM leads WHERE id = ?`).bind(leadId).first();
+    const lead = await db
+      .prepare(`SELECT * FROM clients WHERE id = ? AND archived_at IS NULL`)
+      .bind(leadId)
+      .first();
+
     if (!lead) return errorResponse(404, 'NOT_FOUND', 'Lead not found');
-    if (lead.status === 'Converted' && lead.converted_client_id) {
+    if ((lead.status || '').toLowerCase() === 'active') {
       return errorResponse(409, 'ALREADY_CONVERTED', 'Lead has already been converted to a customer');
     }
 
-    const clientId = crypto.randomUUID();
     const createProject = body.createProject === true;
     const projectId = createProject ? crypto.randomUUID() : null;
-    const projectName = cleanString(body.projectName || `${lead.business_name} Website`, 200);
+    const projectName = cleanString(body.projectName || `${lead.business_name || lead.name} Website`, 200);
 
     const stmts = [
       db
-        .prepare(
-          `INSERT INTO clients (
-            id, name, business_name, status, email, phone, category, website,
-            lead_source, notes, last_contact_at, created_by, created_at, updated_at
-          ) VALUES (?, ?, ?, 'onboarding', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          clientId,
-          lead.contact_name,
-          lead.business_name,
-          lead.email,
-          lead.phone,
-          lead.category,
-          lead.website,
-          lead.source,
-          lead.notes,
-          nowIso,
-          auth.owner.uid,
-          nowIso,
-          nowIso
-        ),
-      db
-        .prepare(
-          `INSERT INTO client_contacts (id, client_id, name, role, email, phone, is_primary, created_at, updated_at)
-           VALUES (?, ?, ?, 'Primary Contact', ?, ?, 1, ?, ?)`
-        )
-        .bind(crypto.randomUUID(), clientId, lead.contact_name, lead.email, lead.phone, nowIso, nowIso),
-      db
-        .prepare(
-          `UPDATE leads SET status = 'Converted', converted_client_id = ?, updated_at = ? WHERE id = ?`
-        )
-        .bind(clientId, nowIso, leadId)
+        .prepare(`UPDATE clients SET status = 'active', updated_by = ?, updated_at = ? WHERE id = ?`)
+        .bind(auth.owner.uid, nowIso, leadId)
     ];
 
     if (createProject && projectId) {
+      const projectCode = `PRJ-${Date.now().toString(36).toUpperCase()}`;
       stmts.push(
         db
           .prepare(
             `INSERT INTO projects (
-              id, client_id, name, project_type, status, priority, summary, currency,
-              quoted_amount_minor, created_by, updated_by, created_at, updated_at
-            ) VALUES (?, ?, ?, 'Website Build', 'Onboarding', 'Medium', ?, ?, ?, ?, ?, ?, ?)`
+              id, project_code, client_id, name, project_type, status, priority,
+              currency, quoted_amount_minor, created_by, updated_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'business-website', 'discovery', 'normal', 'INR', 0, ?, ?, ?, ?)`
           )
           .bind(
             projectId,
-            clientId,
+            projectCode,
+            leadId,
             projectName,
-            lead.notes || '',
-            lead.currency || 'INR',
-            Number(lead.estimated_value_minor || 0),
             auth.owner.uid,
             auth.owner.uid,
             nowIso,
@@ -159,18 +185,18 @@ export async function onRequestPost({ request, env }) {
         actorUid: auth.owner.uid,
         actorEmail: auth.owner.email,
         action: 'LEAD_CONVERTED',
-        entityType: 'leads',
+        entityType: 'clients',
         entityId: leadId,
         requestId: auth.requestId,
         ipAddress: auth.ipAddress,
         before: { status: lead.status },
-        after: { status: 'Converted', convertedClientId: clientId, projectId }
+        after: { status: 'active', convertedClientId: leadId, projectId }
       });
 
       return jsonResponse(
         {
           success: true,
-          clientId,
+          clientId: leadId,
           projectId,
           leadId
         },
@@ -182,58 +208,82 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  const businessName = cleanString(body.business_name || body.businessName, 200);
-  const contactName = cleanString(body.contact_name || body.contactName, 200);
-  if (!businessName || !contactName) {
-    return errorResponse(400, 'INVALID_INPUT', 'Business name and contact person are required');
+  // Normal lead creation
+  const businessName = cleanString(body.business_name || body.businessName || body.name, 200);
+  const contactName = cleanString(body.contact_name || body.contactName || body.name || body.business_name, 200);
+  if (!businessName && !contactName) {
+    return errorResponse(400, 'INVALID_INPUT', 'Business name or contact person is required');
   }
 
-  const status = LEAD_STATUSES.includes(body.status) ? body.status : 'New';
+  const name = contactName || businessName;
+  const busName = businessName || contactName;
   const id = crypto.randomUUID();
-  const estimatedValueMinor = Math.max(0, Math.round(Number(body.estimated_value_minor ?? body.estimatedValueMinor ?? 0) || 0));
+  const clientCode = `CLI-${Date.now().toString(36).toUpperCase()}`;
+  const inputStatus = (body.status || '').toString().toLowerCase();
+  const canonicalStatus = inputStatus === 'qualified' || inputStatus === 'prospect' ? 'prospect' : 'lead';
+
+  const email = cleanString(body.email, 200).toLowerCase();
+  const phone = cleanString(body.phone, 50);
+  const websiteUrl = cleanString(body.website || body.website_url, 300);
+  const source = cleanString(body.source || 'Direct Enquiry', 100);
+  const notes = cleanString(body.notes, 4000);
 
   try {
-    await db
-      .prepare(
-        `INSERT INTO leads (
-          id, business_name, contact_name, email, phone, category, website, source,
-          status, estimated_value_minor, currency, notes, next_follow_up_at,
-          created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        id,
-        businessName,
-        contactName,
-        cleanString(body.email, 200).toLowerCase(),
-        cleanString(body.phone, 50),
-        cleanString(body.category, 100),
-        cleanString(body.website, 300),
-        cleanString(body.source || 'Direct Enquiry', 100),
-        status,
-        estimatedValueMinor,
-        cleanString(body.currency || 'INR', 10).toUpperCase(),
-        cleanString(body.notes, 4000),
-        cleanString(body.next_follow_up_at || body.nextFollowUpAt, 50) || null,
-        auth.owner.uid,
-        nowIso,
-        nowIso
-      )
-      .run();
+    const stmts = [
+      db
+        .prepare(
+          `INSERT INTO clients (
+            id, client_code, name, business_name, status, email, phone, website_url,
+            notes, source, created_by, updated_by, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          id,
+          clientCode,
+          name,
+          busName,
+          canonicalStatus,
+          email,
+          phone,
+          websiteUrl,
+          notes,
+          source,
+          auth.owner.uid,
+          auth.owner.uid,
+          nowIso,
+          nowIso
+        )
+    ];
 
-    const created = await db.prepare(`SELECT * FROM leads WHERE id = ?`).bind(id).first();
+    if (contactName) {
+      stmts.push(
+        db
+          .prepare(
+            `INSERT INTO client_contacts (
+              id, client_id, full_name, role_title, email, phone, is_primary, created_at, updated_at
+            ) VALUES (?, ?, ?, 'Primary Contact', ?, ?, 1, ?, ?)`
+          )
+          .bind(crypto.randomUUID(), id, contactName, email, phone, nowIso, nowIso)
+      );
+    }
+
+    await db.batch(stmts);
+
+    const created = await db.prepare(`SELECT * FROM clients WHERE id = ?`).bind(id).first();
+    const mapped = toLeadRow(created);
+
     await auditLog(db, {
       actorUid: auth.owner.uid,
       actorEmail: auth.owner.email,
       action: 'LEAD_CREATED',
-      entityType: 'leads',
+      entityType: 'clients',
       entityId: id,
       requestId: auth.requestId,
       ipAddress: auth.ipAddress,
-      after: created
+      after: mapped
     });
 
-    return jsonResponse({ success: true, lead: created }, 201);
+    return jsonResponse({ success: true, lead: mapped }, 201);
   } catch (err) {
     console.error('[HQ Leads POST Error]', err);
     return errorResponse(500, 'SERVER_ERROR', 'Failed to create lead');
@@ -252,61 +302,75 @@ export async function onRequestPut({ request, env }) {
   if (!id) return errorResponse(400, 'INVALID_INPUT', 'Lead ID is required');
 
   const db = env.HQ_DB;
-  const existing = await db.prepare(`SELECT * FROM leads WHERE id = ?`).bind(id).first();
+  const existing = await db
+    .prepare(`SELECT * FROM clients WHERE id = ? AND archived_at IS NULL`)
+    .bind(id)
+    .first();
+
   if (!existing) return errorResponse(404, 'NOT_FOUND', 'Lead not found');
 
-  const businessName = cleanString(body.business_name ?? body.businessName ?? existing.business_name, 200);
-  const contactName = cleanString(body.contact_name ?? body.contactName ?? existing.contact_name, 200);
-  const status = LEAD_STATUSES.includes(body.status) ? body.status : existing.status;
-  const estimatedValueMinor =
-    body.estimated_value_minor !== undefined || body.estimatedValueMinor !== undefined
-      ? Math.max(0, Math.round(Number(body.estimated_value_minor ?? body.estimatedValueMinor) || 0))
-      : existing.estimated_value_minor;
   const nowIso = new Date().toISOString();
+  const name = cleanString(body.contact_name ?? body.name ?? existing.name, 200) || existing.name;
+  const businessName = cleanString(body.business_name ?? body.businessName ?? existing.business_name, 200);
+
+  let nextStatus = existing.status;
+  if (body.status !== undefined) {
+    const raw = String(body.status).toLowerCase();
+    if (raw === 'qualified' || raw === 'prospect') nextStatus = 'prospect';
+    else if (raw === 'converted' || raw === 'active') nextStatus = 'active';
+    else if (raw === 'new' || raw === 'lead') nextStatus = 'lead';
+    else if (raw === 'lost' || raw === 'closed') nextStatus = 'closed';
+    else if (['lead', 'prospect', 'active', 'paused', 'completed', 'closed'].includes(raw)) nextStatus = raw;
+  }
+
+  const email = body.email !== undefined ? cleanString(body.email, 200).toLowerCase() : existing.email;
+  const phone = body.phone !== undefined ? cleanString(body.phone, 50) : existing.phone;
+  const websiteUrl =
+    body.website !== undefined || body.website_url !== undefined
+      ? cleanString(body.website ?? body.website_url, 300)
+      : existing.website_url;
+  const source = body.source !== undefined ? cleanString(body.source, 100) : existing.source;
+  const notes = body.notes !== undefined ? cleanString(body.notes, 4000) : existing.notes;
 
   try {
     await db
       .prepare(
-        `UPDATE leads
-         SET business_name = ?, contact_name = ?, email = ?, phone = ?, category = ?,
-             website = ?, source = ?, status = ?, estimated_value_minor = ?, currency = ?,
-             notes = ?, next_follow_up_at = ?, updated_at = ?
+        `UPDATE clients
+         SET name = ?, business_name = ?, status = ?, email = ?, phone = ?,
+             website_url = ?, notes = ?, source = ?, updated_by = ?, updated_at = ?
          WHERE id = ?`
       )
       .bind(
+        name,
         businessName,
-        contactName,
-        cleanString(body.email ?? existing.email, 200).toLowerCase(),
-        cleanString(body.phone ?? existing.phone, 50),
-        cleanString(body.category ?? existing.category, 100),
-        cleanString(body.website ?? existing.website, 300),
-        cleanString(body.source ?? existing.source, 100),
-        status,
-        estimatedValueMinor,
-        cleanString(body.currency ?? existing.currency, 10).toUpperCase(),
-        cleanString(body.notes ?? existing.notes, 4000),
-        body.next_follow_up_at !== undefined
-          ? cleanString(body.next_follow_up_at, 50) || null
-          : existing.next_follow_up_at,
+        nextStatus,
+        email,
+        phone,
+        websiteUrl,
+        notes,
+        source,
+        auth.owner.uid,
         nowIso,
         id
       )
       .run();
 
-    const updated = await db.prepare(`SELECT * FROM leads WHERE id = ?`).bind(id).first();
+    const updated = await db.prepare(`SELECT * FROM clients WHERE id = ?`).bind(id).first();
+    const mapped = toLeadRow(updated);
+
     await auditLog(db, {
       actorUid: auth.owner.uid,
       actorEmail: auth.owner.email,
       action: 'LEAD_UPDATED',
-      entityType: 'leads',
+      entityType: 'clients',
       entityId: id,
       requestId: auth.requestId,
       ipAddress: auth.ipAddress,
-      before: existing,
-      after: updated
+      before: toLeadRow(existing),
+      after: mapped
     });
 
-    return jsonResponse({ success: true, lead: updated });
+    return jsonResponse({ success: true, lead: mapped });
   } catch (err) {
     console.error('[HQ Leads PUT Error]', err);
     return errorResponse(500, 'SERVER_ERROR', 'Failed to update lead');
@@ -325,24 +389,35 @@ export async function onRequestDelete({ request, env }) {
   if (!id) return errorResponse(400, 'INVALID_INPUT', 'Lead ID is required');
 
   const db = env.HQ_DB;
-  const existing = await db.prepare(`SELECT * FROM leads WHERE id = ?`).bind(id).first();
+  const existing = await db
+    .prepare(`SELECT * FROM clients WHERE id = ? AND archived_at IS NULL`)
+    .bind(id)
+    .first();
+
   if (!existing) return errorResponse(404, 'NOT_FOUND', 'Lead not found');
 
-  await db.prepare(`DELETE FROM leads WHERE id = ?`).bind(id).run();
+  const nowIso = new Date().toISOString();
+
+  // Soft delete preserving append-only audit trail
+  await db
+    .prepare(`UPDATE clients SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?`)
+    .bind(nowIso, auth.owner.uid, nowIso, id)
+    .run();
+
   await auditLog(db, {
     actorUid: auth.owner.uid,
     actorEmail: auth.owner.email,
     action: 'LEAD_DELETED',
-    entityType: 'leads',
+    entityType: 'clients',
     entityId: id,
     requestId: auth.requestId,
     ipAddress: auth.ipAddress,
-    before: existing
+    before: toLeadRow(existing)
   });
 
   return jsonResponse({ success: true, deletedId: id });
 }
 
 export async function onRequestOptions() {
-  return hqOptionsResponse();
+  return hqOptionsResponse('GET, POST, PUT, PATCH, DELETE, OPTIONS');
 }
