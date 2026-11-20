@@ -81,7 +81,7 @@ for(const file of publishedHtml){
   const html=fs.readFileSync(file,"utf8");
   const nav=html.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/)?.[1]||"";
   const requiredNavigationContract=
-    nav.includes('<details class="nav-group"><summary>Explore</summary>')&&
+    /<details class="nav-group">\s*<summary>Explore<\/summary>/.test(nav)&&
     nav.includes('<a href="/topics/">Topics</a>')&&
     nav.includes('<a href="/notes/">Notes</a>')&&
     nav.includes('<a href="/blog/">Blog</a>')&&
