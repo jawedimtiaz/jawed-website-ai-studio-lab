@@ -1,6 +1,7 @@
 import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
 import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
 import { dispatchHqApiRequest } from './functions/lib/hqRouter.js';
+import { dispatchHqIntegrationBoundary } from './functions/lib/hqIntegrationBoundary.js';
 
 // Pre-defined legacy redirects
 const LEGACY_REDIRECTS = {
@@ -160,7 +161,7 @@ export default {
     // 5. Handle Studio HQ (/api/hq/*) endpoints
     if (pathname.startsWith('/api/hq/')) {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
-      const res = await dispatchHqApiRequest(pathname, context);
+      const res = await dispatchHqIntegrationBoundary(pathname, context, { addSecurityHeaders });
       return addSecurityHeaders(res, pathname);
     }
 

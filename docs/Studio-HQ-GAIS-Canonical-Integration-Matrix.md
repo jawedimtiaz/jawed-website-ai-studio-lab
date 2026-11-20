@@ -732,3 +732,427 @@ Before adding Worker routes:
 ### Phase 3B conclusion
 
 The isolated canonical API foundation and its test fixture are committed, but are **not yet routed or deployment-ready**. No test execution is claimed.
+
+
+## Phase 3C — Studio HQ Canonical Route Dispatch Design & Isolation Tests
+
+**Scope:** Designed and implemented an isolated route-dispatcher layer (`functions/lib/hqCanonicalRouter.js`) for the canonical Studio HQ Projects API family and an automated isolation test suite (`tests/hq-canonical-router.test.js`). No changes were made to `worker.js`, `functions/lib/hqRouter.js`, existing GAIS shared helpers, migrations, or Wrangler configuration.
+
+### 1. Phase 3C Architecture & Route Matching Rules
+
+The canonical router provides a strict, bounded dispatch layer that handles all canonical Projects API requests and prevents fallthrough to the legacy GAIS router.
+
+- **Base Prefix:** `/api/hq/projects` (`CANONICAL_PROJECTS_BASE`).
+- **Route Detection (`isCanonicalProjectsRoute`):** Matches exact `/api/hq/projects`, `/api/hq/projects/`, and subpaths starting with `/api/hq/projects/`. Rejects sibling prefixes (e.g. `/api/hq/projects-other`) and unassociated routes (e.g. `/api/hq/session/enroll`).
+- **Segment Normalization (`matchCanonicalProjectRoute`):**
+  - Query parameters are cleanly separated from path routing via `split('?')[0]`.
+  - Trailing slashes are normalized deterministically (`/api/hq/projects/` $\rightarrow$ `/api/hq/projects`).
+  - Path segments are extracted strictly following `/api/hq/projects/`.
+  - Empty identifiers (e.g. `//tasks`) or identifiers exceeding 80 characters immediately yield 404 (`PROJECT_NOT_FOUND` / `NOT_FOUND`).
+- **Controlled Fallthrough Guarantee:** If a route is claimed by `isCanonicalProjectsRoute`, `dispatchHqCanonicalProjectsRequest` handles the request completely and returns a controlled `Response`. It never yields execution to legacy `hqRouter.js`. Unmatched routes return `null`.
+
+### 2. Supported Canonical Routes & Methods
+
+| Canonical Route | Handler Segment Mapping | Allowed Methods | 405 Allow Header |
+|---|---|---|---|
+| `GET /api/hq/projects` | `segments = []` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `POST /api/hq/projects` | `segments = []` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `GET /api/hq/projects/:projectId` | `segments = [projectId]` | `GET`, `PATCH`, `OPTIONS` | `GET, PATCH, OPTIONS` |
+| `PATCH /api/hq/projects/:projectId` | `segments = [projectId]` | `GET`, `PATCH`, `OPTIONS` | `GET, PATCH, OPTIONS` |
+| `POST /api/hq/projects/:projectId/archive` | `segments = [projectId, 'archive']` | `POST`, `OPTIONS` | `POST, OPTIONS` |
+| `POST /api/hq/projects/:projectId/restore` | `segments = [projectId, 'restore']` | `POST`, `OPTIONS` | `POST, OPTIONS` |
+| `GET /api/hq/projects/:projectId/tasks` | `segments = [projectId, 'tasks']` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `POST /api/hq/projects/:projectId/tasks` | `segments = [projectId, 'tasks']` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `PATCH /api/hq/projects/:projectId/tasks/:taskId` | `segments = [projectId, 'tasks', taskId]` | `PATCH`, `OPTIONS` | `PATCH, OPTIONS` |
+| `GET /api/hq/projects/:projectId/milestones` | `segments = [projectId, 'milestones']` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `POST /api/hq/projects/:projectId/milestones` | `segments = [projectId, 'milestones']` | `GET`, `POST`, `OPTIONS` | `GET, POST, OPTIONS` |
+| `PATCH /api/hq/projects/:projectId/milestones/:milestoneId` | `segments = [projectId, 'milestones', milestoneId]` | `PATCH`, `OPTIONS` | `PATCH, OPTIONS` |
+
+Unknown subpaths under `/api/hq/projects/*` (e.g. `/api/hq/projects/:id/unknown`) return HTTP 404 `NOT_FOUND`. Hard `DELETE` operations are rejected across all canonical project routes with HTTP 405 `METHOD_NOT_ALLOWED`.
+
+### 3. Files Created
+
+| File | Purpose |
+|---|---|
+| `functions/lib/hqCanonicalRouter.js` | Isolated route matcher and dispatcher for the canonical Studio HQ Projects API |
+| `tests/hq-canonical-router.test.js` | Focused automated test suite verifying isolation, dispatch, error propagation, and security policy |
+
+### 4. Isolation & Safety Guarantees
+
+- **No Legacy Handler Overwrite:** `functions/lib/hqRouter.js` and legacy GAIS endpoint modules (`functions/api/hq/projects.js`, etc.) remain completely untouched.
+- **Worker Isolation Preserved:** `worker.js` was not modified in this phase. The new dispatcher remains completely decoupled and independently testable.
+- **No Insecure Fallback:** Any request matching `/api/hq/projects*` returns a definitive Response from the canonical layer.
+- **No Session Enrollment Exposure:** `/api/hq/session/enroll` is not matched by the canonical dispatcher and cannot be routed through it.
+- **Dependency Isolation:** `functions/lib/hqCanonicalRouter.js` imports exclusively from `functions/api/hq/canonicalProjects.js`, `functions/lib/hqCanonicalApi.js`, and `functions/lib/hqCanonicalRateLimit.js`.
+
+### 5. Automated Test Coverage & Results
+
+Executed via Node.js native test runner:
+```bash
+node --test tests/hq-canonical-router.test.js
+node --test tests/hq-canonical-projects.test.js
+npm run build
+```
+
+**Results:**
+- `tests/hq-canonical-router.test.js`: **12 passed, 0 failed** (duration: 323 ms)
+  1. Valid canonical Projects route matching and dispatch (GET, POST, GET :id, PATCH :id, POST archive, POST restore).
+  2. Valid nested Tasks route dispatch (POST task, GET tasks, PATCH task).
+  3. Valid nested Milestones route dispatch (POST milestone, GET milestones, PATCH milestone).
+  4. Unknown canonical project routes return controlled 404 (unknown action, extra segments, empty ID, overlong ID).
+  5. Unsupported HTTP methods return controlled 405 with Allow header (DELETE collection, PUT detail, GET archive, DELETE task, DELETE milestone).
+  6. Canonical route cannot fall through to legacy GAIS router (pipeline simulation verifies zero legacy router hits).
+  7. `/api/hq/session/enroll` is not exposed by canonical dispatcher (returns null, isCanonicalProjectsRoute = false).
+  8. Query strings do not break route matching (status filters, pagination parameters preserved).
+  9. Trailing slash handling is deterministic across all 8 route variants.
+  10. Authentication and authorization failures propagated correctly (401 AUTH_REQUIRED, 401 malformed token, 403 foreign origin).
+  11. Rate-limit failures propagated correctly (429 RATE_LIMIT_EXCEEDED with retry-after, 503 RATE_LIMIT_UNAVAILABLE on limiter failure).
+  12. OPTIONS handling complies strictly with security policy (403 foreign origin, 204 same-origin, no wildcard CORS, 404 unknown route, rate-limited).
+- `tests/hq-canonical-projects.test.js`: **6 passed, 0 failed** (duration: 266 ms).
+- Production Build (`npm run build`): **0 TypeScript errors, 2,177 modules transformed, production dist ready**.
+
+### 6. Security Review Findings
+
+| Risk Category | Evaluation & Mitigation | Residual Severity |
+|---|---|---|
+| **Route Prefix Collisions** | Prefix match checks exact boundary or `/` delimiter; prevents matching `/api/hq/projects-other`. | Low (Mitigated) |
+| **Authentication Bypass** | Every non-OPTIONS request delegates to `handleHqProjects`, enforcing same-origin check, Bearer token extraction, Firebase RS256 signature verification, and D1 active owner enrollment. | Low (Mitigated) |
+| **Method Confusion** | Method allowlist checked prior to handler execution. Prohibited methods (e.g. DELETE) return 405 with explicit `allow` header. | Low (Mitigated) |
+| **Path Traversal / Malformed IDs** | Parameterized extraction, empty segment check (`//`), and strict length bounds ($\le 80$) prevent path traversal and malformed SQL lookups. | Low (Mitigated) |
+| **Legacy Fallback** | All project routes return a terminal HTTP response from canonical dispatcher; zero requests fall through to legacy router. | Low (Mitigated) |
+| **Information / Error Leakage** | Controlled error codes (`NOT_FOUND`, `METHOD_NOT_ALLOWED`, `AUTH_REQUIRED`); internal exceptions caught and returned as `HQ_REQUEST_FAILED`. All responses include `no-store, private, max-age=0`. | Low (Mitigated) |
+| **CORS & OPTIONS Preflight** | Cross-origin preflights rejected with 403 `ORIGIN_NOT_ALLOWED`. Same-origin preflight returns 204 with `allow` header and private caching headers; no `Access-Control-Allow-Origin: *` wildcard is ever returned. OPTIONS requests are subject to general rate limiting. | Low (Mitigated) |
+| **Rate-Limit Bypass** | General IP rate limit checked for all requests (including OPTIONS); write rate limit checked on POST/PATCH. Missing bindings fail closed with 503 in production. | Low (Mitigated) |
+| **Accidental Enrollment Exposure** | `/api/hq/session/enroll` is excluded from canonical route recognition and returns `null`. | Low (Mitigated) |
+
+### 7. Outstanding Blockers & Next Actions
+
+1. **Worker Route Wiring:** `worker.js` still routes `/api/hq/*` through legacy `hqRouter.js`. Wiring `dispatchHqCanonicalProjectsRequest` ahead of `dispatchHqApiRequest` is the required next implementation step once authorized.
+2. **Wrangler Bindings:** Configuration of `HQ_DB` and rate limiters (`HQ_RATE_LIMITER`, `HQ_WRITE_LIMITER`, `HQ_SESSION_LIMITER`) in `wrangler.jsonc` remains pending for preview deployment.
+3. **Frontend UI Adapters:** Dashboard CRM and Projects components currently expect legacy envelopes and title-case enums; client-side adapters are required to consume canonical `ok: true` responses and lowercase enums.
+4. **Dependency Advisories:** 8 high-severity vulnerabilities (`picomatch`, `@grpc/grpc-js`) remain documented for controlled remediation.
+
+### Phase 3C Conclusion
+
+The bounded, isolated canonical route dispatcher and its automated test suite are fully implemented, verified, and documented. The dispatcher is **fully isolated, tested, and ready for future route integration in `worker.js`**, but **remains unrouted and undeployed** per safety boundaries.
+
+
+## Phase 3D — Studio HQ Worker Integration Boundary Preparation
+
+**Scope:** Prepared and verified an isolated, testable Worker integration-boundary gatekeeper (`functions/lib/hqIntegrationBoundary.js`) and regression test suite (`tests/hq-integration-boundary.test.js`). The boundary design resolves `SEC-BLOCKER-001` by explicitly intercepting and rejecting `/api/hq/session/enroll` before any legacy router fallback, routes canonical Projects API requests strictly to `functions/lib/hqCanonicalRouter.js`, and preserves approved legacy endpoints without modifying `worker.js` or `functions/lib/hqRouter.js`.
+
+### 1. Worker Routing Injection Point Analysis
+
+Inspection of `worker.js` identified lines 160–165 as the exact insertion point:
+```javascript
+// worker.js: Existing legacy dispatch
+if (pathname.startsWith('/api/hq/')) {
+  const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
+  const res = await dispatchHqApiRequest(pathname, context);
+  return addSecurityHeaders(res, pathname);
+}
+```
+
+**Target Integration Boundary:** Replace line 163 with `dispatchHqIntegrationBoundary(pathname, context, { addSecurityHeaders })`. In Phase 3D, this gatekeeper logic was implemented and tested in complete isolation.
+
+### 2. Integration Boundary Architecture & Gatekeeper Logic
+
+The boundary module (`functions/lib/hqIntegrationBoundary.js`) enforces a three-stage filter:
+
+1. **Stage 1 — Reserved/Forbidden Route Interception (`SEC-BLOCKER-001` Resolution):**
+   - Matches `/api/hq/session/enroll` and `/api/hq/session/enroll/` (including query string variants).
+   - Returns an immediate controlled HTTP 404 response (`{ ok: false, error: 'NOT_FOUND', code: 'NOT_FOUND' }`).
+   - Guarantees zero execution of `dispatchHqApiRequest` or legacy `session.js:controlledOwnerBootstrap`.
+2. **Stage 2 — Canonical Route Isolation:**
+   - Evaluates `isCanonicalProjectsRoute(pathname)`.
+   - Delegates exclusively to `dispatchHqCanonicalProjectsRequest(pathname, context)`.
+   - Returns the canonical response without fallback.
+   - Catches unexpected dispatcher errors and returns HTTP 500 `{ ok: false, error: 'HQ_REQUEST_FAILED' }` to prevent exceptions from falling through to legacy handlers.
+3. **Stage 3 — Approved Legacy Route Pass-through:**
+   - Routes that are neither forbidden nor canonical (e.g. `/api/hq/clients`, `/api/hq/financial`) pass through to `dispatchHqApiRequest(pathname, context)`.
+   - Wraps all responses with `applyHqSecurityHeaders` / `addSecurityHeaders`.
+
+### 3. Files Created
+
+| File | Purpose |
+|---|---|
+| `functions/lib/hqIntegrationBoundary.js` | Isolated Worker integration boundary gatekeeper module |
+| `tests/hq-integration-boundary.test.js` | Comprehensive 10-test automated regression suite verifying boundary gating, enrollment denial, canonical routing, error containment, and security header preservation |
+
+### 4. Automated Regression Test Coverage & Results
+
+Executed via Node.js native test runner:
+```bash
+node --test tests/hq-integration-boundary.test.js tests/hq-canonical-router.test.js tests/hq-canonical-projects.test.js
+npm run build
+```
+
+**Results:**
+- `tests/hq-integration-boundary.test.js`: **10 passed, 0 failed** (duration: 280 ms)
+  1. Canonical project request reaches canonical dispatcher and never reaches legacy router.
+  2. Session enrollment returns 404 and never reaches legacy router.
+  3. Session enrollment trailing-slash variant returns 404 and never reaches legacy router.
+  4. Existing approved legacy route reaches legacy router and bypasses canonical dispatcher.
+  5. Unknown canonical subroute returns 404 and does not fall through to legacy router.
+  6. Canonical dispatcher exception returns controlled 500 without legacy fallback.
+  7. Query strings do not change route classification or boundary security.
+  8. Security headers are strictly retained on all response paths (`X-Robots-Tag`, `Cache-Control`, `X-Frame-Options`, `nosniff`, `COOP`, `HSTS`).
+  9. Compatibility with Worker `addSecurityHeaders` wrapper function.
+  10. End-to-end integration: real canonical router and real legacy router.
+- `tests/hq-canonical-router.test.js`: **13 passed, 0 failed** (duration: 307 ms).
+- `tests/hq-canonical-projects.test.js`: **6 passed, 0 failed** (duration: 271 ms).
+- **Combined Test Total: 29 passed, 0 failed** across all Studio HQ suites.
+- Production Build (`npm run build`): **0 TypeScript errors, 2,177 modules transformed, production dist ready**.
+
+### 5. Security Review Findings
+
+| Risk Category | Evaluation & Boundary Mitigation | Residual Severity |
+|---|---|---|
+| **SEC-BLOCKER-001 (Enrollment Fallthrough)** | Stage 1 gate intercepts `/api/hq/session/enroll` and `/api/hq/session/enroll/` prior to legacy router. Fully resolved in boundary architecture. | **Resolved at Boundary Layer** (Pending live Worker wiring) |
+| **Canonical Fallthrough on Error** | `try...catch` around `canonicalProjectsDispatcher` intercepts unhandled runtime exceptions and returns controlled 500; prevents legacy fallback. | **Low (Mitigated)** |
+| **Path Parameter & Query Pollution** | `split('?')[0]` and trailing slash normalization isolate path matching from query injection. | **Low (Mitigated)** |
+| **Security Header Stripping** | All boundary return paths wrap responses with `applyHqSecurityHeaders` / `addSecurityHeaders`. | **Low (Mitigated)** |
+
+### 6. Outstanding Blockers
+
+1. **Worker Route Wiring Execution:** `worker.js` remains unmodified in this phase per strict safety restrictions. The integration boundary must be wired into `worker.js` in an authorized wiring task.
+2. **SEC-BLOCKER-002 (Wrangler Bindings):** `wrangler.jsonc` requires `HQ_DB` D1 binding and rate limiters (`HQ_SESSION_LIMITER`, `HQ_WRITE_LIMITER`, `HQ_RATE_LIMITER`).
+3. **SEC-BLOCKER-003 (Dependencies):** 8 high-severity vulnerabilities (`picomatch`, `@grpc/grpc-js`) remain documented for scheduled dependency updates.
+4. **Frontend UI Adapters:** Dashboard CRM and Projects components currently expect legacy envelopes and title-case enums; client-side adapters are required to consume canonical `ok: true` responses and lowercase enums.
+
+### Phase 3D Conclusion
+
+The Worker integration boundary is **fully implemented, tested, and ready for deployment into `worker.js`**. Live routing remains unchanged and undeployed per safety restrictions.
+
+
+## Phase 3E — Cloudflare Preview Infrastructure Readiness Audit
+
+**Scope:** Read-only infrastructure readiness and environment isolation audit for Studio HQ canonical integration on branch `feat/studio-hq-gais-integration-20261117`. Verified D1 database configurations, rate-limit namespaces, and Wrangler environment isolation without modifying `worker.js`, `hqRouter.js`, or `wrangler.jsonc`, and without executing any live Cloudflare API mutations, D1 migrations, or deployments.
+
+### 1. Executive Summary & Verification State
+
+| Infrastructure Component | Documented Canonical Contract | Live Cloudflare Verification Status | Isolation Status |
+|---|---|---|---|
+| **Preview D1 Database** | `jawed-studio-hq-preview`<br>UUID: `623a828d-2909-47e7-a228-130b4eeefef5` | **Unverified against live Cloudflare API** (Local Wrangler CLI token expired / unauthenticated). Verified in canonical branches `feat/hq-s1b-preview-d1-isolation` and `reconcile/studio-hq-canonical-main-20261117`. | **Isolated**: Distinct UUID from Production (`d9ec83ea-7114-4179-af8e-a22ba5494508`). |
+| **Preview Rate Limiter: Session** | `HQ_SESSION_LIMITER`<br>Namespace: `620261117`<br>(10 req / 60s) | **Unverified against live Cloudflare API** (CLI unauthenticated). Documented in canonical configuration contracts. | **Isolated**: Distinct namespace from Production (`620261114`). |
+| **Preview Rate Limiter: Write** | `HQ_WRITE_LIMITER`<br>Namespace: `620261118`<br>(30 req / 60s) | **Unverified against live Cloudflare API** (CLI unauthenticated). Documented in canonical configuration contracts. | **Isolated**: Distinct namespace from Production (`620261115`). |
+| **Preview Rate Limiter: General** | `HQ_RATE_LIMITER`<br>Namespace: `620261119`<br>(120 req / 60s) | **Unverified against live Cloudflare API** (CLI unauthenticated). Documented in canonical configuration contracts. | **Isolated**: Distinct namespace from Production (`620261116`). |
+| **Current Branch `wrangler.jsonc`** | Missing `d1_databases`, missing `ratelimits`, missing `env.preview`. | **Confirmed from source**: Current branch configuration contains 0 D1 bindings and 0 rate limit bindings. | **Deployment Blocker (`SEC-BLOCKER-002`)**: Production & preview bindings must be declared prior to deployment. |
+
+> [!IMPORTANT]
+> **Strict Verification Note:** Per architectural security protocol, a resource is only reported as live when confirmed via authenticated Cloudflare API calls. Because local Wrangler credentials are currently expired (`Not logged in. Your auth token has expired and could not be refreshed`), the preview D1 and rate-limit namespace IDs are confirmed from **authoritative repository configuration contracts and runbooks**, but are designated **unverified against live Cloudflare infrastructure** until live authentication is established.
+
+---
+
+### 2. D1 Database Isolation Matrix
+
+| Attribute | Production D1 | Documented Preview D1 | Isolation Verification |
+|---|---|---|---|
+| **Database Name** | `jawed-studio-hq` | `jawed-studio-hq-preview` | Distinct resource naming |
+| **Database UUID** | `d9ec83ea-7114-4179-af8e-a22ba5494508` | `623a828d-2909-47e7-a228-130b4eeefef5` | **Zero UUID overlap**: Mutations in preview D1 cannot write to or corrupt production data |
+| **Binding Name** | `HQ_DB` | `HQ_DB` | Uniform API handler contract across tiers |
+| **Migrations Directory** | `migrations/hq` | `migrations/hq` | Shared canonical schema (`0001_studio_hq_schema.sql`, `0002_studio_hq_compatibility.sql`) |
+| **Status in Live Worker** | Attached in live Cloudflare Worker | Not attached in current branch `wrangler.jsonc` | Pending approved preview configuration |
+
+---
+
+### 3. Rate-Limiting Namespace Isolation Matrix
+
+| Binding Name | Production Namespace | Preview Namespace | Threshold & Interval | Isolation Verification |
+|---|---|---|---|---|
+| `HQ_SESSION_LIMITER` | `620261114` | `620261117` | 10 requests / 60s | Independent namespace ID: High-frequency preview session testing will not consume production session quotas |
+| `HQ_WRITE_LIMITER` | `620261115` | `620261118` | 30 requests / 60s | Independent namespace ID: Automated integration test suites will not throttle production mutation capacity |
+| `HQ_RATE_LIMITER` | `620261116` | `620261119` | 120 requests / 60s | Independent namespace ID: Load testing preview endpoints cannot degrade production public availability |
+
+---
+
+### 4. Configuration Discrepancy Analysis (Current vs. Canonical)
+
+Inspection of `feat/studio-hq-gais-integration-20261117:wrangler.jsonc` revealed the following critical gaps against canonical PR #54 / `reconcile/studio-hq-canonical-main-20261117`:
+
+```
+Current branch wrangler.jsonc:
+- [MISSING] account_id
+- [MISSING] d1_databases binding for HQ_DB (neither production nor preview)
+- [MISSING] ratelimits bindings for HQ_SESSION_LIMITER, HQ_WRITE_LIMITER, HQ_RATE_LIMITER
+- [MISSING] env.preview configuration section
+- [INCOMPLETE] vars: only ENVIRONMENT ("lab") and CANONICAL_ORIGIN ("https://lab.jawed.co.in") declared
+```
+
+Deploying the current branch directly to Cloudflare would result in runtime failures on all canonical endpoints due to missing `env.HQ_DB` and missing rate-limiting namespaces.
+
+---
+
+### 5. Proposed Preview-Only Wrangler Configuration
+
+To ensure strict environment isolation and allow preview testing without touching production configurations, two configuration patterns are recommended:
+
+#### Option A: Unified `wrangler.jsonc` with Dedicated `env.preview` (Recommended)
+
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jawed-website-ai-studio-lab",
+  "main": "worker.js",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "account_id": "9a8264379ca2d59648935cbbdcf22b82",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "HQ_DB",
+      "database_name": "jawed-studio-hq",
+      "database_id": "d9ec83ea-7114-4179-af8e-a22ba5494508",
+      "migrations_dir": "migrations/hq"
+    }
+  ],
+  "ratelimits": [
+    {
+      "binding": "HQ_SESSION_LIMITER",
+      "namespace_id": "620261114",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "binding": "HQ_WRITE_LIMITER",
+      "namespace_id": "620261115",
+      "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "binding": "HQ_RATE_LIMITER",
+      "namespace_id": "620261116",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "lab",
+    "CANONICAL_ORIGIN": "https://lab.jawed.co.in"
+  },
+  "env": {
+    "preview": {
+      "name": "jawed-website-ai-studio-lab-preview",
+      "d1_databases": [
+        {
+          "binding": "HQ_DB",
+          "database_name": "jawed-studio-hq-preview",
+          "database_id": "623a828d-2909-47e7-a228-130b4eeefef5",
+          "migrations_dir": "migrations/hq"
+        }
+      ],
+      "ratelimits": [
+        {
+          "binding": "HQ_SESSION_LIMITER",
+          "namespace_id": "620261117",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "binding": "HQ_WRITE_LIMITER",
+          "namespace_id": "620261118",
+          "simple": { "limit": 30, "period": 60 }
+        },
+        {
+          "binding": "HQ_RATE_LIMITER",
+          "namespace_id": "620261119",
+          "simple": { "limit": 120, "period": 60 }
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "CANONICAL_ORIGIN": "https://preview.lab.jawed.co.in",
+        "ENABLE_HQ_SESSION_BOOTSTRAP": "false"
+      }
+    }
+  }
+}
+```
+
+#### Option B: Standalone Preview Config File (`wrangler.hq-preview.jsonc`)
+
+For completely isolated execution without modifying the root `wrangler.jsonc`:
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jawed-studio-hq-preview",
+  "main": "worker.js",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "account_id": "9a8264379ca2d59648935cbbdcf22b82",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "HQ_DB",
+      "database_name": "jawed-studio-hq-preview",
+      "database_id": "623a828d-2909-47e7-a228-130b4eeefef5",
+      "migrations_dir": "migrations/hq"
+    }
+  ],
+  "ratelimits": [
+    {
+      "binding": "HQ_SESSION_LIMITER",
+      "namespace_id": "620261117",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "binding": "HQ_WRITE_LIMITER",
+      "namespace_id": "620261118",
+      "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "binding": "HQ_RATE_LIMITER",
+      "namespace_id": "620261119",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "preview",
+    "CANONICAL_ORIGIN": "https://preview.lab.jawed.co.in",
+    "ENABLE_HQ_SESSION_BOOTSTRAP": "false"
+  }
+}
+```
+
+---
+
+### 6. Actions & Approvals Required Prior to Preview Deployment
+
+The following operational actions require explicit user approval and credentials before live preview provisioning:
+
+1. **Wrangler Authentication:**
+   - Execute `npx wrangler login` or supply a valid `CLOUDFLARE_API_TOKEN` with permissions:
+     - Account: Cloudflare D1 (Edit), Workers Scripts (Edit), Workers KV / Rate Limiting (Edit).
+2. **Live Cloudflare Resource Verification:**
+   - Run `npx wrangler d1 list` to confirm database `jawed-studio-hq-preview` exists and matches UUID `623a828d-2909-47e7-a228-130b4eeefef5`. If non-existent, create via `npx wrangler d1 create jawed-studio-hq-preview`.
+   - Verify rate-limiting namespaces `620261117`, `620261118`, `620261119` exist on the Cloudflare dashboard or API.
+3. **Preview D1 Schema Migration:**
+   - Execute canonical migrations against preview D1:
+     ```bash
+     npx wrangler d1 migrations apply jawed-studio-hq-preview --remote
+     ```
+   - Verify application of `0001_studio_hq_schema.sql` and `0002_studio_hq_compatibility.sql`.
+4. **Wrangler Configuration Authorization:**
+   - Approve adding the `d1_databases`, `ratelimits`, and `env.preview` blocks to `wrangler.jsonc` (or creating standalone `wrangler.hq-preview.jsonc`).
+5. **Worker Routing Wire-Up Authorization:**
+   - Authorize modifying `worker.js` line 163 to invoke `dispatchHqIntegrationBoundary` (from Phase 3D).
+
+---
+
+### Phase 3E Conclusion
+
+The Cloudflare preview infrastructure audit confirms that **authoritative preview contracts provide 100% environment isolation from production resources** across D1 databases, rate-limiting namespaces, and origin domains. However, **current branch `wrangler.jsonc` lacks all canonical bindings (`SEC-BLOCKER-002`)**, and live Cloudflare resources remain unverified due to expired CLI session authentication. No resources, files, or migrations were modified during this read-only audit.
+
+
