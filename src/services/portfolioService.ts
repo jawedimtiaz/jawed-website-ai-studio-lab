@@ -474,11 +474,18 @@ export async function fetchLivePortfolio(
   let parsedUrlString: string;
   try {
     if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-      parsedUrlString = new URL(trimmedUrl).toString();
+      const suppliedUrl = new URL(trimmedUrl);
+      // Google Apps Script feeds are fetched server-side by the Worker proxy to avoid browser CORS.
+      parsedUrlString = /(^|\\.)script\\.google\\.com$|(^|\\.)scriptusercontent\\.googleusercontent\\.com$/i.test(suppliedUrl.hostname)
+        ? new URL('/api/portfolio', window.location.origin).toString()
+        : suppliedUrl.toString();
     } else if (trimmedUrl.startsWith('/')) {
       parsedUrlString = new URL(trimmedUrl, window.location.origin).toString();
     } else {
-      parsedUrlString = new URL(`https://${trimmedUrl}`).toString();
+      const suppliedUrl = new URL(`https://${trimmedUrl}`);
+      parsedUrlString = /(^|\\.)script\\.google\\.com$|(^|\\.)scriptusercontent\\.googleusercontent\\.com$/i.test(suppliedUrl.hostname)
+        ? new URL('/api/portfolio', window.location.origin).toString()
+        : suppliedUrl.toString();
     }
   } catch {
     throw new Error('Invalid URL format. Ensure the URL starts with https:// or http://.');

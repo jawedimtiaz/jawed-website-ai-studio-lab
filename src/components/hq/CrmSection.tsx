@@ -39,6 +39,7 @@ import {
 import {
   SectionToolbar,
   StatusDotText,
+  ProjectStatusBadge,
   EmptyState,
   LoadingSkeleton,
   SlideOverDrawer,
@@ -1247,7 +1248,7 @@ export const CrmSection: React.FC<{
                         </button>
                         <div className="text-slate-500">{p.project_type}</div>
                       </div>
-                      <StatusDotText status={p.status} />
+                      <ProjectStatusBadge status={p.status} />
                     </div>
                   ))}
                 </div>

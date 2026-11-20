@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { PortfolioData, HoldingItem, CurrencyCode } from '../../types/portfolio';
 import { formatPortfolioValue, formatAssetPrice } from '../../services/portfolioService';
+import { PrivateMoney } from './PrivateMoney';
 
 export type SortKey = 'ticker' | 'valueInr' | 'allocationPct' | 'pnlPct' | 'currentPrice' | 'sector' | 'thesisStatus';
 export type SortOrder = 'asc' | 'desc';
@@ -23,6 +24,7 @@ export type SortOrder = 'asc' | 'desc';
 interface HoldingsAnalyticsTabProps {
   data: PortfolioData;
   currency: CurrencyCode;
+  privacyMode?: boolean;
   onAddHolding: (newHolding: HoldingItem) => void;
   selectedSector?: string;
   selectedThesisStatus?: string;
@@ -37,6 +39,7 @@ interface HoldingsAnalyticsTabProps {
 export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
   data,
   currency,
+  privacyMode = false,
   onAddHolding,
   selectedSector,
   selectedThesisStatus,
@@ -481,7 +484,11 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
             <span>
               Selected Value:{' '}
               <strong className="text-sky-400">
-                {formatPortfolioValue(filteredMetrics.totalValInr, currency, usdInr)}
+                <PrivateMoney
+                  value={formatPortfolioValue(filteredMetrics.totalValInr, currency, usdInr)}
+                  currency={currency}
+                  privacyMode={privacyMode}
+                />
               </strong>{' '}
               ({filteredMetrics.totalAllocPct.toFixed(1)}%)
             </span>
@@ -850,9 +857,20 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
                           <div className="text-[10px] text-slate-500">{holding.currency} Native</div>
                         </td>
                         <td className="py-3.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-100">
-                          <div>{formatPortfolioValue(holding.valueInr, currency, usdInr)}</div>
+                          <div>
+                            <PrivateMoney
+                              value={formatPortfolioValue(holding.valueInr, currency, usdInr)}
+                              currency={currency}
+                              privacyMode={privacyMode}
+                            />
+                          </div>
                           <div className="text-[11px] font-normal text-slate-400">
-                            Cost: {formatPortfolioValue(impliedCostInr, currency, usdInr, { compact: true })}
+                            Cost:{' '}
+                            <PrivateMoney
+                              value={formatPortfolioValue(impliedCostInr, currency, usdInr, { compact: true })}
+                              currency={currency}
+                              privacyMode={privacyMode}
+                            />
                           </div>
                         </td>
                         <td className="py-3.5 px-3">
@@ -889,10 +907,14 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
                               unrealizedPnlInr >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'
                             }`}
                           >
-                            {unrealizedPnlInr >= 0 ? '+' : ''}
-                            {formatPortfolioValue(unrealizedPnlInr, currency, usdInr, {
-                              compact: true
-                            })}
+                            <PrivateMoney
+                              prefix={unrealizedPnlInr >= 0 ? '+' : ''}
+                              value={formatPortfolioValue(unrealizedPnlInr, currency, usdInr, {
+                                compact: true
+                              })}
+                              currency={currency}
+                              privacyMode={privacyMode}
+                            />
                           </div>
                         </td>
                         <td className="py-3.5 pl-3 pr-5 text-right">
@@ -918,7 +940,11 @@ export const HoldingsAnalyticsTab: React.FC<HoldingsAnalyticsTabProps> = ({
                                 <div className="flex items-center justify-between">
                                   <span className="text-slate-400 font-sans">Implied Cost Basis:</span>
                                   <span className="text-slate-200">
-                                    {formatPortfolioValue(impliedCostInr, currency, usdInr)}
+                                    <PrivateMoney
+                                      value={formatPortfolioValue(impliedCostInr, currency, usdInr)}
+                                      currency={currency}
+                                      privacyMode={privacyMode}
+                                    />
                                   </span>
                                 </div>
                                 <div className="flex items-center justify-between">

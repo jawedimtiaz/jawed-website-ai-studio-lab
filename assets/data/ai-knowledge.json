@@ -1067,9 +1067,28 @@
         "sign-in troubleshooting",
         "escalation"
       ]
+    },
+    {
+      "url": "/tools/portfolio-tracker/",
+      "title": "Multi-Asset Portfolio Tracker",
+      "summary": "A browser-based multi-asset portfolio tracker for organizing Indian equities, mutual funds, US stocks, RBI LRS remittance limits, and watchlist investment theses. Supports offline Demo Mode and optional private live synchronization via a custom Google Apps Script or Cloudflare Worker JSON endpoint without connecting directly to brokerage accounts or providing investment advice.",
+      "keywords": [
+        "portfolio",
+        "multi-asset portfolio tracker",
+        "asset allocation",
+        "US & India stocks",
+        "LRS tracker",
+        "Indian equities",
+        "mutual funds",
+        "US stocks",
+        "watchlist",
+        "investment thesis",
+        "Google Sheets sync",
+        "demo mode"
+      ]
     }
   ],
-  "reviewed_against_sitemap_on": "2026-11-14",
+  "reviewed_against_sitemap_on": "2026-11-18",
   "coverage_policy": {
     "included": "Public site pages intended to provide factual Jawed.co.in content for AI grounding.",
     "excluded_paths": [
@@ -1078,7 +1097,7 @@
     ],
     "excluded_reason": "AI interface and transactional/privacy pages are not knowledge sources.",
     "summary_evidence_rule": "Summaries are concise scope-level evidence only; detailed claims require sufficient page evidence and must not be inferred from titles or keywords.",
-    "last_review_note": "Reviewed the sitemap and indexed React tool definitions on 2026-11-14. The only toolsData.ts change since the prior review added the hardware-diagnostic tool; existing indexed tool definitions remained unchanged. Added current summaries for the Apple/macOS/Jamf and Microsoft 365 triage routes."
+    "last_review_note": "Reviewed the sitemap and indexed React tool definitions on 2026-11-18. Added the Multi-Asset Portfolio Tracker (/tools/portfolio-tracker/) entry across toolsData.ts, /tools/index.html, sitemap.xml, and AI knowledge grounding."
   },
   "knowledge_expansion": {
     "phase": "33",

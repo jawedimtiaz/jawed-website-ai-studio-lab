@@ -158,14 +158,36 @@ export default {
       }), pathname);
     }
 
-    // 5. Handle Studio HQ (/api/hq/*) endpoints
+    // Portfolio Tracker live feed proxy (server-side, avoids browser CORS)
+    if (pathname === '/api/portfolio' || pathname === '/api/portfolio/') {
+      if (request.method !== 'GET') return addSecurityHeaders(new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'content-type': 'application/json; charset=utf-8', 'allow': 'GET' } }), pathname);
+      const feedUrl = env?.PORTFOLIO_FEED_URL;
+      const feedToken = env?.PORTFOLIO_FEED_TOKEN;
+      if (!feedUrl || !feedToken) return addSecurityHeaders(new Response(JSON.stringify({ error: 'Portfolio feed is not configured' }), { status: 503, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname);
+      try {
+        // GAS web apps commonly expose query parameters more reliably than custom auth headers.
+        // Keep the token server-side in Cloudflare and never expose it to the browser.
+        const upstreamUrl = new URL(feedUrl);
+        upstreamUrl.searchParams.set('token', feedToken);
+        const upstream = await fetch(upstreamUrl.toString(), { method: 'GET', headers: { 'accept': 'application/json', 'authorization': `Bearer ${feedToken}` }, signal: AbortSignal.timeout(15000) });
+        const body = await upstream.text();
+        if (!upstream.ok) return addSecurityHeaders(new Response(JSON.stringify({ error: 'Portfolio feed returned an error', upstreamStatus: upstream.status }), { status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname);
+        let parsed;
+        try { parsed = JSON.parse(body); } catch { return addSecurityHeaders(new Response(JSON.stringify({ error: 'Portfolio feed did not return valid JSON' }), { status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname); }
+        return addSecurityHeaders(new Response(JSON.stringify(parsed), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname);
+      } catch (err) {
+        return addSecurityHeaders(new Response(JSON.stringify({ error: 'Unable to fetch portfolio feed', detail: err instanceof Error ? err.message : 'Upstream fetch failed' }), { status: 502, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), pathname);
+      }
+    }
+
+    // 6. Handle Studio HQ (/api/hq/*) endpoints
     if (pathname.startsWith('/api/hq/')) {
       const context = { request, env, ctx, params: {}, waitUntil: (p) => ctx?.waitUntil?.(p) };
       const res = await dispatchHqIntegrationBoundary(pathname, context, { addSecurityHeaders });
       return addSecurityHeaders(res, pathname);
     }
 
-    // 6. Reject other /api/* with standard 404 JSON
+    // 7. Reject other /api/* with standard 404 JSON
     if (pathname.startsWith('/api/')) {
       return addSecurityHeaders(new Response(JSON.stringify({ error: 'API endpoint not found', code: 'NOT_FOUND' }), {
         status: 404,
@@ -173,7 +195,7 @@ export default {
       }), pathname);
     }
 
-    // 7. Serve static assets via Cloudflare Workers Assets binding if present
+    // 8. Serve static assets via Cloudflare Workers Assets binding if present
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);

@@ -21,7 +21,10 @@ import {
   ArrowUp,
   ArrowDown,
   RotateCcw,
-  Filter
+  Filter,
+  Eye,
+  EyeOff,
+  Scale
 } from 'lucide-react';
 import {
   PortfolioData,
@@ -48,24 +51,30 @@ type DashboardTab = 'overview' | 'holdings' | 'watchlist' | 'research' | 'retire
 const STORAGE_KEY_URL = 'jawed_portfolio_endpoint_url';
 const STORAGE_KEY_TOKEN = 'jawed_portfolio_auth_token';
 const STORAGE_KEY_CURRENCY = 'jawed_portfolio_currency';
+const STORAGE_KEY_PRIVACY = 'jawed_portfolio_privacy_mode';
 
 export const PortfolioDashboardPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [currency, setCurrency] = useState<CurrencyCode>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CURRENCY);
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_CURRENCY) : null;
     return saved === 'USD' ? 'USD' : 'INR';
+  });
+  const [privacyMode, setPrivacyMode] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(STORAGE_KEY_PRIVACY) === 'true';
   });
   const [dataSource, setDataSource] = useState<DataSourceMode>('demo');
   const [portfolioData, setPortfolioData] = useState<PortfolioData>(MOCK_PORTFOLIO_DATA);
   const [endpointUrl, setEndpointUrl] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEY_URL) || '/api/portfolio'
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) : null) || '/api/portfolio'
   );
   const [authToken, setAuthToken] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEY_TOKEN) || ''
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY_TOKEN) : null) || ''
   );
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [highlightRebalancing, setHighlightRebalancing] = useState(false);
 
   // Asset Filter & Sort State (Sector & Thesis Status)
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
@@ -187,9 +196,46 @@ export const PortfolioDashboardPage: React.FC = () => {
     document.title = 'Multi-Asset Portfolio Tracker | Jawed Imtiaz';
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY_PRIVACY) {
+        setPrivacyMode(event.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const handleCurrencyToggle = (next: CurrencyCode) => {
     setCurrency(next);
-    localStorage.setItem(STORAGE_KEY_CURRENCY, next);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_CURRENCY, next);
+    }
+  };
+
+  const handleTogglePrivacyMode = () => {
+    setPrivacyMode((prev) => {
+      const next = !prev;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_PRIVACY, String(next));
+      }
+      return next;
+    });
+  };
+
+  const handleJumpToRebalancing = () => {
+    setActiveTab('overview');
+    setHighlightRebalancing(true);
+    if (typeof document !== 'undefined') {
+      window.setTimeout(() => {
+        const panel = document.getElementById('portfolio-rebalancing-panel');
+        panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 40);
+      window.setTimeout(() => {
+        setHighlightRebalancing(false);
+      }, 1600);
+    }
   };
 
   const triggerLiveSync = useCallback(async (targetUrl?: string) => {
@@ -431,7 +477,10 @@ export const PortfolioDashboardPage: React.FC = () => {
       </div>
 
       {/* Institutional Dark-Slate Console Surface */}
-      <div className="rounded-2xl bg-[#0b1120] text-slate-100 border border-slate-800 shadow-2xl overflow-hidden font-sans">
+      <div
+        data-privacy-blur={privacyMode ? 'true' : 'false'}
+        className="portfolio-dark-console rounded-2xl bg-[#0b1120] text-slate-100 border border-slate-800 shadow-2xl overflow-hidden font-sans"
+      >
         {/* Sticky Institutional Top Console Header */}
         <header className="sticky top-0 z-30 bg-[#0b1120]/95 backdrop-blur-md border-b border-slate-800/90">
           <div className="px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
@@ -464,8 +513,8 @@ export const PortfolioDashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Zone: Data Source Toggle, Currency Switch & Endpoint Settings */}
-            <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Right Zone: Data Source Toggle, Currency Switch, Privacy Blur & Endpoint Settings */}
+            <div className="dashboard-control-bar flex items-center gap-2.5 flex-wrap">
               {/* Data Source Toggle (MOCK_PORTFOLIO_DATA vs. Dynamic Live URL Fetch) */}
               <div
                 className="flex items-center p-1 bg-[#0f172a] border border-slate-800 rounded-lg text-xs"
@@ -563,6 +612,54 @@ export const PortfolioDashboardPage: React.FC = () => {
                   $ USD
                 </button>
               </div>
+
+              {/* Privacy Blur Toggle (Persisted in localStorage) */}
+              <button
+                type="button"
+                onClick={handleTogglePrivacyMode}
+                data-testid="privacy-blur-toggle"
+                aria-pressed={privacyMode}
+                aria-label={
+                  privacyMode
+                    ? 'Privacy Blur enabled — click to show monetary values'
+                    : 'Privacy Blur — click to blur monetary values'
+                }
+                title={
+                  privacyMode
+                    ? 'Privacy Blur ON — click to reveal monetary values'
+                    : 'Enable Privacy Blur to mask absolute monetary values while keeping percentages and tickers legible'
+                }
+                className={`privacy-blur-toggle inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                  privacyMode
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/40 font-semibold shadow-sm'
+                    : 'bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border-slate-800'
+                }`}
+              >
+                {privacyMode ? (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Privacy Blur: On</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Privacy Blur</span>
+                  </>
+                )}
+              </button>
+
+              {/* Rebalancing & Capital Deployment Quick-Jump Action */}
+              <button
+                type="button"
+                onClick={handleJumpToRebalancing}
+                data-testid="control-bar-rebalance-btn"
+                title="Jump to Portfolio Rebalancing & Capital Deployment panel in Executive Overview"
+                aria-label="Open Portfolio Rebalancing and Capital Deployment panel"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Scale className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Rebalance</span>
+              </button>
 
               {/* Sync / Endpoint Settings Trigger */}
               {dataSource === 'live' && (
@@ -810,6 +907,8 @@ export const PortfolioDashboardPage: React.FC = () => {
             <ExecutiveOverviewTab
               data={effectivePortfolioData}
               currency={currency}
+              privacyMode={privacyMode}
+              highlightRebalancing={highlightRebalancing}
               onNavigateTab={(t) => setActiveTab(t)}
             />
           )}
@@ -818,6 +917,7 @@ export const PortfolioDashboardPage: React.FC = () => {
             <HoldingsAnalyticsTab
               data={effectivePortfolioData}
               currency={currency}
+              privacyMode={privacyMode}
               onAddHolding={handleAddHolding}
               selectedSector={selectedSector}
               selectedThesisStatus={selectedThesisStatus}
@@ -834,6 +934,7 @@ export const PortfolioDashboardPage: React.FC = () => {
             <WatchlistPipelineTab
               data={portfolioData}
               currency={currency}
+              privacyMode={privacyMode}
               onAddWatchlistItem={handleAddWatchlistItem}
               onDeployWatchlistTranche={handleDeployWatchlistTranche}
             />
@@ -848,7 +949,11 @@ export const PortfolioDashboardPage: React.FC = () => {
           )}
 
           {activeTab === 'retirement' && (
-            <RetirementRoadmapTab data={portfolioData} currency={currency} />
+            <RetirementRoadmapTab
+              data={portfolioData}
+              currency={currency}
+              privacyMode={privacyMode}
+            />
           )}
 
           {/* Prominent Investment Risk and Financial Disclaimer Section */}

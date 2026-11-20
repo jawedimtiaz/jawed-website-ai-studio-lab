@@ -1,7 +1,7 @@
 // src/components/hq/ProjectsSection.tsx
 // Studio HQ Projects Module: All Projects, Active Projects, Rich Project Details, Tasks, Milestones
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   FolderKanban,
   CheckSquare,
@@ -14,7 +14,11 @@ import {
   Check,
   Minus,
   RotateCcw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  LayoutGrid,
+  List,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import {
   hqFetch,
@@ -39,6 +43,8 @@ import {
 import {
   SectionToolbar,
   StatusDotText,
+  ProjectStatusBadge,
+  getProjectStatusMeta,
   EmptyState,
   LoadingSkeleton,
   SlideOverDrawer,
@@ -67,10 +73,192 @@ const STATUS_VISIBILITY_GROUPS: Array<{
   { id: 'active', label: 'Active', dotColor: 'bg-blue-600', statuses: ACTIVE_PROJECT_STATUSES },
   { id: 'completed', label: 'Completed', dotColor: 'bg-emerald-600', statuses: ['Completed'] },
   { id: 'on-hold', label: 'On Hold', dotColor: 'bg-amber-500', statuses: ['On Hold'] },
-  { id: 'maintenance', label: 'Maintenance', dotColor: 'bg-slate-500', statuses: ['Maintenance'] },
-  { id: 'lead', label: 'Lead', dotColor: 'bg-amber-500', statuses: ['Lead'] },
+  { id: 'maintenance', label: 'Maintenance', dotColor: 'bg-indigo-600', statuses: ['Maintenance'] },
+  { id: 'lead', label: 'Lead', dotColor: 'bg-slate-500', statuses: ['Lead'] },
   { id: 'cancelled', label: 'Cancelled', dotColor: 'bg-rose-600', statuses: ['Cancelled'] }
 ];
+
+function parseDateUtcMidnight(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T00:00:00Z` : trimmed;
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+}
+
+interface ProjectTimelineInfo {
+  hasSchedule: boolean;
+  progressPct: number;
+  durationLabel: string;
+  barClass: string;
+  labelClass: string;
+  isOverdue: boolean;
+  startLabel: string;
+  targetLabel: string;
+}
+
+function getProjectTimelineInfo(project: HqProject, statusCategory: string, defaultBarClass: string): ProjectTimelineInfo {
+  const startMs = parseDateUtcMidnight(project.start_date);
+  const targetMs = parseDateUtcMidnight(project.target_date);
+  const completedMs = parseDateUtcMidnight(project.completed_at);
+  const now = new Date();
+  const todayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const msPerDay = 86400000;
+
+  const startLabel = project.start_date ? formatDate(project.start_date) : 'Unscheduled';
+  const targetLabel = project.target_date ? formatDate(project.target_date) : 'No target';
+
+  if (statusCategory === 'Completed') {
+    let durationLabel = project.completed_at ? `Completed ${formatDate(project.completed_at)}` : 'Completed';
+    if (startMs !== null && (completedMs ?? targetMs) !== null) {
+      const endMs = (completedMs ?? targetMs)!;
+      const totalDays = Math.max(1, Math.round((endMs - startMs) / msPerDay));
+      durationLabel = `${totalDays}d total · Completed`;
+    }
+    return {
+      hasSchedule: startMs !== null || targetMs !== null,
+      progressPct: 100,
+      durationLabel,
+      barClass: 'bg-emerald-600',
+      labelClass: 'text-emerald-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (statusCategory === 'Cancelled') {
+    return {
+      hasSchedule: startMs !== null || targetMs !== null,
+      progressPct: 0,
+      durationLabel: 'Cancelled',
+      barClass: 'bg-rose-500',
+      labelClass: 'text-rose-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (startMs !== null && targetMs !== null && targetMs >= startMs) {
+    const totalDays = Math.max(1, Math.round((targetMs - startMs) / msPerDay));
+    const elapsedDays = Math.round((todayMs - startMs) / msPerDay);
+    const remainingDays = Math.round((targetMs - todayMs) / msPerDay);
+    const progressPct = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
+
+    if (remainingDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `${Math.abs(remainingDays)}d overdue`,
+        barClass: 'bg-rose-600',
+        labelClass: 'text-rose-700 font-semibold',
+        isOverdue: true,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (remainingDays === 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `Due today (${totalDays}d span)`,
+        barClass: 'bg-amber-500',
+        labelClass: 'text-amber-700 font-semibold',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (elapsedDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 0,
+        durationLabel: `Starts in ${Math.abs(elapsedDays)}d · ${totalDays}d span`,
+        barClass: defaultBarClass,
+        labelClass: 'text-slate-600',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    return {
+      hasSchedule: true,
+      progressPct,
+      durationLabel: `${remainingDays}d left of ${totalDays}d`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (targetMs !== null) {
+    const remainingDays = Math.round((targetMs - todayMs) / msPerDay);
+    if (remainingDays < 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: `${Math.abs(remainingDays)}d overdue`,
+        barClass: 'bg-rose-600',
+        labelClass: 'text-rose-700 font-semibold',
+        isOverdue: true,
+        startLabel,
+        targetLabel
+      };
+    }
+    if (remainingDays === 0) {
+      return {
+        hasSchedule: true,
+        progressPct: 100,
+        durationLabel: 'Due today',
+        barClass: 'bg-amber-500',
+        labelClass: 'text-amber-700 font-semibold',
+        isOverdue: false,
+        startLabel,
+        targetLabel
+      };
+    }
+    return {
+      hasSchedule: true,
+      progressPct: Math.min(90, Math.max(15, 100 - Math.min(85, remainingDays * 2))),
+      durationLabel: `${remainingDays}d until target`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-700',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  if (startMs !== null) {
+    const elapsedDays = Math.round((todayMs - startMs) / msPerDay);
+    return {
+      hasSchedule: true,
+      progressPct: elapsedDays > 0 ? 35 : 0,
+      durationLabel: elapsedDays >= 0 ? `Day ${elapsedDays + 1} active` : `Starts in ${Math.abs(elapsedDays)}d`,
+      barClass: defaultBarClass,
+      labelClass: 'text-slate-600',
+      isOverdue: false,
+      startLabel,
+      targetLabel
+    };
+  }
+
+  return {
+    hasSchedule: false,
+    progressPct: 0,
+    durationLabel: 'No dates set',
+    barClass: 'bg-slate-300',
+    labelClass: 'text-slate-400',
+    isOverdue: false,
+    startLabel,
+    targetLabel
+  };
+}
 
 interface ProjectDetailBundle {
   project: HqProject;
@@ -108,8 +296,11 @@ export const ProjectsSection: React.FC<{
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [totalUnfilteredProjects, setTotalUnfilteredProjects] = useState(0);
   const [showStageToggles, setShowStageToggles] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   const [projects, setProjects] = useState<HqProject[]>([]);
+  const firstProjectIdRef = useRef<string | null>(null);
+  firstProjectIdRef.current = projects[0]?.id ?? null;
   const [clients, setClients] = useState<HqClient[]>([]);
   const [tasks, setTasks] = useState<HqTask[]>([]);
   const [milestones, setMilestones] = useState<HqMilestone[]>([]);
@@ -131,6 +322,7 @@ export const ProjectsSection: React.FC<{
     onConfirm: () => Promise<void>;
   }>({ open: false, title: '', description: '', onConfirm: async () => {} });
   const [busy, setBusy] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   const [projectForm, setProjectForm] = useState({
     client_id: '',
@@ -197,7 +389,7 @@ export const ProjectsSection: React.FC<{
         setStatusCounts(res.statusCounts || {});
         setTotalUnfilteredProjects(Number(res.totalUnfiltered ?? res.projects?.length ?? 0));
       } else if (activeTab === 'details') {
-        const targetId = selectedProjectId || projects[0]?.id;
+        const targetId = selectedProjectId || firstProjectIdRef.current;
         if (targetId) {
           const res = await hqFetch<ProjectDetailBundle>(`/api/hq/projects?id=${encodeURIComponent(targetId)}`);
           setDetail(res);
@@ -219,7 +411,7 @@ export const ProjectsSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, projects, onSelectProject, onToast]);
+  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, onSelectProject, onToast]);
 
   useEffect(() => {
     setStatusFilter('All');
@@ -298,6 +490,30 @@ export const ProjectsSection: React.FC<{
       onToast('error', err.message || 'Failed to save project');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleQuickStatusChange = async (project: HqProject, nextStatus: string) => {
+    if (!nextStatus || nextStatus === project.status) return;
+    const previousStatus = project.status;
+    setUpdatingStatusId(project.id);
+    setProjects((prev) =>
+      prev.map((item) => (item.id === project.id ? { ...item, status: nextStatus } : item))
+    );
+    try {
+      await hqFetch('/api/hq/projects', {
+        method: 'PUT',
+        body: JSON.stringify({ id: project.id, status: nextStatus })
+      });
+      onToast('success', `${project.name} marked as ${nextStatus}`);
+      await loadMain();
+    } catch (err: any) {
+      setProjects((prev) =>
+        prev.map((item) => (item.id === project.id ? { ...item, status: previousStatus } : item))
+      );
+      onToast('error', err.message || 'Failed to update project status');
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -474,6 +690,32 @@ export const ProjectsSection: React.FC<{
                   <SlidersHorizontal className="w-3 h-3" />
                   All Stages ({PROJECT_STATUS_LIST.length})
                 </button>
+                <div className="inline-flex rounded border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="Project layout view">
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'cards'}
+                    onClick={() => setViewMode('cards')}
+                    title="Card View"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm cursor-pointer ${
+                      viewMode === 'cards' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'table'}
+                    onClick={() => setViewMode('table')}
+                    title="Table View"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-sm cursor-pointer ${
+                      viewMode === 'table' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <List className="w-3 h-3" />
+                    Table
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -579,6 +821,187 @@ export const ProjectsSection: React.FC<{
                 onAction={openNewProject}
               />
             )
+          ) : viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {projects.map((p) => {
+                const statusMeta = getProjectStatusMeta(p.status);
+                const statusSlug = statusMeta.category.toLowerCase().replace(/\s+/g, '-');
+                const totalTasks = Number(p.total_tasks ?? 0);
+                const doneTasks = Number(p.completed_tasks ?? 0);
+                const taskPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+                const totalMilestones = Number(p.total_milestones ?? 0);
+                const doneMilestones = Number(p.completed_milestones ?? 0);
+                const timeline = getProjectTimelineInfo(p, statusMeta.category, statusMeta.barColor);
+
+                return (
+                  <article
+                    key={p.id}
+                    aria-busy={updatingStatusId === p.id}
+                    data-status-category={statusMeta.category}
+                    data-status-stage={p.status}
+                    className={`project-card project-card--${statusSlug} bg-white border border-slate-200 border-l-4 ${statusMeta.accentBorderClass} rounded-lg p-4 flex flex-col justify-between gap-3.5 hover:border-slate-300 transition-colors`}
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectProject(p.id);
+                              onSubViewChange('projects-details');
+                            }}
+                            className="text-left text-sm font-semibold text-slate-900 hover:text-blue-700 transition-colors line-clamp-1 cursor-pointer"
+                          >
+                            {p.name}
+                          </button>
+                          <div className="text-xs text-slate-500 truncate mt-0.5">
+                            {p.client_business || p.client_name} · {p.project_type}
+                          </div>
+                        </div>
+                        <ProjectStatusBadge status={p.status} align="end" className="shrink-0" />
+                      </div>
+
+                      {p.summary && (
+                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{p.summary}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 pt-2.5 border-t border-slate-100">
+                      {/* Project Lifecycle Timeline & Duration Bar */}
+                      <div className="project-card__timeline space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
+                            <Calendar className="w-3 h-3 text-slate-400 shrink-0" aria-hidden="true" />
+                            <span>Timeline</span>
+                          </span>
+                          <span className={`inline-flex items-center gap-1 font-mono tabular-nums ${timeline.labelClass}`}>
+                            <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
+                            <span>{timeline.durationLabel}</span>
+                          </span>
+                        </div>
+                        <div
+                          role="progressbar"
+                          aria-label={`Project timeline progress for ${p.name}`}
+                          aria-valuenow={timeline.progressPct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"
+                        >
+                          <div
+                            className={`h-full ${timeline.barClass} rounded-full transition-all duration-300`}
+                            style={{ width: `${timeline.progressPct}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-slate-500">
+                          <span className="truncate" title={`Start date: ${timeline.startLabel}`}>
+                            Start: {timeline.startLabel}
+                          </span>
+                          <span
+                            className={`truncate ${timeline.isOverdue ? 'text-rose-600 font-semibold' : ''}`}
+                            title={`Target date: ${timeline.targetLabel}`}
+                          >
+                            Target: {timeline.targetLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tasks Completion Progress */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>Tasks Progress</span>
+                          <span className="font-mono tabular-nums text-slate-700 font-medium">
+                            {doneTasks}/{totalTasks} ({taskPct}%)
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full ${statusMeta.barColor} rounded-full`} style={{ width: `${taskPct}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Budget</div>
+                            <div className="font-mono tabular-nums font-semibold text-slate-900">
+                              {formatMoney(p.quoted_amount_minor, p.currency)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Milestones</div>
+                            <div className="font-mono tabular-nums text-slate-700 font-medium">
+                              {doneMilestones}/{totalMilestones}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-slate-400">Priority</div>
+                            <div className="font-medium text-slate-700">{p.priority}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <select
+                            aria-label={`Change status for ${p.name}`}
+                            value={p.status}
+                            disabled={updatingStatusId === p.id}
+                            onChange={(e) => handleQuickStatusChange(p, e.target.value)}
+                            className="h-7 px-2 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+                          >
+                            {PROJECT_STATUS_LIST.map((st) => (
+                              <option key={st} value={st}>
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingProject(p);
+                              setProjectForm({
+                                client_id: p.client_id,
+                                name: p.name,
+                                project_type: p.project_type || 'Website Build',
+                                status: p.status,
+                                priority: p.priority,
+                                start_date: p.start_date || '',
+                                target_date: p.target_date || '',
+                                quoted_major: minorToMajorString(p.quoted_amount_minor),
+                                currency: p.currency || 'INR',
+                                summary: p.summary || '',
+                                scope_markdown: p.scope_markdown || ''
+                              });
+                              setProjectDrawerOpen(true);
+                            }}
+                            aria-label={`Edit ${p.name}`}
+                            className="p-1.5 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfirmState({
+                                open: true,
+                                title: 'Delete project?',
+                                description: `Delete project "${p.name}" and its child tasks/milestones?`,
+                                onConfirm: async () => {
+                                  await hqFetch(`/api/hq/projects?id=${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+                                  onToast('success', 'Project deleted');
+                                  loadMain();
+                                }
+                              })
+                            }
+                            aria-label={`Delete ${p.name}`}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
@@ -586,7 +1009,7 @@ export const ProjectsSection: React.FC<{
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Project & Customer</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Stage</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Status</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Priority</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Tasks</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-slate-600">Budget</th>
@@ -613,7 +1036,7 @@ export const ProjectsSection: React.FC<{
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <StatusDotText status={p.status} />
+                          <ProjectStatusBadge status={p.status} />
                         </td>
                         <td className="px-4 py-3 text-xs font-medium text-slate-700">{p.priority}</td>
                         <td className="px-4 py-3 text-xs font-mono tabular-nums text-slate-600">
@@ -741,9 +1164,9 @@ export const ProjectsSection: React.FC<{
               <div className="bg-white border border-slate-200 rounded-lg p-5">
                 <div className="flex flex-wrap justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <h2 className="text-lg font-bold text-slate-900">{detail.project.name}</h2>
-                      <StatusDotText status={detail.project.status} />
+                      <ProjectStatusBadge status={detail.project.status} />
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
                       {detail.project.client_business || detail.project.client_name} · {detail.project.project_type} · Priority:{' '}
