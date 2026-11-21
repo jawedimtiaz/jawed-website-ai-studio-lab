@@ -41,6 +41,13 @@ import {
   PROJECT_STATUS_LIST
 } from '../../types/hq';
 import {
+  ProjectDetailBundle,
+  normalizeProjectDetailBundle,
+  toCanonicalStatus,
+  getStatusDisplayLabel,
+  SELECTABLE_PROJECT_STATUSES
+} from '../../services/hqProjectHelpers';
+import {
   SectionToolbar,
   StatusDotText,
   ProjectStatusBadge,
@@ -260,61 +267,8 @@ function getProjectTimelineInfo(project: HqProject, statusCategory: string, defa
   };
 }
 
-export interface ProjectDetailBundle {
-  project: HqProject;
-  tasks: HqTask[];
-  milestones: HqMilestone[];
-  approvals: HqApproval[];
-  qaChecks: HqQaCheck[];
-  repositories: HqRepository[];
-  onboarding: HqOnboardingItem[];
-  notes: HqNote[];
-}
-
-export function normalizeProjectDetailBundle(
-  projectRes: any,
-  tasksRes?: any,
-  milestonesRes?: any
-): ProjectDetailBundle | null {
-  if (!projectRes || typeof projectRes !== 'object') return null;
-
-  // Extract the project object from canonical { ok: true, project: {...} },
-  // legacy bundle { project: {...} }, or direct project object { id, ... }
-  // Discard collection responses { ok: true, projects: [...] }
-  const rawProject =
-    projectRes.project && typeof projectRes.project === 'object'
-      ? projectRes.project
-      : ('id' in projectRes && !('projects' in projectRes) ? projectRes : null);
-
-  if (!rawProject || typeof rawProject !== 'object' || !rawProject.id) {
-    return null;
-  }
-
-  const safeProject: HqProject = {
-    ...rawProject,
-    client_business: rawProject.client_business || rawProject.client_business_name || rawProject.client_name || '',
-    status: typeof rawProject.status === 'string' && rawProject.status.trim() ? rawProject.status : 'Planning'
-  };
-
-  return {
-    project: safeProject,
-    tasks: Array.isArray(tasksRes?.tasks)
-      ? tasksRes.tasks
-      : Array.isArray(projectRes?.tasks)
-        ? projectRes.tasks
-        : [],
-    milestones: Array.isArray(milestonesRes?.milestones)
-      ? milestonesRes.milestones
-      : Array.isArray(projectRes?.milestones)
-        ? projectRes.milestones
-        : [],
-    approvals: Array.isArray(projectRes?.approvals) ? projectRes.approvals : [],
-    qaChecks: Array.isArray(projectRes?.qaChecks) ? projectRes.qaChecks : [],
-    repositories: Array.isArray(projectRes?.repositories) ? projectRes.repositories : [],
-    onboarding: Array.isArray(projectRes?.onboarding) ? projectRes.onboarding : [],
-    notes: Array.isArray(projectRes?.notes) ? projectRes.notes : []
-  };
-}
+export type { ProjectDetailBundle };
+export { normalizeProjectDetailBundle };
 
 export const ProjectsSection: React.FC<{
   subView: HqSubView;
@@ -346,6 +300,19 @@ export const ProjectsSection: React.FC<{
   const [projects, setProjects] = useState<HqProject[]>([]);
   const firstProjectIdRef = useRef<string | null>(null);
   firstProjectIdRef.current = projects[0]?.id ?? null;
+  const selectedProjectIdRef = useRef<string | null | undefined>(selectedProjectId);
+  selectedProjectIdRef.current = selectedProjectId;
+  const activeTargetIdRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestCounterRef = useRef<number>(0);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      activeTargetIdRef.current = null;
+    };
+  }, []);
+
   const [clients, setClients] = useState<HqClient[]>([]);
   const [tasks, setTasks] = useState<HqTask[]>([]);
   const [milestones, setMilestones] = useState<HqMilestone[]>([]);
@@ -411,14 +378,14 @@ export const ProjectsSection: React.FC<{
       if (activeTab !== 'all' && activeTab !== 'active') {
         const fetched = pRes.projects || [];
         setProjects(fetched);
-        if (!selectedProjectId && fetched.length > 0 && activeTab === 'details') {
+        if (!selectedProjectIdRef.current && fetched.length > 0 && activeTab === 'details') {
           onSelectProject(fetched[0].id);
         }
       }
     } catch {
       // silent
     }
-  }, [activeTab, selectedProjectId, onSelectProject]);
+  }, [activeTab, onSelectProject]);
 
   const loadMain = useCallback(async () => {
     setLoading(true);
@@ -438,24 +405,60 @@ export const ProjectsSection: React.FC<{
         setStatusCounts(res.statusCounts || {});
         setTotalUnfilteredProjects(Number(res.totalUnfiltered ?? res.projects?.length ?? 0));
       } else if (activeTab === 'details') {
-        const targetId = selectedProjectId || firstProjectIdRef.current || projects[0]?.id;
+        const targetId = selectedProjectId || firstProjectIdRef.current;
         if (targetId) {
+          activeTargetIdRef.current = targetId;
+          const requestId = ++requestCounterRef.current;
+
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
+          const controller = new AbortController();
+          abortControllerRef.current = controller;
+
           try {
             const [projectRes, tasksRes, milestonesRes] = await Promise.all([
-              hqFetch<{ ok?: boolean; project?: HqProject }>(`/api/hq/projects/${encodeURIComponent(targetId)}`),
-              hqFetch<{ ok?: boolean; tasks?: HqTask[] }>(`/api/hq/projects/${encodeURIComponent(targetId)}/tasks`).catch(() => ({ ok: false, tasks: [] })),
-              hqFetch<{ ok?: boolean; milestones?: HqMilestone[] }>(`/api/hq/projects/${encodeURIComponent(targetId)}/milestones`).catch(() => ({ ok: false, milestones: [] }))
+              hqFetch<{ ok?: boolean; project?: HqProject }>(
+                `/api/hq/projects/${encodeURIComponent(targetId)}`,
+                { signal: controller.signal }
+              ),
+              hqFetch<{ ok?: boolean; tasks?: HqTask[] }>(
+                `/api/hq/projects/${encodeURIComponent(targetId)}/tasks`,
+                { signal: controller.signal }
+              ).catch(() => ({ ok: false, tasks: [] })),
+              hqFetch<{ ok?: boolean; milestones?: HqMilestone[] }>(
+                `/api/hq/projects/${encodeURIComponent(targetId)}/milestones`,
+                { signal: controller.signal }
+              ).catch(() => ({ ok: false, milestones: [] }))
             ]);
+
+            if (
+              controller.signal.aborted ||
+              requestId !== requestCounterRef.current ||
+              activeTargetIdRef.current !== targetId
+            ) {
+              return;
+            }
+
             const bundle = normalizeProjectDetailBundle(projectRes, tasksRes, milestonesRes);
             setDetail(bundle);
             if (bundle && !selectedProjectId) {
               onSelectProject(targetId);
             }
           } catch (err: any) {
+            if (
+              controller.signal.aborted ||
+              requestId !== requestCounterRef.current ||
+              activeTargetIdRef.current !== targetId ||
+              err?.name === 'AbortError'
+            ) {
+              return;
+            }
             setDetail(null);
             onToast('error', err.message || 'Failed to load project details');
           }
         } else {
+          activeTargetIdRef.current = null;
           setDetail(null);
         }
       } else if (activeTab === 'tasks') {
@@ -472,7 +475,7 @@ export const ProjectsSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, projects, onSelectProject, onToast]);
+  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, onSelectProject, onToast]);
 
   useEffect(() => {
     setStatusFilter('All');
@@ -1193,15 +1196,37 @@ export const ProjectsSection: React.FC<{
             {detail && detail.project && (
               <div className="flex items-center gap-2">
                 <select
-                  value={detail.project.status || ''}
+                  value={toCanonicalStatus(detail.project.status) || detail.project.status || ''}
                   onChange={async (e) => {
-                    const nextStatus = e.target.value;
+                    const rawVal = e.target.value;
+                    const nextCanonical = toCanonicalStatus(rawVal);
+                    if (!nextCanonical) {
+                      onToast('error', `Cannot set invalid status: ${rawVal}`);
+                      return;
+                    }
+                    if (nextCanonical === toCanonicalStatus(detail.project.status)) {
+                      return;
+                    }
                     try {
-                      await hqFetch(`/api/hq/projects/${encodeURIComponent(detail.project.id)}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ status: nextStatus })
-                      });
-                      onToast('success', `Stage changed to ${nextStatus}`);
+                      const res = await hqFetch<{ ok?: boolean; project?: HqProject }>(
+                        `/api/hq/projects/${encodeURIComponent(detail.project.id)}`,
+                        {
+                          method: 'PATCH',
+                          body: JSON.stringify({ status: nextCanonical })
+                        }
+                      );
+                      const savedStatus = res?.project?.status || nextCanonical;
+                      setDetail((prev) =>
+                        prev && prev.project.id === detail.project.id
+                          ? { ...prev, project: { ...prev.project, status: savedStatus } }
+                          : prev
+                      );
+                      setProjects((prev) =>
+                        prev.map((item) =>
+                          item.id === detail.project.id ? { ...item, status: savedStatus } : item
+                        )
+                      );
+                      onToast('success', `Stage changed to ${getStatusDisplayLabel(savedStatus)}`);
                       loadMain();
                     } catch (err: any) {
                       onToast('error', err.message || 'Failed to update project status');
@@ -1210,11 +1235,16 @@ export const ProjectsSection: React.FC<{
                   aria-label="Change project status"
                   className="px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-md"
                 >
-                  {PROJECT_STATUS_LIST.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
+                  {SELECTABLE_PROJECT_STATUSES.map((s) => (
+                    <option key={s.canonical} value={s.canonical}>
+                      {s.label}
                     </option>
                   ))}
+                  {!toCanonicalStatus(detail.project.status) && Boolean(detail.project.status) && (
+                    <option value={detail.project.status} disabled>
+                      {getStatusDisplayLabel(detail.project.status)} (Legacy)
+                    </option>
+                  )}
                 </select>
               </div>
             )}
