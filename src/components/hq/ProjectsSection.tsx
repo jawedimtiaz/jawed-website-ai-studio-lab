@@ -260,7 +260,7 @@ function getProjectTimelineInfo(project: HqProject, statusCategory: string, defa
   };
 }
 
-interface ProjectDetailBundle {
+export interface ProjectDetailBundle {
   project: HqProject;
   tasks: HqTask[];
   milestones: HqMilestone[];
@@ -269,6 +269,51 @@ interface ProjectDetailBundle {
   repositories: HqRepository[];
   onboarding: HqOnboardingItem[];
   notes: HqNote[];
+}
+
+export function normalizeProjectDetailBundle(
+  projectRes: any,
+  tasksRes?: any,
+  milestonesRes?: any
+): ProjectDetailBundle | null {
+  if (!projectRes || typeof projectRes !== 'object') return null;
+
+  // Extract the project object from canonical { ok: true, project: {...} },
+  // legacy bundle { project: {...} }, or direct project object { id, ... }
+  // Discard collection responses { ok: true, projects: [...] }
+  const rawProject =
+    projectRes.project && typeof projectRes.project === 'object'
+      ? projectRes.project
+      : ('id' in projectRes && !('projects' in projectRes) ? projectRes : null);
+
+  if (!rawProject || typeof rawProject !== 'object' || !rawProject.id) {
+    return null;
+  }
+
+  const safeProject: HqProject = {
+    ...rawProject,
+    client_business: rawProject.client_business || rawProject.client_business_name || rawProject.client_name || '',
+    status: typeof rawProject.status === 'string' && rawProject.status.trim() ? rawProject.status : 'Planning'
+  };
+
+  return {
+    project: safeProject,
+    tasks: Array.isArray(tasksRes?.tasks)
+      ? tasksRes.tasks
+      : Array.isArray(projectRes?.tasks)
+        ? projectRes.tasks
+        : [],
+    milestones: Array.isArray(milestonesRes?.milestones)
+      ? milestonesRes.milestones
+      : Array.isArray(projectRes?.milestones)
+        ? projectRes.milestones
+        : [],
+    approvals: Array.isArray(projectRes?.approvals) ? projectRes.approvals : [],
+    qaChecks: Array.isArray(projectRes?.qaChecks) ? projectRes.qaChecks : [],
+    repositories: Array.isArray(projectRes?.repositories) ? projectRes.repositories : [],
+    onboarding: Array.isArray(projectRes?.onboarding) ? projectRes.onboarding : [],
+    notes: Array.isArray(projectRes?.notes) ? projectRes.notes : []
+  };
 }
 
 export const ProjectsSection: React.FC<{
@@ -364,12 +409,16 @@ export const ProjectsSection: React.FC<{
       ]);
       setClients(cRes.clients || []);
       if (activeTab !== 'all' && activeTab !== 'active') {
-        setProjects(pRes.projects || []);
+        const fetched = pRes.projects || [];
+        setProjects(fetched);
+        if (!selectedProjectId && fetched.length > 0 && activeTab === 'details') {
+          onSelectProject(fetched[0].id);
+        }
       }
     } catch {
       // silent
     }
-  }, [activeTab]);
+  }, [activeTab, selectedProjectId, onSelectProject]);
 
   const loadMain = useCallback(async () => {
     setLoading(true);
@@ -389,11 +438,23 @@ export const ProjectsSection: React.FC<{
         setStatusCounts(res.statusCounts || {});
         setTotalUnfilteredProjects(Number(res.totalUnfiltered ?? res.projects?.length ?? 0));
       } else if (activeTab === 'details') {
-        const targetId = selectedProjectId || firstProjectIdRef.current;
+        const targetId = selectedProjectId || firstProjectIdRef.current || projects[0]?.id;
         if (targetId) {
-          const res = await hqFetch<ProjectDetailBundle>(`/api/hq/projects?id=${encodeURIComponent(targetId)}`);
-          setDetail(res);
-          if (!selectedProjectId) onSelectProject(targetId);
+          try {
+            const [projectRes, tasksRes, milestonesRes] = await Promise.all([
+              hqFetch<{ ok?: boolean; project?: HqProject }>(`/api/hq/projects/${encodeURIComponent(targetId)}`),
+              hqFetch<{ ok?: boolean; tasks?: HqTask[] }>(`/api/hq/projects/${encodeURIComponent(targetId)}/tasks`).catch(() => ({ ok: false, tasks: [] })),
+              hqFetch<{ ok?: boolean; milestones?: HqMilestone[] }>(`/api/hq/projects/${encodeURIComponent(targetId)}/milestones`).catch(() => ({ ok: false, milestones: [] }))
+            ]);
+            const bundle = normalizeProjectDetailBundle(projectRes, tasksRes, milestonesRes);
+            setDetail(bundle);
+            if (bundle && !selectedProjectId) {
+              onSelectProject(targetId);
+            }
+          } catch (err: any) {
+            setDetail(null);
+            onToast('error', err.message || 'Failed to load project details');
+          }
         } else {
           setDetail(null);
         }
@@ -411,7 +472,7 @@ export const ProjectsSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, onSelectProject, onToast]);
+  }, [activeTab, statusFilter, visibleStatuses, search, selectedProjectId, projects, onSelectProject, onToast]);
 
   useEffect(() => {
     setStatusFilter('All');
@@ -1112,30 +1173,39 @@ export const ProjectsSection: React.FC<{
                 <ArrowLeft className="w-3.5 h-3.5" /> All Projects
               </button>
               <select
-                value={selectedProjectId || ''}
+                value={selectedProjectId || detail?.project?.id || ''}
                 onChange={(e) => onSelectProject(e.target.value)}
                 aria-label="Select project"
                 className="px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-md text-slate-900 font-medium"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.client_business || p.client_name})
+                    {p.name} ({p.client_business || (p as any).client_business_name || p.client_name})
                   </option>
                 ))}
+                {projects.length === 0 && detail?.project && (
+                  <option value={detail.project.id}>
+                    {detail.project.name} ({detail.project.client_business || detail.project.client_name || 'Project'})
+                  </option>
+                )}
               </select>
             </div>
-            {detail && (
+            {detail && detail.project && (
               <div className="flex items-center gap-2">
                 <select
-                  value={detail.project.status}
+                  value={detail.project.status || ''}
                   onChange={async (e) => {
                     const nextStatus = e.target.value;
-                    await hqFetch('/api/hq/projects', {
-                      method: 'PUT',
-                      body: JSON.stringify({ id: detail.project.id, status: nextStatus })
-                    });
-                    onToast('success', `Stage changed to ${nextStatus}`);
-                    loadMain();
+                    try {
+                      await hqFetch(`/api/hq/projects/${encodeURIComponent(detail.project.id)}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ status: nextStatus })
+                      });
+                      onToast('success', `Stage changed to ${nextStatus}`);
+                      loadMain();
+                    } catch (err: any) {
+                      onToast('error', err.message || 'Failed to update project status');
+                    }
                   }}
                   aria-label="Change project status"
                   className="px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-md"
@@ -1152,7 +1222,7 @@ export const ProjectsSection: React.FC<{
 
           {loading ? (
             <LoadingSkeleton />
-          ) : !detail ? (
+          ) : !detail || !detail.project ? (
             <EmptyState
               title="No project selected"
               description="Select or create a project to view its tasks, milestones, approvals, QA checks, and notes."
@@ -1165,17 +1235,17 @@ export const ProjectsSection: React.FC<{
                 <div className="flex flex-wrap justify-between gap-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="text-lg font-bold text-slate-900">{detail.project.name}</h2>
-                      <ProjectStatusBadge status={detail.project.status} />
+                      <h2 className="text-lg font-bold text-slate-900">{detail.project.name || 'Untitled Project'}</h2>
+                      <ProjectStatusBadge status={detail.project.status || 'Planning'} />
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      {detail.project.client_business || detail.project.client_name} · {detail.project.project_type} · Priority:{' '}
-                      {detail.project.priority}
+                      {detail.project.client_business || (detail.project as any).client_business_name || detail.project.client_name || 'No customer'} · {detail.project.project_type || 'General'} · Priority:{' '}
+                      {detail.project.priority || 'Normal'}
                     </p>
                   </div>
                   <div className="text-right text-xs">
                     <div className="font-mono font-bold text-base text-slate-900">
-                      {formatMoney(detail.project.quoted_amount_minor, detail.project.currency)}
+                      {formatMoney(detail.project.quoted_amount_minor, detail.project.currency || 'INR')}
                     </div>
                     <div className="text-slate-500">
                       {formatDate(detail.project.start_date)} → {formatDate(detail.project.target_date)}
@@ -1188,11 +1258,11 @@ export const ProjectsSection: React.FC<{
               <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-2">
                 {(
                   [
-                    ['tasks', `Tasks (${detail.tasks.length})`],
-                    ['milestones', `Milestones (${detail.milestones.length})`],
-                    ['approvals', `Approvals (${detail.approvals.length})`],
-                    ['qa', `QA Checks (${detail.qaChecks.length})`],
-                    ['notes', `Notes (${detail.notes.length})`]
+                    ['tasks', `Tasks (${(detail.tasks || []).length})`],
+                    ['milestones', `Milestones (${(detail.milestones || []).length})`],
+                    ['approvals', `Approvals (${(detail.approvals || []).length})`],
+                    ['qa', `QA Checks (${(detail.qaChecks || []).length})`],
+                    ['notes', `Notes (${(detail.notes || []).length})`]
                   ] as const
                 ).map(([k, lbl]) => (
                   <button
@@ -1232,11 +1302,11 @@ export const ProjectsSection: React.FC<{
                       <Plus className="w-3.5 h-3.5" /> Add Task
                     </button>
                   </div>
-                  {detail.tasks.length === 0 ? (
+                  {(detail.tasks || []).length === 0 ? (
                     <p className="p-6 text-center text-xs text-slate-500">No tasks in this project yet.</p>
                   ) : (
                     <div className="divide-y divide-slate-100">
-                      {detail.tasks.map((t) => (
+                      {(detail.tasks || []).map((t) => (
                         <div key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
                           <div>
                             <div className="text-sm font-medium text-slate-900">{t.title}</div>
@@ -1286,11 +1356,11 @@ export const ProjectsSection: React.FC<{
                       <Plus className="w-3.5 h-3.5" /> Add Milestone
                     </button>
                   </div>
-                  {detail.milestones.length === 0 ? (
+                  {(detail.milestones || []).length === 0 ? (
                     <p className="p-6 text-center text-xs text-slate-500">No milestones added yet.</p>
                   ) : (
                     <div className="divide-y divide-slate-100">
-                      {detail.milestones.map((m) => (
+                      {(detail.milestones || []).map((m) => (
                         <div key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
                           <div>
                             <div className="text-sm font-medium text-slate-900">{m.name}</div>
@@ -1306,10 +1376,10 @@ export const ProjectsSection: React.FC<{
 
               {detailSubTab === 'approvals' && (
                 <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-                  {detail.approvals.length === 0 ? (
+                  {(detail.approvals || []).length === 0 ? (
                     <p className="p-6 text-center text-xs text-slate-500">No approval gates logged for this project.</p>
                   ) : (
-                    detail.approvals.map((a) => (
+                    (detail.approvals || []).map((a) => (
                       <div key={a.id} className="px-4 py-3 flex items-center justify-between text-xs">
                         <div>
                           <div className="font-semibold text-slate-900">{a.title}</div>
@@ -1324,10 +1394,10 @@ export const ProjectsSection: React.FC<{
 
               {detailSubTab === 'qa' && (
                 <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-                  {detail.qaChecks.length === 0 ? (
+                  {(detail.qaChecks || []).length === 0 ? (
                     <p className="p-6 text-center text-xs text-slate-500">No QA checks recorded for this project.</p>
                   ) : (
-                    detail.qaChecks.map((q) => (
+                    (detail.qaChecks || []).map((q) => (
                       <div key={q.id} className="px-4 py-3 flex items-center justify-between text-xs">
                         <div>
                           <div className="font-semibold text-slate-900">{q.title}</div>
@@ -1344,10 +1414,10 @@ export const ProjectsSection: React.FC<{
 
               {detailSubTab === 'notes' && (
                 <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-                  {detail.notes.length === 0 ? (
+                  {(detail.notes || []).length === 0 ? (
                     <p className="p-6 text-center text-xs text-slate-500">No project notes logged yet.</p>
                   ) : (
-                    detail.notes.map((n) => (
+                    (detail.notes || []).map((n) => (
                       <div key={n.id} className="p-4 text-xs space-y-1">
                         <div className="font-semibold text-blue-700">{n.note_type}</div>
                         <p className="text-slate-700 whitespace-pre-wrap">{n.content}</p>
