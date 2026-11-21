@@ -103,11 +103,15 @@ export interface ProjectStatusMeta {
 const ACTIVE_STAGE_SET = new Set([
   'active',
   'planning',
+  'discovery',
   'quoted',
   'onboarding',
+  'approved',
   'in progress',
+  'in-progress',
   'review',
-  'client approval'
+  'client approval',
+  'blocked'
 ]);
 
 export function getProjectStatusMeta(status: string): ProjectStatusMeta {
@@ -133,7 +137,7 @@ export function getProjectStatusMeta(status: string): ProjectStatusMeta {
       dotColor: 'bg-emerald-600'
     };
   }
-  if (normalized === 'on hold' || normalized === 'paused') {
+  if (normalized === 'on hold' || normalized === 'on-hold' || normalized === 'paused') {
     return {
       category: 'On Hold',
       badgeClasses: 'bg-amber-50 text-amber-900 border-amber-300',
