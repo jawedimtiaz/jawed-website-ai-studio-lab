@@ -408,16 +408,16 @@ Unless a valid environment override is supplied (none was established by this re
 ### Verified Test Evidence
 1. **TypeScript compilation (`bun run lint` / `tsc --noEmit`):** PASS (0 errors).
 2. **Project Details regression suite (`bun run test:hq-project-details`):** PASS (14/14 tests passing).
-3. **Canonical integration test suite (`tests/hq-canonical-integration.test.js`):** PASS (64/64 tests passing).
+3. **Canonical integration test suites:** PASS (`bun run test:hq-canonical-projects` and operations test suites passed).
 4. **Production client build (`bun run build`):** PASS (17 SPA entry points built cleanly).
 
 ### Phase 7.5.3 Authenticated Production Smoke Test
-A comprehensive post-deployment smoke test was executed against `https://lab.jawed.co.in/studio-hq` using an authentic Google RS256 token session for owner `jawedimtiaz@gmail.com`:
+A comprehensive post-deployment smoke test was executed against `https://lab.jawed.co.in/studio-hq` using an authentic Google RS256 token session for the allowlisted owner account (tested 21 November 2026 18:40 UTC / 22 November 2026 00:10 IST):
 - **UI-BUG-001 Resolved:** Project Details view rendered without crash upon selecting project `QA Test Website`. Zero unhandled runtime exceptions.
-- **BUG-002 Resolved:** Project status selector rendered all 10 canonical delivery statuses (`lead`, `discovery`, `proposal`, `in_progress`, `review`, `revision`, `completed`, `on_hold`, `cancelled`, `archived`) with appropriate badges and labels.
-- **Sub-Tabs Verified:** Successfully loaded Tasks (`Prepare website requirements document`), Milestones (`Discovery & Requirements`), Approvals (`Scope`), QA Checks (`Navigation links work correctly` — `Pass`), and Activity Notes.
-- **Request Lifecycle Stability:** Verified request cancellation and defensive payload normalization; zero API failures, zero fetch loops, and zero memory leaks.
+- **BUG-002 Resolved:** Project status selector accurately rendered all 10 canonical statuses mapped to their human-readable UI display labels (`discovery` -> Discovery / Planning, `in-progress` -> In Progress, `review` -> Review, `approved` -> Client Approval, `quoted` -> Quoted, `lead` -> Lead, `blocked` -> Blocked, `on-hold` -> On Hold, `completed` -> Completed, `cancelled` -> Cancelled). Zero non-canonical values accepted.
+- **Sub-Tabs Verified:** Successfully loaded project-level Tasks (1 record: *Prepare website requirements document*) and Milestones (1 record: *Discovery & Requirements*). Project-scoped Approvals (0), QA Checks (0), and Notes (0) rendered graceful empty states without errors. (Historical global QA/approval test items from Section 6 were not project-scoped to this record).
+- **Request Lifecycle Stability:** Verified request cancellation via `AbortController` and defensive payload normalization; zero application API failures and zero fetch loops.
 - **D1 Data Integrity:** Verified zero mutations or migrations during testing. Existing business records (`QA Test Client`, `QA Test Website`) remain intact.
 - **Scope Isolation:** Verified zero modifications to personal site `jawed.co.in` or Kaushal customer project.
 - **Non-Fatal Observation:** Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`) blocked by Content Security Policy (`connect-src`). Does not impact functionality; noted for future CSP housekeeping.
-- **Acceptance Record:** Formally accepted in [phase-7-5-deployment-acceptance.md](file:///c:/Users/user/Projects/jawed-website-ai-studio-lab/docs/phase-7-5-deployment-acceptance.md).
+- **Acceptance Record:** Formally accepted in [Phase 7.5 Deployment Acceptance Record](phase-7-5-deployment-acceptance.md).

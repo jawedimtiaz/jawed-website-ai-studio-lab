@@ -39,11 +39,11 @@ Following independent code review (Phase 7.3.3), PR approval and merge (Phase 7.
 
 | Parameter | Value |
 |---|---|
-| **Cloudflare Account** | Jawed Web Studio (`jawedimtiaz@gmail.com`) |
+| **Cloudflare Account** | Jawed Web Studio (Owner Account) |
 | **Worker Name** | `jawed-website-ai-studio-lab` |
 | **Deployed Version ID** | `8b37d74a-bfc7-4367-81a2-ec8d4a8c4fae` |
 | **Deployment Timestamp** | 21 November 2026 18:29 UTC / 23:59 IST |
-| **Previous Version ID (Rollback)** | `01b8bbef-180c-4594-8224-ba7bbab6b4d5` |
+| **Previous Version ID (Rollback Target)** | `01b8bbef-180c-4594-8224-ba7bbab6b4d5` |
 | **Previous Git Commit** | `77390fca3b90fd57a588812c3fb7055c89de3e86` |
 | **Worker Entrypoint** | `worker.js` (SPA + API router) |
 | **Static Asset Binding** | `ASSETS` -> `./dist` |
@@ -56,13 +56,14 @@ Following independent code review (Phase 7.3.3), PR approval and merge (Phase 7.
 
 ## 4. Pre-Deployment Verification Evidence
 
-Before deployment, all verification suites were executed against commit `59c80425c6a5d6f4003d37cc9942316ab58c2ca2`:
+Before deployment, automated verification suites were executed locally against merge commit `59c80425c6a5d6f4003d37cc9942316ab58c2ca2`:
 
 | Suite / Check | Command | Result | Metrics |
 |---|---|---|---|
 | **TypeScript Typecheck** | `bun run lint` (`tsc --noEmit`) | PASS | 0 errors |
-| **Project Details Regression** | `bun run test:hq-project-details` | PASS | 14 passed, 0 failed (14 total) |
-| **Canonical Integration Suite** | `bun test tests/hq-canonical-integration.test.js` | PASS | 64 passed, 0 failed (64 total) |
+| **Project Details Regression** | `bun run test:hq-project-details` (`node --test tests/hq-project-details-regression.test.js`) | PASS | 14 passed, 0 failed (14 total) |
+| **Canonical Projects Suite** | `bun run test:hq-canonical-projects` (`node --test tests/hq-canonical-projects.test.js`) | PASS | 6 passed, 0 failed (6 total) |
+| **Operations Integration Suites** | `node --test tests/hq-business-activity-adapters.test.js tests/hq-core-operations.test.js tests/hq-secondary-operations.test.js` | PASS | 87 passed, 0 failed (87 total) |
 | **Client Production Build** | `bun run build` | PASS | 17 SPA entrypoints built; bundle size clean |
 
 ### Regression Coverage Breakdown
@@ -76,7 +77,9 @@ Before deployment, all verification suites were executed against commit `59c8042
 
 ## 5. Phase 7.5.3 Post-Deployment Smoke Test Evidence
 
-A live production smoke test was performed using an authentic Google/Firebase RS256 token session for owner `jawedimtiaz@gmail.com` against `https://lab.jawed.co.in/studio-hq`.
+**Test Date/Time:** 21 November 2026 18:40 UTC / 22 November 2026 00:10 IST  
+**Environment:** Live Production Chromium Webview Browser + Direct Edge API Invocations  
+**Authentication:** Authentic Google RS256 token session for allowlisted owner identity  
 
 ### A. Deployment & HTTP Status
 - **Result:** PASS
@@ -84,7 +87,7 @@ A live production smoke test was performed using an authentic Google/Firebase RS
 
 ### B. Authenticated Session & Authorization
 - **Result:** PASS
-- **Details:** Authenticated session successfully verified against Google JWKS RS256 signing keys and matched owner record `jawedimtiaz@gmail.com` in `hq_users`. Studio HQ loaded into full authenticated management view without authentication loops or 401/403 errors.
+- **Details:** Authenticated session successfully verified against Google JWKS RS256 signing keys and matched the allowlisted owner record in `hq_users`. Studio HQ loaded into full authenticated management view without authentication loops or 401/403 errors.
 
 ### C. UI-BUG-001 Verification — Project Details Load
 - **Result:** PASS
@@ -92,31 +95,35 @@ A live production smoke test was performed using an authentic Google/Firebase RS
 
 ### D. BUG-002 Verification — Canonical Status Selector
 - **Result:** PASS
-- **Details:** Status selector opened and rendered all 10 canonical delivery statuses:
-  1. `lead` (Lead / Initial Inquiry)
-  2. `discovery` (Discovery & Scoping)
-  3. `proposal` (Proposal Sent)
-  4. `in_progress` (Active Delivery / In Progress)
-  5. `review` (Client Review)
-  6. `revision` (Revisions in Progress)
-  7. `completed` (Project Completed)
-  8. `on_hold` (Paused / On Hold)
-  9. `cancelled` (Cancelled)
-  10. `archived` (Archived)
-- Proper badge colors and human-readable labels rendered for current status `discovery`.
+- **Details:** The status selector dropdown rendered all 10 canonical delivery statuses defined in `CANONICAL_PROJECT_STATUSES` and `SELECTABLE_PROJECT_STATUSES` (`src/services/hqProjectHelpers.ts`):
+  1. `discovery` — Display Label: **Discovery / Planning** (Category: Active)
+  2. `in-progress` — Display Label: **In Progress** (Category: Active)
+  3. `review` — Display Label: **Review** (Category: Active)
+  4. `approved` — Display Label: **Client Approval** (Category: Active)
+  5. `quoted` — Display Label: **Quoted** (Category: Active)
+  6. `lead` — Display Label: **Lead** (Category: Lead)
+  7. `blocked` — Display Label: **Blocked** (Category: Active)
+  8. `on-hold` — Display Label: **On Hold** (Category: On Hold)
+  9. `completed` — Display Label: **Completed** (Category: Completed)
+  10. `cancelled` — Display Label: **Cancelled** (Category: Cancelled)
+- The current project status (`discovery`) rendered accurately with its human-readable label **Discovery / Planning** and corresponding status badge.
+- Distinction between layers:
+  - **Backend Canonical Statuses (`CANONICAL_PROJECT_STATUSES` in helpers and `PROJECT_STATUSES` in D1 API):** lower-case kebab/single-word tokens: `lead`, `discovery`, `quoted`, `approved`, `in-progress`, `review`, `blocked`, `completed`, `on-hold`, `cancelled`.
+  - **Frontend UI Display Labels (`SELECTABLE_PROJECT_STATUSES` in `ProjectsSection.tsx`):** human-readable title-cased labels: `Discovery / Planning`, `In Progress`, `Review`, `Client Approval`, `Quoted`, `Lead`, `Blocked`, `On Hold`, `Completed`, `Cancelled`.
 
 ### E. Sub-Tabs & Data Presentation
 - **Result:** PASS
-- **Details:** Verified all sub-tab views within Project Details:
-  - **Tasks:** Successfully loaded task *Prepare website requirements document*.
-  - **Milestones:** Successfully loaded milestone *Discovery & Requirements*.
-  - **Approvals:** Successfully loaded approved *Scope* approval.
-  - **QA Checks:** Successfully loaded QA check *Navigation links work correctly* with status *Pass*.
-  - **Activity Notes:** Successfully loaded project audit trail / notes.
+- **Details:** Navigated through all five sub-tabs within the project details view for **QA Test Website**:
+  - **Tasks (1):** Loaded task *Prepare website requirements document* (priority: `high`, status: `completed`, milestone: *Discovery & Requirements*).
+  - **Milestones (1):** Loaded milestone *Discovery & Requirements* (status: `completed`).
+  - **Approvals (0):** Rendered graceful empty state (*"No approval gates logged for this project."*).
+  - **QA Checks (0):** Rendered graceful empty state (*"No QA checks recorded for this project."*).
+  - **Activity Notes (0):** Rendered graceful empty state (*"No project notes logged yet."*).
+- **Reconciliation Note:** Historical manual QA testing in Section 6 of the continuity log noted a QA check (*Navigation links work correctly* — Pass) and a Scope approval; those historical records belong to global Governance / manual test sessions and are not project-level records linked to this project ID (`f9ced97f-4f25-4db5-a93f-3efdf6b5abec`). The project details view correctly queried and rendered the project-scoped records and graceful empty states without errors.
 
 ### F. Application Stability & Request Lifecycle
 - **Result:** PASS
-- **Details:** No repeated fetch loops, no memory leaks or unhandled promise rejections detected. Browser console showed zero application JavaScript errors and zero API errors.
+- **Details:** No repeated fetch loops or unhandled promise rejections detected. Request cancellation on selection changes and unmount verified via `AbortController`. Browser console showed zero application JavaScript errors and zero API errors.
 
 ### G. Non-Fatal Operational Observations
 - **Observation:** `static.cloudflareinsights.com` (Cloudflare Web Analytics beacon) was refused connection due to the Content Security Policy (`connect-src` directive).
