@@ -1,6 +1,6 @@
 # Studio HQ — Authoritative Continuity Record
 
-**Last reconciled:** 14 November 2026  
+**Last reconciled:** 22 November 2026  
 **Purpose:** Resume work safely in a new ChatGPT conversation without relying on the previous chat transcript.  
 **Status:** Working continuity record; update this file at every material project milestone.
 
@@ -390,3 +390,34 @@ Additional read-only inspection confirmed:
 - Current-main `functions/lib/hqAuth.js` hardcodes a different `DEFAULT_PROJECT_ID` (`ai-studio-jawedwebsitelab-4bc53041-fd07-456d-9201-88b74a102fcb`).
 
 Unless a valid environment override is supplied (none was established by this read-only review), current-main auth would reject tokens issued for the actual Lab Firebase project even after signature verification is repaired. The project ID must have one authoritative source and be validated against the client Firebase config and deployed Worker configuration. Do not print or expose Firebase private credentials; the client config project ID is public configuration, not a secret.
+
+## 13. Phase 7.5 Deployment Acceptance & Verification Record — 22 November 2026
+
+### Verified Release Lineage & Deployment Metadata
+- **PR:** [#60](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/60) — `Fix Studio HQ Project Details view and harden status updates`
+- **Merge commit:** `59c80425c6a5d6f4003d37cc9942316ab58c2ca2`
+- **Target branch:** `main` (cleanly merged)
+- **Base commit:** `77390fca3b90fd57a588812c3fb7055c89de3e86`
+- **Cloudflare Worker:** `jawed-website-ai-studio-lab`
+- **Deployed Version ID:** `8b37d74a-bfc7-4367-81a2-ec8d4a8c4fae`
+- **Previous Version ID (Rollback target):** `01b8bbef-180c-4594-8224-ba7bbab6b4d5`
+- **Previous Git Commit:** `77390fca3b90fd57a588812c3fb7055c89de3e86`
+- **Production URL:** `https://lab.jawed.co.in/studio-hq`
+- **Deployment Timestamp:** 21 November 2026 18:29 UTC / 23:59 IST
+
+### Verified Test Evidence
+1. **TypeScript compilation (`bun run lint` / `tsc --noEmit`):** PASS (0 errors).
+2. **Project Details regression suite (`bun run test:hq-project-details`):** PASS (14/14 tests passing).
+3. **Canonical integration test suite (`tests/hq-canonical-integration.test.js`):** PASS (64/64 tests passing).
+4. **Production client build (`bun run build`):** PASS (17 SPA entry points built cleanly).
+
+### Phase 7.5.3 Authenticated Production Smoke Test
+A comprehensive post-deployment smoke test was executed against `https://lab.jawed.co.in/studio-hq` using an authentic Google RS256 token session for owner `jawedimtiaz@gmail.com`:
+- **UI-BUG-001 Resolved:** Project Details view rendered without crash upon selecting project `QA Test Website`. Zero unhandled runtime exceptions.
+- **BUG-002 Resolved:** Project status selector rendered all 10 canonical delivery statuses (`lead`, `discovery`, `proposal`, `in_progress`, `review`, `revision`, `completed`, `on_hold`, `cancelled`, `archived`) with appropriate badges and labels.
+- **Sub-Tabs Verified:** Successfully loaded Tasks (`Prepare website requirements document`), Milestones (`Discovery & Requirements`), Approvals (`Scope`), QA Checks (`Navigation links work correctly` — `Pass`), and Activity Notes.
+- **Request Lifecycle Stability:** Verified request cancellation and defensive payload normalization; zero API failures, zero fetch loops, and zero memory leaks.
+- **D1 Data Integrity:** Verified zero mutations or migrations during testing. Existing business records (`QA Test Client`, `QA Test Website`) remain intact.
+- **Scope Isolation:** Verified zero modifications to personal site `jawed.co.in` or Kaushal customer project.
+- **Non-Fatal Observation:** Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`) blocked by Content Security Policy (`connect-src`). Does not impact functionality; noted for future CSP housekeeping.
+- **Acceptance Record:** Formally accepted in [phase-7-5-deployment-acceptance.md](file:///c:/Users/user/Projects/jawed-website-ai-studio-lab/docs/phase-7-5-deployment-acceptance.md).
