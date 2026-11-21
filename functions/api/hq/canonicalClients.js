@@ -154,11 +154,12 @@ async function getClient(db, id) {
 
 async function listClients(request, db) {
   const url = new URL(request.url);
-  const archivedOnly = url.searchParams.get('archivedOnly') === 'true';
+  const archivedOnly = url.searchParams.get('archivedOnly') === 'true' || url.searchParams.get('includeArchived') === 'true';
   const status = url.searchParams.get('status');
   if (status && !CLIENT_STATUSES.has(status)) {
     return hqJson({ ok: false, error: 'STATUS_INVALID' }, 400);
   }
+  const q = (url.searchParams.get('q') || '').trim();
   const limitValue = Number.parseInt(url.searchParams.get('limit') || '50', 10);
   const offsetValue = Number.parseInt(url.searchParams.get('offset') || '0', 10);
   const limit = Number.isFinite(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 50;
@@ -169,13 +170,24 @@ async function listClients(request, db) {
     clauses.push('c.status = ?');
     params.push(status);
   }
+  if (q) {
+    clauses.push('(LOWER(c.name) LIKE ? OR LOWER(c.business_name) LIKE ? OR LOWER(c.email) LIKE ?)');
+    const pattern = `%${q.toLowerCase()}%`;
+    params.push(pattern, pattern, pattern);
+  }
+
+  const countRow = await db.prepare(
+    `SELECT COUNT(*) AS total FROM clients c WHERE ${clauses.join(' AND ')}`
+  ).bind(...params).first();
+  const total = Number(countRow?.total || 0);
+
   const result = await db.prepare(`SELECT c.id, c.client_code, c.name, c.business_name, c.status, c.email, c.phone, c.website_url, c.billing_address, c.source, c.updated_at, c.archived_at,
     (SELECT COUNT(*) FROM projects p WHERE p.client_id = c.id AND p.archived_at IS NULL) AS active_projects_count
     FROM clients c
     WHERE ${clauses.join(' AND ')}
     ORDER BY c.updated_at DESC, c.id ASC LIMIT ? OFFSET ?`)
     .bind(...params, limit, offset).all();
-  return hqJson({ ok: true, clients: result.results || [], limit, offset });
+  return hqJson({ ok: true, clients: result.results || [], total, limit, offset });
 }
 
 async function createClient(request, db, identity) {
