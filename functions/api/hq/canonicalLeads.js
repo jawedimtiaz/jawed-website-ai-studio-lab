@@ -91,7 +91,7 @@ async function convert(request,db,identity,id){
   const stmts=[ownerAuthorizationGuardStatement(db,identity),db.prepare("UPDATE clients SET status='active',pipeline_stage='converted',converted_at=?,conversion_token=?,lost_at=NULL,lost_reason=NULL,updated_at=?,updated_by=? WHERE id=? AND pipeline_stage<>'converted' AND archived_at IS NULL").bind(now,conversionToken,now,identity.uid,id)];
   stmts.push(conditionalAuditStatement(db,identity,'lead.convert','client',id,crypto.randomUUID(),{pipeline_stage:row.pipeline_stage,status:row.status},{pipeline_stage:'converted',status:'active',projectId}));
   if(createProject)stmts.push(db.prepare("INSERT INTO projects (id,project_code,client_id,name,project_type,status,priority,currency,quoted_amount_minor,created_by,updated_by,created_at,updated_at) SELECT ?,?,?,?,'business-website','discovery','normal',?,0,?,?,?,? WHERE EXISTS (SELECT 1 FROM clients WHERE id=? AND conversion_token=?)").bind(projectId,projectCode,id,projectName,row.currency||'INR',identity.uid,identity.uid,now,now,id,conversionToken));
-  await db.batch(stmts);return hqJson({success:true,clientId:id,projectId,leadId:id},201);
+  const results=await db.batch(stmts);if(!results?.[1]?.meta?.changes)return routeError('LEAD_ALREADY_CONVERTED',409);return hqJson({success:true,clientId:id,projectId,leadId:id},201);
 }
 export async function handleHqLeads({request,env,segments=[]}){
   const ip=await checkHqRateLimit(request,env,{type:'general'});if(!ip.ok)return ip.response;
