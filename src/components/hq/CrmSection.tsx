@@ -56,6 +56,7 @@ import {
 } from '../../services/hqClientHelpers';
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
+const leadStageForStatus = (status: string) => ({ New: 'new', Contacted: 'contacted', Qualified: 'qualified', 'Proposal Sent': 'proposal-sent', Lost: 'lost' } as Record<string, string>)[status] || 'new';
 const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES, 'archived'];
 const FOLLOWUP_STATUSES = ['Scheduled', 'Completed', 'Cancelled'];
 
@@ -279,7 +280,6 @@ export const CrmSection: React.FC<{
     setBusy(true);
     try {
       const payload = {
-        ...(editingLead ? { id: editingLead.id } : {}),
         business_name: leadForm.business_name.trim(),
         contact_name: leadForm.contact_name.trim(),
         email: leadForm.email.trim(),
@@ -287,14 +287,14 @@ export const CrmSection: React.FC<{
         category: leadForm.category.trim(),
         website: leadForm.website.trim(),
         source: leadForm.source.trim(),
-        status: leadForm.status,
+        pipeline_stage: editingLead ? leadStageForStatus(leadForm.status) : 'new',
         estimated_value_minor: parseMajorToMinor(leadForm.estimated_major),
         currency: leadForm.currency,
         next_follow_up_at: leadForm.next_follow_up_at || null,
         notes: leadForm.notes.trim()
       };
       await hqFetch('/api/hq/leads', {
-        method: editingLead ? 'PUT' : 'POST',
+        method: editingLead ? 'PATCH' : 'POST',
         body: JSON.stringify(payload)
       });
       onToast('success', editingLead ? 'Lead updated' : 'Lead created');
@@ -310,9 +310,9 @@ export const CrmSection: React.FC<{
 
   const handleQualifyLead = async (lead: HqLead) => {
     try {
-      await hqFetch('/api/hq/leads', {
-        method: 'PUT',
-        body: JSON.stringify({ id: lead.id, status: 'Qualified' })
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(lead.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ pipeline_stage: 'qualified' })
       });
       onToast('success', `${lead.business_name} marked as Qualified`);
       loadData();
@@ -325,11 +325,9 @@ export const CrmSection: React.FC<{
     if (!convertLeadTarget) return;
     setBusy(true);
     try {
-      await hqFetch('/api/hq/leads', {
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(convertLeadTarget.id)}/convert`, {
         method: 'POST',
         body: JSON.stringify({
-          action: 'convert',
-          leadId: convertLeadTarget.id,
           createProject: convertCreateProject,
           projectName: convertProjectName.trim() || `${convertLeadTarget.business_name} Website`
         })
