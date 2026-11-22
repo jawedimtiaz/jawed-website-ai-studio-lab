@@ -139,9 +139,16 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
    - Formulated non-destructive backup commands (PROPOSED — NOT EXECUTED).
    - **Verdict:** READY WITH CONDITIONS.
    - Formal record: See [Phase 8.0.4 WP-5B Production Readiness Report](phase-8-0-4-wp5b-production-readiness.md).
-8. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
+8. **WP-5C Production D1 Backup Execution & Integrity Verification:**
+   - Captured Time Travel baseline bookmark: `00000073-00000000-0000512b-e5e8c4f8ff638d5877932d998632a5c1`.
+   - Executed logical SQL export of `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`) to local secure storage outside Git.
+   - File: `jawed-studio-hq-pre-0003-20261122-232627.sql` (32,167 bytes, SHA-256: `1D74EF2F99DFEA2000EDF0BFF4266C89204303D10BB2AF5AA91B58141B410BA9`).
+   - Verified all 24 tables + sequence; verified migration 0003 strictly pending; replayed against in-memory SQLite with 0 syntax or constraint errors.
+   - **Verdict:** COMPLETED / PASS / RECORDED.
+   - Formal record: See [Phase 8.0.4 WP-5C Production Backup Record](phase-8-0-4-wp5c-production-backup-record.md).
+9. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
    - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
-   - **WP-5B (Migration Prep & Backup Readiness):** **COMPLETED / READY WITH CONDITIONS**.
-   - **WP-5C (Production D1 Backup Execution):** **NEXT / BLOCKED** pending explicit owner approval.
-   - **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup verification and explicit owner approval.
+   - **WP-5B (Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS.
+   - **WP-5C (Production D1 Backup Execution):** **COMPLETED / PASS / BACKUP VERIFIED & RECORDED**.
+   - **WP-5D (Production D1 Migration 0003 Execution):** **NEXT / BLOCKED** pending explicit owner approval.
    - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration.

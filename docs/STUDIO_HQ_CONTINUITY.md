@@ -650,15 +650,15 @@ Full report available in [Phase 8.0.4 WP-5A Security Preflight Report](hq/phase-
 
 | Parameter | Current Value |
 |---|---|
-| **Last Completed Work Package** | Phase 8.0.4 — WP-5B Production Migration Preparation & Backup Readiness Review |
-| **Last Completed Audit Verdict** | **READY WITH CONDITIONS** (WP-5B) / **APPROVED WITH CONDITIONS** (WP-5A) |
+| **Last Completed Work Package** | Phase 8.0.4 — WP-5C Production D1 Backup Execution & Integrity Verification |
+| **Last Completed Audit Verdict** | **COMPLETED / PASS / VERIFIED** (WP-5C) / **READY WITH CONDITIONS** (WP-5B) |
 | **Current Git Commit (Candidate Main)** | `7dd22a5c4080faa67901b2f024beee383e538639` |
-| **Current Documentation PRs** | PR #68 (WP-4 Closure), PR #69 (WP-5A Preflight), WP-5B PR open targeting `main` |
+| **Current Documentation PRs** | PR #68 (WP-4 Closure), PR #69 (WP-5A Preflight), PR #70 (WP-5B Readiness), WP-5C PR open |
 | **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `a50fd458-3cb8-4f4f-98eb-ead5fd19f0db`) |
 | **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) — Migration 0003 APPLIED |
 | **Production Worker Identity** | `jawed-website-ai-studio-lab` (Version `5ac4bbbf-69cf-436d-bf9d-9670e4478d66`) |
 | **Production D1 Database** | `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`) — Migration 0003 PENDING |
-| **Production State** | **STRICTLY UNTOUCHED** (Zero migrations applied; zero deployments triggered) |
+| **Production State** | **STRICTLY UNTOUCHED** (Backup exported to external storage; zero mutations; zero deployments) |
 
 ### Work Package Stage Progression
 
@@ -667,19 +667,18 @@ Full report available in [Phase 8.0.4 WP-5A Security Preflight Report](hq/phase-
 - **WP-3 (Preview Deployment of PR #67):** COMPLETED / DEPLOYED (Version `a50fd458`)
 - **WP-4 (CRM Regression Verification):** COMPLETED / PASS / CLOSED
 - **WP-5A (Production Cutover Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS
-- **WP-5B (Production Migration Prep & Backup Readiness):** **COMPLETED / READY WITH CONDITIONS**
-- **WP-5C (Production D1 Backup Execution):** **NEXT / BLOCKED** pending explicit owner approval
-- **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup verification & explicit owner approval
+- **WP-5B (Production Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS
+- **WP-5C (Production D1 Backup Execution):** **COMPLETED / PASS / BACKUP VERIFIED & RECORDED**
+- **WP-5D (Production D1 Migration 0003 Execution):** **NEXT / BLOCKED** pending explicit owner approval
 - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration
 
-### Immediate Next Task: WP-5C
-**WP-5C — Production D1 Backup Execution**
-- Scope: Execute logical SQL backup of production D1 database `jawed-studio-hq` using `npx wrangler d1 export`.
+### Immediate Next Task: WP-5D
+**WP-5D — Production D1 Migration 0003 Application & Verification**
+- Scope: Apply `migrations/hq/0003_leads_pipeline.sql` to remote Production D1 database `jawed-studio-hq`.
 - Strict Rule: **BLOCKED** until explicit user authorization is provided.
 
 ### Prohibited Operations Until Explicit Owner Approval
-- Executing Production D1 backup/export.
-- Executing Production D1 migrations (`npx wrangler d1 migrations apply ... --remote`).
+- Executing Production D1 migrations (`npx wrangler d1 migrations apply jawed-studio-hq --remote`).
 - Deploying to Production Worker (`npx wrangler deploy`).
 - Mutating any production records or test accounts in `jawed-studio-hq`.
 - Modifying Cloudflare bindings, secrets, or environment variables.
@@ -691,11 +690,12 @@ When continuing Studio HQ in a new chat:
 2. Read the WP-4 Acceptance Record ([docs/hq/phase-8-0-4-wp4-acceptance.md](hq/phase-8-0-4-wp4-acceptance.md)).
 3. Read the WP-5A Security Preflight Report ([docs/hq/phase-8-0-4-wp5a-security-preflight.md](hq/phase-8-0-4-wp5a-security-preflight.md)).
 4. Read the WP-5B Production Readiness Report ([docs/hq/phase-8-0-4-wp5b-production-readiness.md](hq/phase-8-0-4-wp5b-production-readiness.md)).
-5. Review the Phase 8.0.4 progress tracker in Section 19.
-6. Independently verify the latest `main` SHA, open PRs, and deployment metadata.
-7. **Resume strictly at WP-5C** (Production D1 Backup Execution).
-8. Do not repeat completed WP-4, WP-5A, or WP-5B tasks.
-9. Do not execute mutating production operations without explicit user confirmation.
+5. Read the WP-5C Production Backup Record ([docs/hq/phase-8-0-4-wp5c-production-backup-record.md](hq/phase-8-0-4-wp5c-production-backup-record.md)).
+6. Review the Phase 8.0.4 progress tracker in Section 19.
+7. Independently verify the latest `main` SHA, open PRs, and deployment metadata.
+8. **Resume strictly at WP-5D** (Production D1 Migration 0003 Execution).
+9. Do not repeat completed WP-4, WP-5A, WP-5B, or WP-5C tasks.
+10. Do not execute mutating production operations without explicit user confirmation.
 
 ---
 
@@ -739,8 +739,56 @@ Following the approval of WP-5A Security Preflight, WP-5B establishes the operat
    - Database disaster recovery: Full restore from pre-migration SQL backup (`npx wrangler d1 execute jawed-studio-hq --remote --file=...`).
 
 6. **Sequential Release Checklist:**
-   - **WP-5C:** Production D1 backup execution (BLOCKED pending explicit owner approval).
-   - **WP-5D:** Production D1 migration 0003 execution (BLOCKED pending backup verification and explicit owner approval).
+   - **WP-5C:** Production D1 backup execution (COMPLETED / PASS / VERIFIED).
+   - **WP-5D:** Production D1 migration 0003 execution (BLOCKED pending explicit owner approval).
    - **WP-5E:** Production Worker deployment and live smoke verification (PENDING D1 migration).
 
 Full readiness documentation: [Phase 8.0.4 WP-5B Production Readiness Report](hq/phase-8-0-4-wp5b-production-readiness.md).
+
+---
+
+## 21. Phase 8.0.4 WP-5C Production D1 Backup Execution & Integrity Record — 22 November 2026
+
+### Backup Overview & Scope
+Following explicit owner approval, Phase 8.0.4 WP-5C (Production D1 Database Backup Execution & Integrity Verification) was executed and independently audited.
+
+**Work Package Status:** `COMPLETED / PASS / RECORDED`  
+**Production Status:** STRICTLY UNTOUCHED (Backup exported to external storage; zero database mutations; zero schema modifications; Worker undeployed).
+
+### Verified Backup Metadata
+
+1. **Target Database Identity:**
+   - Database Name: `jawed-studio-hq`
+   - Database ID: `d9ec83ea-7114-4179-af8e-a22ba5494508`
+   - Binding: `HQ_DB`
+   - Environment: Remote Production (Preview `623a828d` untouched)
+2. **Production Worker State:**
+   - Worker Name: `jawed-website-ai-studio-lab`
+   - Active Version: `5ac4bbbf-69cf-436d-bf9d-9670e4478d66`
+   - Target URL: `https://lab.jawed.co.in/`
+3. **Execution Tooling:**
+   - Wrangler CLI Version: `4.166.0`
+   - Authenticated Account: `jawed@jawed.co.in` (`eee02f4eb9f945c9ca139ba2847f4b39`)
+4. **Captured D1 Time Travel Point-in-Time Bookmark:**
+   - Command: `npx wrangler d1 time-travel info jawed-studio-hq`
+   - Bookmark: `00000073-00000000-0000512b-e5e8c4f8ff638d5877932d998632a5c1`
+   - Timestamp: `2026-11-22T23:26:13+05:30` (UTC: `2026-11-22T17:56:13Z`)
+   - Standby Restore Command: `npx wrangler d1 time-travel restore jawed-studio-hq --bookmark=00000073-00000000-0000512b-e5e8c4f8ff638d5877932d998632a5c1`
+5. **Logical SQL Export Artifact:**
+   - Command: `npx wrangler d1 export jawed-studio-hq --remote --output="<output-path>"`
+   - Filename: `jawed-studio-hq-pre-0003-20261122-232627.sql`
+   - Full Path: `C:\Users\user\JawedStudioBackups\Phase-8-0-4\jawed-studio-hq-pre-0003-20261122-232627.sql`
+   - File Size: `32,167` bytes (`0.0307` MB)
+   - SHA-256 Checksum: `1D74EF2F99DFEA2000EDF0BFF4266C89204303D10BB2AF5AA91B58141B410BA9`
+   - Storage Location: Local secure directory outside Git repository
+6. **Multi-Layered Integrity Verification:**
+   - File existence and non-zero byte size confirmed.
+   - SQL header inspected (`PRAGMA defer_foreign_keys=TRUE;`).
+   - Verified 24 Studio HQ tables created + `sqlite_sequence`.
+   - Migration history verified: migrations 1 and 2 present; migration `0003` strictly absent / pending.
+   - In-memory SQLite replay (`node:sqlite`): Executed full SQL dump with **zero syntax or constraint violations** across 25 tables and all records.
+   - Zero sensitive records exposed to public logs or Git tracking.
+   - `git status` verifies zero backup files staged or tracked.
+
+Full backup documentation: [Phase 8.0.4 WP-5C Production Backup Record](hq/phase-8-0-4-wp5c-production-backup-record.md).
+
