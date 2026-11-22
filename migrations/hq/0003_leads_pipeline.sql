@@ -14,7 +14,7 @@ ALTER TABLE clients ADD COLUMN estimated_value_minor INTEGER NOT NULL DEFAULT 0
   CHECK (estimated_value_minor >= 0);
 
 ALTER TABLE clients ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'
-  CHECK (length(currency) = 3);
+  CHECK (currency IN ('INR', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD', 'AED', 'SAR', 'JPY', 'KRW', 'KWD', 'BHD', 'OMR'));
 
 ALTER TABLE clients ADD COLUMN category TEXT;
 
@@ -31,6 +31,9 @@ ALTER TABLE clients ADD COLUMN lost_reason TEXT;
 -- 2. Precedence Backfill Rule 1: Commercial accounts
 -- Any client with linked projects, linked invoices, or an active/paused/completed status
 -- is classified as a converted customer account.
+-- NOTE on converted_at: Historical records lack discrete conversion-event audit logs prior to Phase 8.
+-- Therefore, converted_at is reconstructed using created_at as an approximation of the account's historical inception,
+-- NOT as an exact historical conversion-event timestamp. This avoids inventing arbitrary event dates.
 UPDATE clients SET
   pipeline_stage = 'converted',
   converted_at = created_at
@@ -44,6 +47,8 @@ WHERE lead_origin = 'legacy-existing'
 -- 3. Precedence Backfill Rule 2: Pure lost prospects
 -- Only clients with status 'closed' AND zero linked projects AND zero linked invoices
 -- are classified as lost prospects.
+-- NOTE on lost_at: lost_at is set to updated_at to reflect when the record reached its final closed state,
+-- with lost_reason documenting its historical backfill classification origin.
 UPDATE clients SET
   pipeline_stage = 'lost',
   lost_at = updated_at,
@@ -54,7 +59,12 @@ WHERE lead_origin = 'legacy-existing'
   AND (SELECT COUNT(*) FROM invoices WHERE invoices.client_id = clients.id) = 0;
 
 -- 4. Contact Normalization Step 1: Demote duplicate active primary contacts
--- For clients with multiple active primary contacts, retain the single most recently updated/created.
+-- For clients with multiple active primary contacts, retain a single deterministic primary contact.
+-- Ordering precedence:
+--   1. COALESCE(updated_at, created_at, '') DESC (most recent update or creation)
+--   2. COALESCE(created_at, '') DESC (most recent creation if updated_at is NULL or tied)
+--   3. id DESC (unique final tie-breaker ensuring strict determinism)
+-- NULL timestamps sort last deterministically. Demoted records set is_primary = 0.
 UPDATE client_contacts
 SET is_primary = 0
 WHERE is_primary = 1
@@ -62,24 +72,38 @@ WHERE is_primary = 1
   AND id NOT IN (
     SELECT id FROM (
       SELECT id, ROW_NUMBER() OVER (
-        PARTITION BY client_id ORDER BY updated_at DESC, created_at DESC
+        PARTITION BY client_id ORDER BY
+          COALESCE(updated_at, created_at, '') DESC,
+          COALESCE(created_at, '') DESC,
+          id DESC
       ) as rn
       FROM client_contacts
       WHERE is_primary = 1 AND archived_at IS NULL
     ) WHERE rn = 1
   );
 
--- 5. Contact Normalization Step 2: Ensure clients with active contacts have exactly one primary contact
--- For clients with active contacts but zero primary contacts, promote the earliest created contact.
+-- 5. Contact Normalization Step 2: Active clients with zero primary contacts
+-- For clients that have active contacts but zero active primary contacts, promote exactly one active contact.
+-- Explicitly selects ONLY active non-primary contacts (is_primary = 0 AND archived_at IS NULL).
+-- Archived contacts (archived_at IS NOT NULL) are NEVER promoted.
+-- Ordering precedence:
+--   1. COALESCE(created_at, '') ASC (earliest created active contact)
+--   2. COALESCE(updated_at, '') ASC (earliest updated active contact)
+--   3. id ASC (unique final tie-breaker ensuring strict determinism)
+-- Clients with only archived contacts (zero active contacts) are intentionally NOT assigned a primary.
 UPDATE client_contacts
 SET is_primary = 1
 WHERE id IN (
   SELECT id FROM (
     SELECT id, ROW_NUMBER() OVER (
-      PARTITION BY client_id ORDER BY created_at ASC
+      PARTITION BY client_id ORDER BY
+        COALESCE(created_at, '') ASC,
+        COALESCE(updated_at, '') ASC,
+        id ASC
     ) as rn
     FROM client_contacts
-    WHERE archived_at IS NULL
+    WHERE is_primary = 0
+      AND archived_at IS NULL
       AND client_id NOT IN (
         SELECT client_id FROM client_contacts WHERE is_primary = 1 AND archived_at IS NULL
       )
@@ -97,6 +121,8 @@ CREATE INDEX IF NOT EXISTS idx_clients_follow_up
   ON clients(next_follow_up_at)
   WHERE next_follow_up_at IS NOT NULL AND archived_at IS NULL;
 
+-- Important: idx_client_contacts_one_primary guarantees AT MOST ONE active primary contact per client.
+-- It does not guarantee at least one primary contact (e.g. clients with zero contacts or only archived contacts).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_client_contacts_one_primary
   ON client_contacts(client_id)
   WHERE is_primary = 1 AND archived_at IS NULL;
