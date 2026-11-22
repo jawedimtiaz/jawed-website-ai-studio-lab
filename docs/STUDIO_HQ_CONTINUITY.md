@@ -650,36 +650,35 @@ Full report available in [Phase 8.0.4 WP-5A Security Preflight Report](hq/phase-
 
 | Parameter | Current Value |
 |---|---|
-| **Last Completed Work Package** | Phase 8.0.4 — WP-5C Production D1 Backup Execution & Integrity Verification |
-| **Last Completed Audit Verdict** | **COMPLETED / PASS / VERIFIED** (WP-5C) / **READY WITH CONDITIONS** (WP-5B) |
+| **Last Completed Work Package** | Phase 8.0.4 — WP-5D Production D1 Migration 0003 Application & Verification |
+| **Last Completed Audit Verdict** | **COMPLETED / PASS / VERIFIED** (WP-5D) / **COMPLETED / PASS** (WP-5C) |
 | **Current Git Commit (Candidate Main)** | `7dd22a5c4080faa67901b2f024beee383e538639` |
-| **Current Documentation PRs** | PR #68 (WP-4 Closure), PR #69 (WP-5A Preflight), PR #70 (WP-5B Readiness), WP-5C PR open |
+| **Current Documentation PRs** | PR #68 (WP-4), PR #69 (WP-5A), PR #70 (WP-5B), PR #71 (WP-5C), WP-5D PR open |
 | **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `a50fd458-3cb8-4f4f-98eb-ead5fd19f0db`) |
 | **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) — Migration 0003 APPLIED |
-| **Production Worker Identity** | `jawed-website-ai-studio-lab` (Version `5ac4bbbf-69cf-436d-bf9d-9670e4478d66`) |
-| **Production D1 Database** | `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`) — Migration 0003 PENDING |
-| **Production State** | **STRICTLY UNTOUCHED** (Backup exported to external storage; zero mutations; zero deployments) |
+| **Production Worker Identity** | `jawed-website-ai-studio-lab` (Version `5ac4bbbf-69cf-436d-bf9d-9670e4478d66` — Active) |
+| **Production D1 Database** | `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`) — **Migration 0003 APPLIED** |
+| **Production State** | **D1 Migration 0003 Applied & Verified; Production Worker Strictly Undeployed** |
 
 ### Work Package Stage Progression
 
 - **WP-1 (Schema & Migration 0003):** COMPLETED / MERGED (PR #65)
 - **WP-2 (Canonical Leads API):** COMPLETED / MERGED (PR #66)
 - **WP-3 (Preview Deployment of PR #67):** COMPLETED / DEPLOYED (Version `a50fd458`)
-- **WP-4 (CRM Regression Verification):** COMPLETED / PASS / CLOSED
-- **WP-5A (Production Cutover Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS
-- **WP-5B (Production Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS
-- **WP-5C (Production D1 Backup Execution):** **COMPLETED / PASS / BACKUP VERIFIED & RECORDED**
-- **WP-5D (Production D1 Migration 0003 Execution):** **NEXT / BLOCKED** pending explicit owner approval
-- **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration
+- **WP-4 (CRM Regression Verification):** COMPLETED / PASS / CLOSED (PR #68)
+- **WP-5A (Production Cutover Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS (PR #69)
+- **WP-5B (Production Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS (PR #70)
+- **WP-5C (Production D1 Backup Execution):** COMPLETED / PASS / VERIFIED (PR #71)
+- **WP-5D (Production D1 Migration 0003 Execution):** **COMPLETED / PASS / VERIFIED**
+- **WP-5E (Production Worker Deployment & Smoke Verification):** **NEXT / BLOCKED** pending explicit owner approval
 
-### Immediate Next Task: WP-5D
-**WP-5D — Production D1 Migration 0003 Application & Verification**
-- Scope: Apply `migrations/hq/0003_leads_pipeline.sql` to remote Production D1 database `jawed-studio-hq`.
+### Immediate Next Task: WP-5E
+**WP-5E — Production Worker Deployment & Live Smoke Verification**
+- Scope: Build and deploy candidate `main` commit `7dd22a5c4080faa67901b2f024beee383e538639` to Production Worker `jawed-website-ai-studio-lab`, followed by post-cutover smoke testing.
 - Strict Rule: **BLOCKED** until explicit user authorization is provided.
 
 ### Prohibited Operations Until Explicit Owner Approval
-- Executing Production D1 migrations (`npx wrangler d1 migrations apply jawed-studio-hq --remote`).
-- Deploying to Production Worker (`npx wrangler deploy`).
+- Deploying to Production Worker (`npm run build; npx wrangler deploy`).
 - Mutating any production records or test accounts in `jawed-studio-hq`.
 - Modifying Cloudflare bindings, secrets, or environment variables.
 - Merging open Pull Requests automatically without review.
@@ -691,11 +690,12 @@ When continuing Studio HQ in a new chat:
 3. Read the WP-5A Security Preflight Report ([docs/hq/phase-8-0-4-wp5a-security-preflight.md](hq/phase-8-0-4-wp5a-security-preflight.md)).
 4. Read the WP-5B Production Readiness Report ([docs/hq/phase-8-0-4-wp5b-production-readiness.md](hq/phase-8-0-4-wp5b-production-readiness.md)).
 5. Read the WP-5C Production Backup Record ([docs/hq/phase-8-0-4-wp5c-production-backup-record.md](hq/phase-8-0-4-wp5c-production-backup-record.md)).
-6. Review the Phase 8.0.4 progress tracker in Section 19.
-7. Independently verify the latest `main` SHA, open PRs, and deployment metadata.
-8. **Resume strictly at WP-5D** (Production D1 Migration 0003 Execution).
-9. Do not repeat completed WP-4, WP-5A, WP-5B, or WP-5C tasks.
-10. Do not execute mutating production operations without explicit user confirmation.
+6. Read the WP-5D Production Migration Record ([docs/hq/phase-8-0-4-wp5d-production-migration-record.md](hq/phase-8-0-4-wp5d-production-migration-record.md)).
+7. Review the Phase 8.0.4 progress tracker in Section 19.
+8. Independently verify the latest `main` SHA, open PRs, and deployment metadata.
+9. **Resume strictly at WP-5E** (Production Worker Deployment & Smoke Verification).
+10. Do not repeat completed WP-4, WP-5A, WP-5B, WP-5C, or WP-5D tasks.
+11. Do not execute mutating production operations without explicit user confirmation.
 
 ---
 
@@ -791,4 +791,53 @@ Following explicit owner approval, Phase 8.0.4 WP-5C (Production D1 Database Bac
    - `git status` verifies zero backup files staged or tracked.
 
 Full backup documentation: [Phase 8.0.4 WP-5C Production Backup Record](hq/phase-8-0-4-wp5c-production-backup-record.md).
+
+---
+
+## 22. Phase 8.0.4 WP-5D Production D1 Migration 0003 Application & Verification Record — 22 November 2026
+
+### Migration Overview & Scope
+Following explicit owner approval, Phase 8.0.4 WP-5D (Production D1 Migration 0003 Application & Verification) was executed against the remote Production D1 database.
+
+**Work Package Status:** `COMPLETED / PASS / VERIFIED`  
+**Production Migration Status:** `0003_leads_pipeline.sql APPLIED & VERIFIED`  
+**Production Worker Status:** `STRICTLY UNDEPLOYED` (Active version `5ac4bbbf-69cf-436d-bf9d-9670e4478d66` remains running; WP-5E gated).
+
+### Key Execution & Verification Evidence
+
+1. **Backup Prerequisite Verified:**
+   - Pre-migration backup `C:\Users\user\JawedStudioBackups\Phase-8-0-4\jawed-studio-hq-pre-0003-20261122-232627.sql` verified.
+   - Size: `32,167` bytes (Exact match).
+   - SHA-256: `1D74EF2F99DFEA2000EDF0BFF4266C89204303D10BB2AF5AA91B58141B410BA9` (Exact match).
+2. **Migration Execution:**
+   - Command: `npx wrangler d1 migrations apply jawed-studio-hq --remote`
+   - Database: `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`)
+   - Result: 19 SQL commands executed in 6.81ms; status ✅.
+3. **Migration Record Verification:**
+   - `SELECT id, name, applied_at FROM d1_migrations`:
+     - 1: `0001_studio_hq_schema.sql` (2026-11-06 05:02:32)
+     - 2: `0002_financial_management.sql` (2026-11-11 06:10:07)
+     - 3: `0003_leads_pipeline.sql` (2026-11-22 18:06:02)
+   - `npx wrangler d1 migrations list jawed-studio-hq --remote` confirmed `✅ No migrations to apply!`.
+4. **Schema Verification:**
+   - 10 additive columns added to `clients`: `lead_origin`, `pipeline_stage`, `estimated_value_minor`, `currency`, `category`, `next_follow_up_at`, `converted_at`, `conversion_token`, `lost_at`, `lost_reason`.
+   - 4 performance and integrity indexes active: `idx_clients_lead_pipeline`, `idx_clients_customer_isolation`, `idx_clients_follow_up`, `idx_client_contacts_one_primary`.
+5. **Data Preservation & Backfill Classification:**
+   - Total clients: 3 (Preserved).
+   - Backfill: 2 active commercial clients converted (`pipeline_stage = 'converted'`); 1 archived client safely isolated (`pipeline_stage = 'new'`).
+   - Relational counts preserved: `client_contacts` (0), `projects` (1), `project_milestones` (1), `project_tasks` (1), `invoices` (0).
+6. **Database Integrity Audit:**
+   - `PRAGMA foreign_key_check`: 0 violations.
+   - `PRAGMA quick_check`: `ok`.
+7. **Regression Test Verification:**
+   - `npm run lint`: 0 errors.
+   - `node --test tests/hq-migration-0003.test.js`: 9/9 PASS.
+   - `node --test tests/hq-canonical-leads.test.js`: 43/43 PASS.
+8. **Infrastructure Isolation Confirmation:**
+   - Production Worker `jawed-website-ai-studio-lab` remains on version `5ac4bbbf-69cf-436d-bf9d-9670e4478d66` (HTTP 200 on `https://lab.jawed.co.in/studio-hq`).
+   - Preview D1 `jawed-studio-hq-preview` remains untouched.
+   - WP-5E (Production Worker Deployment) was NOT executed.
+
+Full migration record: [Phase 8.0.4 WP-5D Production Migration Record](hq/phase-8-0-4-wp5d-production-migration-record.md).
+
 

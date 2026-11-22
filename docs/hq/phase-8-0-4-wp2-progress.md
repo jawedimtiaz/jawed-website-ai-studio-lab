@@ -146,9 +146,20 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
    - Verified all 24 tables + sequence; verified migration 0003 strictly pending; replayed against in-memory SQLite with 0 syntax or constraint errors.
    - **Verdict:** COMPLETED / PASS / RECORDED.
    - Formal record: See [Phase 8.0.4 WP-5C Production Backup Record](phase-8-0-4-wp5c-production-backup-record.md).
-9. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
-   - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
-   - **WP-5B (Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS.
-   - **WP-5C (Production D1 Backup Execution):** **COMPLETED / PASS / BACKUP VERIFIED & RECORDED**.
-   - **WP-5D (Production D1 Migration 0003 Execution):** **NEXT / BLOCKED** pending explicit owner approval.
-   - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration.
+9. **WP-5D Production D1 Migration 0003 Application & Verification:**
+   - Preflight backup checksum and size verified.
+   - Applied migration `0003_leads_pipeline.sql` to remote Production D1 database `jawed-studio-hq` (`d9ec83ea-7114-4179-af8e-a22ba5494508`).
+   - 19 SQL commands executed in 6.81ms; status ✅.
+   - Verified in `d1_migrations`: 1, 2, and 3 present; 0 migrations pending.
+   - Verified 10 new columns and 4 new indexes in schema; verified 0 FK violations and quick_check ok.
+   - Verified baseline counts intact (3 clients, 2 converted, 1 new archived; 0 contacts; 1 project; 1 milestone; 1 task; 0 invoices).
+   - Verified regression tests: `npm run lint` (0 errors), `tests/hq-migration-0003.test.js` (9/9 pass), `tests/hq-canonical-leads.test.js` (43/43 pass).
+   - Production Worker version `5ac4bbbf` remains unchanged (deployment not performed); Preview environment untouched.
+   - **Verdict:** COMPLETED / PASS / VERIFIED.
+   - Formal record: See [Phase 8.0.4 WP-5D Production Migration Record](phase-8-0-4-wp5d-production-migration-record.md).
+10. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
+    - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
+    - **WP-5B (Migration Prep & Backup Readiness):** COMPLETED / READY WITH CONDITIONS.
+    - **WP-5C (Production D1 Backup Execution):** COMPLETED / PASS / VERIFIED.
+    - **WP-5D (Production D1 Migration 0003 Execution):** **COMPLETED / PASS / VERIFIED**.
+    - **WP-5E (Production Worker Deployment & Smoke Verification):** **NEXT / BLOCKED** pending explicit owner approval.
