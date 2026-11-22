@@ -359,3 +359,28 @@ test('10. End-to-end integration: real canonical router and real legacy router',
   assert.equal(resRealOptions.status, 204);
   assert.equal(resRealOptions.headers.get('allow'), 'GET, POST, OPTIONS');
 });
+
+test('Canonical lead request reaches canonical leads dispatcher and never legacy router', async () => {
+  let canonicalCalled = false;
+  let legacyCalled = false;
+  const canonicalLeadsDispatcher = async (pathname) => {
+    canonicalCalled = true;
+    return new Response(JSON.stringify({ ok: true, source: 'canonical-leads', path: pathname }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  };
+  const legacyRouter = async () => {
+    legacyCalled = true;
+    return new Response(JSON.stringify({ source: 'legacy' }), { status: 200 });
+  };
+  const path = '/api/hq/leads?stage=new';
+  const response = await dispatchHqIntegrationBoundary(path, {
+    request: createRequest(path), env: { ENVIRONMENT: 'test' }
+  }, { canonicalLeadsDispatcher, legacyRouter });
+  assert.equal(canonicalCalled, true);
+  assert.equal(legacyCalled, false);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).source, 'canonical-leads');
+});
+
