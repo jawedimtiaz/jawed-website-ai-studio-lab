@@ -421,3 +421,84 @@ A comprehensive post-deployment smoke test was executed against `https://lab.jaw
 - **Scope Isolation:** Verified zero modifications to personal site `jawed.co.in` or Kaushal customer project.
 - **Non-Fatal Observation:** Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`) blocked by Content Security Policy (`connect-src`). Does not impact functionality; noted for future CSP housekeeping.
 - **Acceptance Record:** Formally accepted in [Phase 7.5 Deployment Acceptance Record](phase-7-5-deployment-acceptance.md).
+
+## 14. Phase 7.6 CRM Customer Management Remediation & Deployment Record — 22 November 2026
+
+### Background & Confirmed Defects
+Following initial deployment of Studio HQ, an HTTP 400 Bad Request error occurred during customer creation (`DEFECT-CRM-000`). Read-only investigation confirmed that `src/components/hq/CrmSection.tsx` was sending non-canonical properties (`website`, `address`, `category`, `lead_source`) and an empty string `id`, violating the canonical D1 contract enforced by `functions/api/hq/canonicalClients.js`. Additionally:
+- Customer updates were using `PUT` instead of `PATCH`, returning HTTP 405 Method Not Allowed.
+- Customer details crashed on missing contact/project properties.
+- Archived customer filtering was missing from the status dropdown toolbar (`DEFECT-CRM-001`).
+
+### Remediation Pull Requests
+1. **[PR #62](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/62): CRM API Contract Remediation**
+   - **Merge Commit:** `805b5a0656189482d93e46c3ceb4a90d259f4a2b`
+   - Added pure helpers `toCanonicalClientPayload()` and `normalizeClientDetailResponse()` in `src/services/hqClientHelpers.ts`.
+   - Updated customer save flow to use `POST /api/hq/clients` for creation and `PATCH /api/hq/clients/:id` for updates.
+   - Enforced 1-based pagination contract (`page` and `offset = (page - 1) * limit`).
+   - Corrected archive filter semantics (`archivedOnly=true` vs default active-only).
+   - Added isolated error handling for customer project loading with inline retry.
+   - Added 13 automated regression tests in `tests/hq-crm-clients-regression.test.js`.
+
+2. **[PR #63](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/63): CRM Archived Customer Filter Remediation**
+   - **Merge Commit:** `7069c33822bea74815719ba36f616df223fcbc10`
+   - Resolved DEFECT-CRM-001: exposed "Archived" status filter option in `CLIENT_FILTER_OPTIONS`.
+   - Extended `SectionToolbar` in `src/components/hq/HqUiPrimitives.tsx` to support `{ value, label }` tuples while preserving backward compatibility.
+   - Preserved all 6 canonical lifecycle statuses in the data model and creation forms.
+   - Added Test 14 to `tests/hq-crm-clients-regression.test.js` validating filter options, query param building, SQLite D1 filtering, and action button states.
+
+### Phase 7.6.6 Authorized Production Deployment
+- **Cloudflare Worker:** `jawed-website-ai-studio-lab`
+- **Deployed Version ID:** `5ac4bbbf-69cf-436d-bf9d-9670e4478d66`
+- **Deployment Timestamp:** 22 November 2026 06:51 UTC / 12:21 IST
+- **Source Commit:** `7069c33822bea74815719ba36f616df223fcbc10` (Merge PR #63)
+- **Previous Version ID (Rollback Target):** `eb87ecca-6711-4d00-b214-f44815cfc2ba`
+- **Pre-Deployment Checks:** 43 automated tests passed (14 CRM regression, 14 Project Details, 9 Canonical Clients, 6 Canonical Projects); `bun run lint` (0 errors); `bun run build` (0 errors); `wrangler d1 migrations list HQ_DB --remote` confirmed zero migrations pending.
+
+---
+
+## 15. Phase 7.7 CRM Functional Acceptance Execution Record — 22 November 2026
+
+### Test Plan & Execution Scope
+- **Test Plan:** Comprehensive 22-case functional test matrix established in Phase 7.7.1.
+- **Execution:** Strictly non-mutating live acceptance testing executed in Phase 7.7.2 against `https://lab.jawed.co.in/studio-hq` using the authenticated owner session (`jawedimtiaz@gmail.com`).
+- **Existing Production Fixtures:** Active client `Jawed Web Studio QA` with active project `QA Test Website`; archived client `QA Test Automation Ltd` (`qa-7-6-2-20261122-01`).
+
+### Acceptance Verification Results
+1. **Multi-Tab Navigation:** Cycled through CRM > Projects > Overview > CRM without session degradation or state loss. PASS.
+2. **Customer Listing & Table Headers:** Active customer `Jawed Web Studio QA` (Status: `lead`, Projects: 1) rendered with correct headers. PASS.
+3. **Active/Archived Exclusivity:** Archived record `QA Test Automation Ltd` strictly excluded from "All Status" default view. PASS.
+4. **Search Capabilities:** Substring searches for business name (`"Jawed"`), contact name (`"QA Test Client"`), and email (`"qa-test@example.com"`) matched cleanly (HTTP 200). Search reset immediately restored active list. PASS.
+5. **Status Filtering:** Systematic check of all 8 options: "Lead" displayed active record; "Prospect", "Active", "Paused", "Completed", "Closed" displayed clean empty states; "Archived" displayed `QA Test Automation Ltd`; "All Status" restored active view. PASS.
+6. **Customer Details Drawer:** Opened cleanly on both active and archived records without exceptions. Linked project `QA Test Website` displayed with click-through navigation to Projects module. PASS.
+7. **Financial Empty States:** Invoices section on both customer records showed appropriate empty state `No invoices issued for this customer. (0)`. PASS.
+8. **Action Buttons:** Contextual buttons correctly rendered Lucide `RotateCcw` with title "Restore Customer" for archived customer, and Lucide `Archive` with title "Archive Customer" for active customer. (Neither clicked). PASS.
+9. **Console & API Stability:** Zero JavaScript console errors; zero API 4xx/5xx responses; visual evidence verified in `final_step_188.png`. PASS.
+
+### Known Observation & Limitations
+- **OBS-CRM-001 (Phone Search Limitation):** Searching by phone number (`+91 9000000000`) returned 0 results because `functions/api/hq/canonicalClients.js:198` filters `c.name`, `c.business_name`, and `c.email`, but does not query `c.phone`. Documented as a future polish enhancement; does not block acceptance.
+- **Pagination Limitation:** Live multi-page pagination could not be exercised because production currently holds 2 records total (<25 records per page threshold). Handled by automated regression Test 11.
+- **Mutating Operations:** Live creation, editing, and archive/restore mutations were intentionally not executed to preserve production D1 state. Covered by automated regression tests 5, 6, and 8.
+
+**Final Acceptance Verdict:** `CRM ACCEPTANCE TESTS PASSED WITH MINOR OBSERVATIONS`
+
+---
+
+## 16. Phase 7.8 Milestone Status & Continuity Handoff
+
+### Project Milestone Status
+- **Phase 7.5 (Project Details Remediation):** Merged (PR #60), Deployed (`8b37d74a`), Accepted.
+- **Phase 7.6 (CRM Customer Management Remediation):** Merged (PR #62, PR #63), Deployed (`5ac4bbbf`), Verified.
+- **Phase 7.7 (CRM Functional Acceptance):** Test Plan & Non-Mutating Execution Complete, Accepted with Minor Observations.
+- **Phase 7.8 (Documentation & Milestone Acceptance):** Formalized in [Phase 7.8 CRM Milestone Acceptance Record](phase-7-8-crm-acceptance.md) and continuity record updated.
+
+### Current Production Identity
+- **Worker:** `jawed-website-ai-studio-lab`
+- **Active Worker Version ID:** `5ac4bbbf-69cf-436d-bf9d-9670e4478d66`
+- **Active Git Commit:** `7069c33822bea74815719ba36f616df223fcbc10`
+- **Target URL:** `https://lab.jawed.co.in/studio-hq`
+- **Database:** `HQ_DB` (`jawed-studio-hq` / `d9ec83ea-7114-4179-af8e-a22ba5494508`)
+
+### Pending Enhancements & Next Action
+1. **Review & Merge Documentation PR:** Review and merge the dedicated documentation branch for Phase 7.8.
+2. **Next Recommended Milestone:** Phase 8.0 — Lead Management & Pipeline Remediation (or Financial Invoices/Quotations integration), with optional phone search polish (OBS-CRM-001).
