@@ -2,8 +2,8 @@
 
 **Updated:** 2026-11-22  
 **Repository:** `jawedimtiaz/jawed-website-ai-studio-lab`  
-**Branch:** `feat/phase-8-0-4-wp2-canonical-leads`  
-**Status:** In progress — implementation branch only; no PR, merge, deployment, or remote D1 migration.
+**Branch:** `feat/phase-8-0-4-wp2-canonical-leads` (Merged into `main` via PR #66)  
+**Status:** COMPLETED / MERGED (PR #66) — Preview D1 Migration Applied & Verified
 
 ## Baseline and scope
 
@@ -103,8 +103,39 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
   - Total: 281/281 tests PASSED (0 failures, 0 regressions).
   - Note on `tests/studio-hq-api.test.js`: Diagnosed as legacy Phase 3Y tests querying old pre-canonical endpoint expecting non-canonical column names (`name` instead of `full_name` in `client_contacts`); not part of WP-2, left unmodified per safety rules.
 
-## PR Readiness Assessment
+## PR Readiness Assessment & Merge Record
 
-- **Ready for Review / Draft PR:** YES (PR #66 Review Remediation Complete).
-- All PR #66 code review findings (conversion race condition terminal state exclusion and duplicate advisory phone/null match classification) are resolved and locally verified with passing execution evidence.
-- No merge, deploy, or remote database operations performed.
+- **PR #66:** Created, reviewed, and merged into `main` at commit `6684682197b345ebd4216d0ea8158b7d0e3e57e4`.
+- **Review Remediations Completed:**
+  1. Handled conversion race condition terminal state exclusion in `functions/api/hq/canonicalLeads.js`.
+  2. Fixed duplicate advisory phone/null match classification.
+  3. All 150 core tests and 281 broader suite tests verified passing.
+
+## Post-Merge & Preview Lifecycle Progression
+
+1. **Preview D1 Migration Applied (WP-2 Step 2):**
+   - Migration `migrations/hq/0003_leads_pipeline.sql` applied to remote Preview database `jawed-studio-hq-preview` (Database ID: `623a828d-2909-47e7-a228-130b4eeefef5`).
+   - Schema validation confirmed: `pipeline_stage` check constraints, `converted_at`, `lost_at`, `lost_reason` columns active.
+2. **Initial Preview Worker Deployment (WP-2 Step 3):**
+   - Deployed commit `66846821` to `jawed-website-ai-studio-lab-preview` (Version ID: `b199901e-fd7d-4487-9948-ee0ac5a627a7`).
+3. **Defect OBS-UI-001 Discovered & Remediated (PR #67):**
+   - *Observation:* Navigating from Leads tab (with filter `status=Converted`) to Customers tab leaked `status=Converted` to `/api/hq/clients`, causing transient HTTP 400 `STATUS_INVALID` toasts.
+   - *Fix:* PR #67 isolated CRM filter states (`leadStatusFilter`, `clientStatusFilter`, `followUpStatusFilter`), added query sanitizers/builders, and mapped display values to canonical stage slugs (`Proposal Sent` → `proposal-sent`).
+   - *Merge:* PR #67 merged to `main` at commit `7dd22a5c4080faa67901b2f024beee383e538639`.
+4. **WP-3 Preview Deployment:**
+   - Deployed commit `7dd22a5c` to `jawed-website-ai-studio-lab-preview` (Version ID: `a50fd458-3cb8-4f4f-98eb-ead5fd19f0db`).
+5. **WP-4 CRM Regression Verification:**
+   - Executed 9-scenario browser regression suite against Preview environment (`https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev/studio-hq`).
+   - **Result:** 9/9 PASS. Zero HTTP 400 errors, zero UI toasts, zero console exceptions. Defect OBS-UI-001 closed.
+   - Formal record: See [Phase 8.0.4 WP-4 QA Acceptance Record](phase-8-0-4-wp4-acceptance.md).
+6. **WP-5A Production Cutover Security Preflight Audit:**
+   - Completed comprehensive, READ-ONLY preflight audit of authentication, bootstrap controls, Firebase config, parity, test coverage, migration safety, and environment isolation.
+   - 135/135 security tests verified passing locally.
+   - **Verdict:** APPROVED WITH CONDITIONS.
+   - Formal record: See [Phase 8.0.4 WP-5A Security Preflight Report](phase-8-0-4-wp5a-security-preflight.md).
+7. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
+   - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
+   - **WP-5B (Migration Prep & Backup Readiness):** **NEXT / NOT STARTED** (Read-only assessment of backup capability, migration plan, verification commands, and release checklist).
+   - **WP-5C (Production D1 Backup Execution):** BLOCKED pending WP-5B readiness and explicit owner approval.
+   - **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup and explicit owner approval.
+   - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration.
