@@ -271,6 +271,11 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
     db.exec("INSERT INTO client_contacts VALUES ('con-tie-k1', 'c_tie_k', 'Tie K1', 0, '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', NULL);");
     db.exec("INSERT INTO client_contacts VALUES ('con-tie-k2', 'c_tie_k', 'Tie K2', 0, '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', NULL);");
 
+    // Case 3b: Tied created_at where one has NULL updated_at and other has known updated_at -> known updated_at wins
+    // Note: con-un-01 has lower alphabetical id but NULL updated_at. con-un-02 has higher id but known updated_at.
+    db.exec("INSERT INTO client_contacts VALUES ('con-un-01', 'c_tie_null_u', 'Null Updated', 0, '2026-11-01T00:00:00.000Z', NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-un-02', 'c_tie_null_u', 'Known Updated', 0, '2026-11-01T00:00:00.000Z', '2026-11-02T12:00:00.000Z', NULL);");
+
     // Case 4: Archived contact with earlier date vs active contact with NULL created_at -> archived must NEVER be promoted
     db.exec("INSERT INTO client_contacts VALUES ('con-arch-early', 'c_arch_check', 'Arch Early', 0, '2026-10-01T00:00:00.000Z', NULL, '2026-11-01T00:00:00.000Z');");
     db.exec("INSERT INTO client_contacts VALUES ('con-act-null', 'c_arch_check', 'Act Null', 0, NULL, NULL, NULL);");
@@ -318,6 +323,17 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
         { id: 'con-tie-k2', is_primary: 1 }
       ],
       'Tied created_at must break tie on earlier updated_at'
+    );
+
+    // Check Case 3b: Tied created_at where one has NULL updated_at and other has known updated_at -> known updated_at wins
+    const tieNullUContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_tie_null_u' ORDER BY id").all();
+    assert.deepEqual(
+      tieNullUContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
+      [
+        { id: 'con-un-01', is_primary: 0 },
+        { id: 'con-un-02', is_primary: 1 }
+      ],
+      'Tied created_at with one NULL updated_at must promote contact with known updated_at (con-un-02)'
     );
 
     // Check Case 4: Archived contact NEVER promoted, active contact with NULL created_at promoted
