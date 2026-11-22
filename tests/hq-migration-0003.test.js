@@ -232,9 +232,9 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
     }
   });
 
-  test('5. Deterministic normalization handling of NULL timestamps in isolated legacy fixture', () => {
+  test('5. Deterministic normalization handling of NULL timestamps and explicit NULL-last ordering in isolated fixture', () => {
     // In legacy schema variants where created_at or updated_at may be NULL,
-    // verify the migration handles NULL timestamps deterministically using COALESCE and id tie-breaker.
+    // verify the migration handles NULL timestamps deterministically using explicit NULL-last ordering and id tie-breakers.
     const db = new DatabaseSync(':memory:');
     db.exec('PRAGMA foreign_keys = OFF;');
     db.exec(loadMigration('0001_studio_hq_schema.sql'));
@@ -254,35 +254,97 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
       );
     `);
 
-    // Case 1: Multiple primaries with NULL timestamps -> tie-breaker id DESC keeps con-n2
-    db.exec("INSERT INTO client_contacts VALUES ('con-n1', 'c_null_dup', 'N1', 1, NULL, NULL, NULL);");
-    db.exec("INSERT INTO client_contacts VALUES ('con-n2', 'c_null_dup', 'N2', 1, NULL, NULL, NULL);");
+    // Case 1: NULL created_at (Contact A) vs known created_at (Contact B) vs earlier known created_at (Contact C)
+    // Contact A: id = 'con-a' (lowest id, but NULL created_at)
+    // Contact B: id = 'con-b' (later known date 2026-11-15)
+    // Contact C: id = 'con-c' (earlier known date 2026-11-01)
+    // Invariant: Known created_at ranks before NULL. Contact C must be promoted ahead of Contact A and Contact B.
+    db.exec("INSERT INTO client_contacts VALUES ('con-a', 'c_order', 'Contact A', 0, NULL, NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-b', 'c_order', 'Contact B', 0, '2026-11-15T00:00:00.000Z', NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-c', 'c_order', 'Contact C', 0, '2026-11-01T00:00:00.000Z', NULL, NULL);");
 
-    // Case 2: Zero primary with NULL timestamps -> tie-breaker id ASC promotes con-z1
-    db.exec("INSERT INTO client_contacts VALUES ('con-z1', 'c_null_zero', 'Z1', 0, NULL, NULL, NULL);");
-    db.exec("INSERT INTO client_contacts VALUES ('con-z2', 'c_null_zero', 'Z2', 0, NULL, NULL, NULL);");
+    // Case 2: Zero primary where ALL active contacts have NULL created_at -> promoted only when no known timestamps exist, tie-break id ASC
+    db.exec("INSERT INTO client_contacts VALUES ('con-all-null-1', 'c_all_null', 'Null 1', 0, NULL, NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-all-null-2', 'c_all_null', 'Null 2', 0, NULL, NULL, NULL);");
 
-    // Apply migration
+    // Case 3: Zero primary with tied known created_at -> tie-break by updated_at ASC then id ASC
+    db.exec("INSERT INTO client_contacts VALUES ('con-tie-k1', 'c_tie_k', 'Tie K1', 0, '2026-11-01T00:00:00.000Z', '2026-11-02T00:00:00.000Z', NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-tie-k2', 'c_tie_k', 'Tie K2', 0, '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', NULL);");
+
+    // Case 4: Archived contact with earlier date vs active contact with NULL created_at -> archived must NEVER be promoted
+    db.exec("INSERT INTO client_contacts VALUES ('con-arch-early', 'c_arch_check', 'Arch Early', 0, '2026-10-01T00:00:00.000Z', NULL, '2026-11-01T00:00:00.000Z');");
+    db.exec("INSERT INTO client_contacts VALUES ('con-act-null', 'c_arch_check', 'Act Null', 0, NULL, NULL, NULL);");
+
+    // Case 5: Existing valid primary contact remains unchanged even if secondary has earlier known timestamp
+    db.exec("INSERT INTO client_contacts VALUES ('con-exist-p', 'c_exist_p', 'Exist P', 1, NULL, NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-exist-s', 'c_exist_p', 'Exist S', 0, '2026-10-01T00:00:00.000Z', NULL, NULL);");
+
+    // Case 6: Duplicate primaries with NULL timestamps -> tie-breaker id DESC retains con-dup-n2
+    db.exec("INSERT INTO client_contacts VALUES ('con-dup-n1', 'c_null_dup', 'D1', 1, NULL, NULL, NULL);");
+    db.exec("INSERT INTO client_contacts VALUES ('con-dup-n2', 'c_null_dup', 'D2', 1, NULL, NULL, NULL);");
+
+    // Apply migration 0003
     db.exec(loadMigration('0003_leads_pipeline.sql'));
 
+    // Check Case 1: Contact C promoted, Contact A and B remain 0
+    const orderContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_order' ORDER BY id").all();
+    assert.deepEqual(
+      orderContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
+      [
+        { id: 'con-a', is_primary: 0 },
+        { id: 'con-b', is_primary: 0 },
+        { id: 'con-c', is_primary: 1 }
+      ],
+      'Contact C with earlier known created_at must be promoted ahead of Contact B and Contact A (NULL created_at)'
+    );
+
+    // Check Case 2: NULL timestamps promoted only when no known timestamps available, tie-break id ASC -> con-all-null-1
+    const allNullContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_all_null' ORDER BY id").all();
+    assert.deepEqual(
+      allNullContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
+      [
+        { id: 'con-all-null-1', is_primary: 1 },
+        { id: 'con-all-null-2', is_primary: 0 }
+      ],
+      'NULL timestamp contacts promoted only when no known timestamps available, selecting lowest id'
+    );
+
+    // Check Case 3: Tied created_at breaks tie on earlier updated_at (con-tie-k2)
+    const tieKContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_tie_k' ORDER BY id").all();
+    assert.deepEqual(
+      tieKContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
+      [
+        { id: 'con-tie-k1', is_primary: 0 },
+        { id: 'con-tie-k2', is_primary: 1 }
+      ],
+      'Tied created_at must break tie on earlier updated_at'
+    );
+
+    // Check Case 4: Archived contact NEVER promoted, active contact with NULL created_at promoted
+    const archCheck = db.prepare("SELECT id, is_primary, archived_at FROM client_contacts WHERE client_id = 'c_arch_check' ORDER BY id").all();
+    assert.equal(archCheck.find((c) => c.id === 'con-arch-early').is_primary, 0, 'Archived contact must never be promoted');
+    assert.equal(archCheck.find((c) => c.id === 'con-act-null').is_primary, 1, 'Active contact must be promoted');
+
+    // Check Case 5: Existing valid primary contact remains untouched
+    const existP = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_exist_p' ORDER BY id").all();
+    assert.deepEqual(
+      existP.map((c) => ({ id: c.id, is_primary: c.is_primary })),
+      [
+        { id: 'con-exist-p', is_primary: 1 },
+        { id: 'con-exist-s', is_primary: 0 }
+      ],
+      'Existing active primary contact must remain untouched'
+    );
+
+    // Check Case 6: Duplicate primaries with NULL timestamps tie-breaker id DESC
     const dupContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_null_dup' ORDER BY id").all();
     assert.deepEqual(
       dupContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
       [
-        { id: 'con-n1', is_primary: 0 },
-        { id: 'con-n2', is_primary: 1 }
+        { id: 'con-dup-n1', is_primary: 0 },
+        { id: 'con-dup-n2', is_primary: 1 }
       ],
-      'Duplicate primary with NULL timestamps must deterministically select con-n2 via id DESC tie-breaker'
-    );
-
-    const zeroContacts = db.prepare("SELECT id, is_primary FROM client_contacts WHERE client_id = 'c_null_zero' ORDER BY id").all();
-    assert.deepEqual(
-      zeroContacts.map((c) => ({ id: c.id, is_primary: c.is_primary })),
-      [
-        { id: 'con-z1', is_primary: 1 },
-        { id: 'con-z2', is_primary: 0 }
-      ],
-      'Zero primary with NULL timestamps must deterministically promote con-z1 via id ASC tie-breaker'
+      'Duplicate primary with NULL timestamps must deterministically select con-dup-n2 via id DESC tie-breaker'
     );
   });
 

@@ -87,9 +87,11 @@ WHERE is_primary = 1
 -- Explicitly selects ONLY active non-primary contacts (is_primary = 0 AND archived_at IS NULL).
 -- Archived contacts (archived_at IS NOT NULL) are NEVER promoted.
 -- Ordering precedence:
---   1. COALESCE(created_at, '') ASC (earliest created active contact)
---   2. COALESCE(updated_at, '') ASC (earliest updated active contact)
---   3. id ASC (unique final tie-breaker ensuring strict determinism)
+--   1. CASE WHEN created_at IS NULL THEN 1 ELSE 0 END ASC (known created_at ranks before NULL)
+--   2. created_at ASC (earliest created active contact among known timestamps)
+--   3. CASE WHEN updated_at IS NULL THEN 1 ELSE 0 END ASC (known updated_at ranks before NULL on tie)
+--   4. updated_at ASC (earliest updated active contact on tie)
+--   5. id ASC (unique final tie-breaker ensuring strict determinism)
 -- Clients with only archived contacts (zero active contacts) are intentionally NOT assigned a primary.
 UPDATE client_contacts
 SET is_primary = 1
@@ -97,8 +99,10 @@ WHERE id IN (
   SELECT id FROM (
     SELECT id, ROW_NUMBER() OVER (
       PARTITION BY client_id ORDER BY
-        COALESCE(created_at, '') ASC,
-        COALESCE(updated_at, '') ASC,
+        CASE WHEN created_at IS NULL THEN 1 ELSE 0 END ASC,
+        created_at ASC,
+        CASE WHEN updated_at IS NULL THEN 1 ELSE 0 END ASC,
+        updated_at ASC,
         id ASC
     ) as rn
     FROM client_contacts
