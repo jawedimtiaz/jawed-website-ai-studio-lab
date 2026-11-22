@@ -133,9 +133,15 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
    - 135/135 security tests verified passing locally.
    - **Verdict:** APPROVED WITH CONDITIONS.
    - Formal record: See [Phase 8.0.4 WP-5A Security Preflight Report](phase-8-0-4-wp5a-security-preflight.md).
-7. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
+7. **WP-5B Production Migration Preparation & Backup Readiness Review:**
+   - Completed comprehensive, READ-ONLY assessment of backup capability, migration 0003 safety, pre/post-migration queries, rollback plan, and sequential release checklist.
+   - Verified GitHub automatic deployments disabled; verified environment isolation.
+   - Formulated non-destructive backup commands (PROPOSED — NOT EXECUTED).
+   - **Verdict:** READY WITH CONDITIONS.
+   - Formal record: See [Phase 8.0.4 WP-5B Production Readiness Report](phase-8-0-4-wp5b-production-readiness.md).
+8. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
    - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
-   - **WP-5B (Migration Prep & Backup Readiness):** **NEXT / NOT STARTED** (Read-only assessment of backup capability, migration plan, verification commands, and release checklist).
-   - **WP-5C (Production D1 Backup Execution):** BLOCKED pending WP-5B readiness and explicit owner approval.
-   - **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup and explicit owner approval.
+   - **WP-5B (Migration Prep & Backup Readiness):** **COMPLETED / READY WITH CONDITIONS**.
+   - **WP-5C (Production D1 Backup Execution):** **NEXT / BLOCKED** pending explicit owner approval.
+   - **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup verification and explicit owner approval.
    - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration.
