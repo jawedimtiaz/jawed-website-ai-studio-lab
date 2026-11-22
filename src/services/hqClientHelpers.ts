@@ -63,6 +63,20 @@ export type CanonicalLeadStage = typeof CANONICAL_LEAD_STAGES[number];
 export const CANONICAL_LEAD_STAGE_SET = new Set<string>(CANONICAL_LEAD_STAGES);
 
 /**
+ * Supported display-to-canonical stage mappings for the Leads API.
+ * Maps both human UI labels and canonical slug formats to CanonicalLeadStage.
+ */
+export const LEAD_DISPLAY_TO_CANONICAL_STAGE_MAP: Record<string, CanonicalLeadStage> = {
+  'new': 'new',
+  'contacted': 'contacted',
+  'qualified': 'qualified',
+  'proposal sent': 'proposal-sent',
+  'proposal-sent': 'proposal-sent',
+  'converted': 'converted',
+  'lost': 'lost'
+};
+
+/**
  * Sanitizes a status filter value intended for the Clients API.
  * Guarantees that Leads-specific pipeline stages (e.g. 'converted', 'lost', 'qualified')
  * or arbitrary invalid values can never leak into the Clients API query parameters.
@@ -112,31 +126,22 @@ export function buildClientQueryParams({
 
 /**
  * Sanitizes a stage filter value intended for the Leads API.
+ * Maps display values to canonical API values (e.g. 'Proposal Sent' -> 'proposal-sent').
  * Guarantees that Customers-specific statuses or arbitrary invalid values
  * can never leak into the Leads API query parameters.
  */
 export function sanitizeLeadStageFilter(
   filterValue: string | null | undefined
-): { stage?: string; archivedOnly?: boolean } {
+): { stage?: CanonicalLeadStage; archivedOnly?: boolean } {
   if (!filterValue || typeof filterValue !== 'string') return {};
   const clean = filterValue.trim();
-  if (clean.toLowerCase() === 'all' || !clean) return {};
+  if (!clean || clean.toLowerCase() === 'all') return {};
   if (clean.toLowerCase() === 'archived') return { archivedOnly: true };
 
   const lower = clean.toLowerCase();
-  if (CANONICAL_LEAD_STAGE_SET.has(lower)) {
-    return { stage: lower };
-  }
-  const displayMap: Record<string, string> = {
-    'new': 'new',
-    'contacted': 'contacted',
-    'qualified': 'qualified',
-    'proposal sent': 'proposal-sent',
-    'converted': 'converted',
-    'lost': 'lost'
-  };
-  if (displayMap[lower]) {
-    return { stage: clean };
+  const canonical = LEAD_DISPLAY_TO_CANONICAL_STAGE_MAP[lower];
+  if (canonical) {
+    return { stage: canonical };
   }
   return {};
 }
