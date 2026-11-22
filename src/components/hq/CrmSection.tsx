@@ -293,7 +293,7 @@ export const CrmSection: React.FC<{
         next_follow_up_at: leadForm.next_follow_up_at || null,
         notes: leadForm.notes.trim()
       };
-      await hqFetch('/api/hq/leads', {
+      await hqFetch(editingLead ? `/api/hq/leads/${encodeURIComponent(editingLead.id)}` : '/api/hq/leads', {
         method: editingLead ? 'PATCH' : 'POST',
         body: JSON.stringify(payload)
       });
