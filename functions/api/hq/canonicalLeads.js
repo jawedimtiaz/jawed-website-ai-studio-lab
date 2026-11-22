@@ -32,7 +32,7 @@ function validate(body,partial=false){
   if(!partial){if(!out.business_name||!out.contact_name)return {ok:false,error:'REQUIRED_FIELDS'};out.lead_origin='inbound-lead';out.pipeline_stage='new';out.status='lead';}
   return {ok:true,value:out};
 }
-function routeError(error,status=400){const message=({INVALID_STAGE:'The selected lead stage is invalid.',INVALID_AMOUNT:'Estimated value must be a non-negative safe integer in minor units.',INVALID_CURRENCY:'Currency is not supported.',INVALID_FOLLOW_UP:'Follow-up date is invalid.',REQUIRED_FIELDS:'Business name and contact name are required.',LOST_REASON_REQUIRED:'A reason is required when marking a lead Lost.',LEAD_NOT_FOUND:'Lead not found.',LEAD_ALREADY_CONVERTED:'This lead has already been converted.',LOST_LEAD_CANNOT_CONVERT:'Lost leads cannot be converted. Reopen the lead first.',NO_VALID_FIELDS:'No valid fields were provided.',UNKNOWN_FIELDS:'The request contains unsupported fields.'})[error]||'The request could not be completed.';return hqJson({ok:false,error:{code:error,message}},status);}
+function routeError(error,status=400){const message=({INVALID_STAGE:'The selected lead stage is invalid.',INVALID_CONVERSION_INPUT:'Conversion request contains unsupported or invalid fields.',INVALID_AMOUNT:'Estimated value must be a non-negative safe integer in minor units.',INVALID_CURRENCY:'Currency is not supported.',INVALID_FOLLOW_UP:'Follow-up date is invalid.',REQUIRED_FIELDS:'Business name and contact name are required.',LOST_REASON_REQUIRED:'A reason is required when marking a lead Lost.',LEAD_NOT_FOUND:'Lead not found.',LEAD_ALREADY_CONVERTED:'This lead has already been converted.',LOST_LEAD_CANNOT_CONVERT:'Lost leads cannot be converted. Reopen the lead first.',NO_VALID_FIELDS:'No valid fields were provided.',UNKNOWN_FIELDS:'The request contains unsupported fields.'})[error]||'The request could not be completed.';return hqJson({ok:false,error:{code:error,message}},status);}
 async function list(request,db){
   const u=new URL(request.url);const page=Math.max(1,Number(u.searchParams.get('page'))||1);const limit=Math.min(100,Math.max(1,Number(u.searchParams.get('limit'))||25));const q=text(u.searchParams.get('q'),100).toLowerCase();const rawStage=u.searchParams.get('stage')||u.searchParams.get('status')||'';const stage=({New:'new',Contacted:'contacted',Qualified:'qualified','Proposal Sent':'proposal-sent',Converted:'converted',Lost:'lost',All:''})[rawStage]??rawStage;
   const clauses=["lead_origin='inbound-lead'","archived_at IS NULL"];const args=[];
@@ -84,6 +84,7 @@ async function convert(request,db,identity,id){
   const row=await db.prepare("SELECT * FROM clients WHERE id=? AND lead_origin='inbound-lead' AND archived_at IS NULL").bind(id).first();
   if(!row)return routeError('LEAD_NOT_FOUND',404);if(row.pipeline_stage==='converted')return routeError('ALREADY_CONVERTED',409);if(row.pipeline_stage==='lost')return routeError('LOST_LEAD_CANNOT_CONVERT',409);
   const parsed=await readHqJson(request);if(!parsed.ok)return parsed.response;const body=parsed.value;
+  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['createProject','projectName'].includes(k))||(body.createProject!==undefined&&typeof body.createProject!=='boolean')||(body.projectName!==undefined&&typeof body.projectName!=='string'))return routeError('INVALID_CONVERSION_INPUT');
   const createProject=body.createProject===true;const projectId=createProject?crypto.randomUUID():null;const now=new Date().toISOString();
   const projectName=text(body.projectName||((row.business_name||row.name)+' Website'),200);
   const projectCode='PRJ-'+projectId?.slice(0,8).toUpperCase();
@@ -102,7 +103,7 @@ export async function handleHqLeads({request,env,segments=[]}){
     if(segments.length===0){if(request.method==='GET')return list(request,db);if(request.method==='POST')return create(request,db,identity);return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'GET, POST, OPTIONS'});}
     const [id,action]=segments;if(!id||id.length>80)return routeError('LEAD_NOT_FOUND',404);
     if(action==='archive'||action==='restore'){if(request.method==='POST'&&segments.length===2)return archive(db,identity,id,action==='restore');return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'POST, OPTIONS'});}
-    if(action==='convert'){if(request.method==='POST'&&segments.length===2)return convert(request,db,identity,id);return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:'POST, OPTIONS'});}
+    if(action==='convert'){if(request.method==='POST'&&segments.length===2)return convert(request,db,identity,id);return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'POST, OPTIONS'});}
     if(action)return routeError('NOT_FOUND',404);
     if(request.method==='GET'){const row=await detail(db,id);return row?hqJson({success:true,lead:mapLead(row)}):routeError('LEAD_NOT_FOUND',404);}
     if(request.method==='PATCH')return update(request,db,identity,id);
