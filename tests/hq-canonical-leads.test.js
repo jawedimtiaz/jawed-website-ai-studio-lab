@@ -546,6 +546,74 @@ describe('4. Lead Updates & Stage Transitions', () => {
     const body = await editRes.json();
     assert.equal(body.error.code, 'LEAD_ALREADY_CONVERTED');
   });
+
+  test('lead update creates a primary contact if missing without violating single-primary invariant', async () => {
+    // Seed lead directly in clients without contact in client_contacts
+    const headlessLeadId = crypto.randomUUID();
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, status, lead_origin, pipeline_stage, created_by)
+      VALUES (?, 'Headless Lead', 'Headless Corp', 'lead', 'inbound-lead', 'new', ?)
+    `).run(headlessLeadId, ownerIdentity.uid);
+
+    // Confirm 0 contacts exist initially
+    const initialContacts = db.sqlite.prepare('SELECT COUNT(*) as count FROM client_contacts WHERE client_id = ?').get(headlessLeadId);
+    assert.equal(initialContacts.count, 0);
+
+    // Call PATCH with contact updates
+    const patchRes = await callAuthorized(db, makeRequest(`/api/hq/leads/${headlessLeadId}`, {
+      method: 'PATCH',
+      body: {
+        contact_name: 'Newly Created Primary',
+        email: 'primary@headless.com',
+        phone: '+91 9111122222'
+      }
+    }), [headlessLeadId]);
+
+    assert.equal(patchRes.status, 200);
+
+    // Confirm exactly 1 primary contact was created
+    const contacts = db.sqlite.prepare('SELECT * FROM client_contacts WHERE client_id = ?').all(headlessLeadId);
+    assert.equal(contacts.length, 1);
+    assert.equal(contacts[0].full_name, 'Newly Created Primary');
+    assert.equal(contacts[0].email, 'primary@headless.com');
+    assert.equal(contacts[0].phone, '+91 9111122222');
+    assert.equal(contacts[0].is_primary, 1);
+  });
+
+  test('lead update synchronizes existing primary contact without creating duplicates', async () => {
+    // testLeadId already has 1 primary contact from create
+    const initialCount = db.sqlite.prepare('SELECT COUNT(*) as count FROM client_contacts WHERE client_id = ?').get(testLeadId);
+    assert.equal(initialCount.count, 1);
+
+    const syncRes = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}`, {
+      method: 'PATCH',
+      body: {
+        contact_name: 'Synchronized Name',
+        email: 'sync@target.in'
+      }
+    }), [testLeadId]);
+
+    assert.equal(syncRes.status, 200);
+    const afterCount = db.sqlite.prepare('SELECT COUNT(*) as count FROM client_contacts WHERE client_id = ?').get(testLeadId);
+    assert.equal(afterCount.count, 1);
+    const contact = db.sqlite.prepare('SELECT * FROM client_contacts WHERE client_id = ?').get(testLeadId);
+    assert.equal(contact.full_name, 'Synchronized Name');
+    assert.equal(contact.email, 'sync@target.in');
+  });
+
+  test('audit insertion is based on client UPDATE, recording audit even when contact fields are not updated', async () => {
+    const auditsBefore = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.update'").get(testLeadId).count;
+
+    // Update only notes (no contact fields)
+    const resNotes = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}`, {
+      method: 'PATCH',
+      body: { notes: 'Updated internal notes only' }
+    }), [testLeadId]);
+
+    assert.equal(resNotes.status, 200);
+    const auditsAfter = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.update'").get(testLeadId).count;
+    assert.equal(auditsAfter, auditsBefore + 1, 'Must record audit log for client update even when contact fields are omitted');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -569,11 +637,13 @@ describe('5. Lead Archival & Restoration', () => {
     db.close();
   });
 
-  test('archives and restores lead idempotently', async () => {
+  test('archives and restores lead idempotently with changed tracking', async () => {
     // 1. Archive
     const arch1 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/archive`, { method: 'POST' }), [testLeadId, 'archive']);
     assert.equal(arch1.status, 200);
-    assert.equal((await arch1.json()).archived, true);
+    const body1 = await arch1.json();
+    assert.equal(body1.archived, true);
+    assert.equal(body1.changed, true);
 
     // Verify excluded from active list
     const activeList = await (await callAuthorized(db, makeRequest('/api/hq/leads'))).json();
@@ -587,11 +657,16 @@ describe('5. Lead Archival & Restoration', () => {
     // 2. Idempotent archive
     const arch2 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/archive`, { method: 'POST' }), [testLeadId, 'archive']);
     assert.equal(arch2.status, 200);
+    const body2 = await arch2.json();
+    assert.equal(body2.archived, true);
+    assert.equal(body2.changed, false);
 
     // 3. Restore
     const rest1 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/restore`, { method: 'POST' }), [testLeadId, 'restore']);
     assert.equal(rest1.status, 200);
-    assert.equal((await rest1.json()).archived, false);
+    const bodyRest1 = await rest1.json();
+    assert.equal(bodyRest1.archived, false);
+    assert.equal(bodyRest1.changed, true);
 
     // Verify returned to active list
     const restoredList = await (await callAuthorized(db, makeRequest('/api/hq/leads'))).json();
@@ -601,6 +676,63 @@ describe('5. Lead Archival & Restoration', () => {
     // 4. Idempotent restore
     const rest2 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/restore`, { method: 'POST' }), [testLeadId, 'restore']);
     assert.equal(rest2.status, 200);
+    const bodyRest2 = await rest2.json();
+    assert.equal(bodyRest2.archived, false);
+    assert.equal(bodyRest2.changed, false);
+  });
+
+  test('archive nonexistent lead returns 404 LEAD_NOT_FOUND', async () => {
+    const res = await callAuthorized(db, makeRequest('/api/hq/leads/nonexistent-lead-id/archive', { method: 'POST' }), ['nonexistent-lead-id', 'archive']);
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).error.code, 'LEAD_NOT_FOUND');
+  });
+
+  test('restore nonexistent lead returns 404 LEAD_NOT_FOUND', async () => {
+    const res = await callAuthorized(db, makeRequest('/api/hq/leads/nonexistent-lead-id/restore', { method: 'POST' }), ['nonexistent-lead-id', 'restore']);
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).error.code, 'LEAD_NOT_FOUND');
+  });
+
+  test('idempotent archive does not create duplicate audit entries', async () => {
+    const res1 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/archive`, { method: 'POST' }), [testLeadId, 'archive']);
+    assert.equal(res1.status, 200);
+    const body1 = await res1.json();
+    assert.equal(body1.changed, true);
+
+    const audits1 = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.archive'").get(testLeadId).count;
+    assert.equal(audits1, 1);
+
+    // Redundant archive
+    const res2 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/archive`, { method: 'POST' }), [testLeadId, 'archive']);
+    assert.equal(res2.status, 200);
+    const body2 = await res2.json();
+    assert.equal(body2.changed, false);
+
+    const audits2 = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.archive'").get(testLeadId).count;
+    assert.equal(audits2, 1, 'Redundant archive must not insert duplicate audit record');
+  });
+
+  test('idempotent restore does not create duplicate audit entries', async () => {
+    // Archive first
+    await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/archive`, { method: 'POST' }), [testLeadId, 'archive']);
+
+    // First restore
+    const res1 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/restore`, { method: 'POST' }), [testLeadId, 'restore']);
+    assert.equal(res1.status, 200);
+    const body1 = await res1.json();
+    assert.equal(body1.changed, true);
+
+    const audits1 = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.restore'").get(testLeadId).count;
+    assert.equal(audits1, 1);
+
+    // Redundant restore
+    const res2 = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/restore`, { method: 'POST' }), [testLeadId, 'restore']);
+    assert.equal(res2.status, 200);
+    const body2 = await res2.json();
+    assert.equal(body2.changed, false);
+
+    const audits2 = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.restore'").get(testLeadId).count;
+    assert.equal(audits2, 1, 'Redundant restore must not insert duplicate audit record');
   });
 });
 
@@ -672,7 +804,7 @@ describe('6. Lead Conversion to Customer & Project Creation', () => {
     assert.equal(proj.client_id, testLeadId);
     assert.equal(proj.name, 'Metro Real Estate Portal');
     assert.equal(proj.status, 'discovery');
-    assert.ok(proj.project_code.startsWith('PRJ-'));
+    assert.match(proj.project_code, /^PRJ-[0-9A-F]{12}$/);
     assert.equal(proj.currency, 'INR');
   });
 
@@ -748,6 +880,30 @@ describe('7. Security, Authorization & Origin', () => {
     assert.equal(res.status, 401);
     const body = await res.json();
     assert.equal(body.error, 'AUTH_REQUIRED');
+  });
+
+  test('rejects unauthenticated archive and restore requests with 401 AUTH_REQUIRED', async () => {
+    const unauthArch = new Request('https://lab.jawed.co.in/api/hq/leads/some-lead/archive', {
+      method: 'POST'
+    });
+    const resArch = await handleHqLeads({
+      request: unauthArch,
+      env: { ENVIRONMENT: 'test', HQ_DB: db },
+      segments: ['some-lead', 'archive']
+    });
+    assert.equal(resArch.status, 401);
+    assert.equal((await resArch.json()).error, 'AUTH_REQUIRED');
+
+    const unauthRest = new Request('https://lab.jawed.co.in/api/hq/leads/some-lead/restore', {
+      method: 'POST'
+    });
+    const resRest = await handleHqLeads({
+      request: unauthRest,
+      env: { ENVIRONMENT: 'test', HQ_DB: db },
+      segments: ['some-lead', 'restore']
+    });
+    assert.equal(resRest.status, 401);
+    assert.equal((await resRest.json()).error, 'AUTH_REQUIRED');
   });
 
   test('rejects unauthorized origin with 403 ORIGIN_NOT_ALLOWED', async () => {

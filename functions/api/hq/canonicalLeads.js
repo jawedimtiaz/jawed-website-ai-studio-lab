@@ -414,7 +414,12 @@ async function update(request, db, identity, id) {
 
   const batch = [
     ownerAuthorizationGuardStatement(db, identity),
-    clientUpdate
+    clientUpdate,
+    conditionalAuditStatement(
+      db, identity, 'lead.update', 'client', id, crypto.randomUUID(),
+      { pipeline_stage: row.pipeline_stage, status: row.status },
+      { pipeline_stage: targetStage, status: statusForStage(targetStage) }
+    )
   ];
 
   // Primary contact synchronization
@@ -439,13 +444,26 @@ async function update(request, db, identity, id) {
       SET ${contactSets.join(', ')}
       WHERE client_id = ? AND is_primary = 1 AND archived_at IS NULL
     `).bind(...contactVals));
-  }
 
-  batch.push(conditionalAuditStatement(
-    db, identity, 'lead.update', 'client', id, crypto.randomUUID(),
-    { pipeline_stage: row.pipeline_stage, status: row.status },
-    { pipeline_stage: targetStage, status: statusForStage(targetStage) }
-  ));
+    // Fallback insert: if no active primary contact exists, insert one
+    const newContactId = crypto.randomUUID();
+    const finalFullName = 'contact_name' in f ? f.contact_name : (row.name || 'Primary Contact');
+    const finalEmail = 'email' in f ? (f.email || null) : (row.email || null);
+    const finalPhone = 'phone' in f ? (f.phone || null) : (row.phone || null);
+
+    batch.push(db.prepare(`
+      INSERT INTO client_contacts (
+        id, client_id, full_name, role_title, email, phone, is_primary, created_at, updated_at
+      )
+      SELECT ?, ?, ?, 'Primary Contact', ?, ?, 1, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM client_contacts WHERE client_id = ? AND is_primary = 1 AND archived_at IS NULL
+      )
+    `).bind(
+      newContactId, id, finalFullName, finalEmail, finalPhone, now, now,
+      id
+    ));
+  }
 
   await db.batch(batch);
   const updated = await detail(db, id);
@@ -466,7 +484,7 @@ async function archive(db, identity, id, restore) {
     ? db.prepare(sql).bind(now, identity.uid, id)
     : db.prepare(sql).bind(now, identity.uid, now, identity.uid, id);
 
-  await db.batch([
+  const results = await db.batch([
     ownerAuthorizationGuardStatement(db, identity),
     stmt,
     conditionalAuditStatement(
@@ -476,7 +494,8 @@ async function archive(db, identity, id, restore) {
     )
   ]);
 
-  return hqJson({ success: true, id, archived: !restore });
+  const changed = (results?.[1]?.meta?.changes ?? 0) === 1;
+  return hqJson({ success: true, id, archived: !restore, changed });
 }
 
 async function convert(request, db, identity, id) {
@@ -503,7 +522,7 @@ async function convert(request, db, identity, id) {
   const now = new Date().toISOString();
   const conversionToken = crypto.randomUUID();
   const projectName = text(body.projectName, 200) || ((row.business_name || row.name) + ' Website');
-  const projectCode = 'PRJ-' + (projectId ? projectId.replace(/-/g, '').slice(0, 8).toUpperCase() : '');
+  const projectCode = 'PRJ-' + (projectId ? projectId.replace(/-/g, '').slice(0, 12).toUpperCase() : '');
 
   const stmts = [
     ownerAuthorizationGuardStatement(db, identity),

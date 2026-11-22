@@ -59,15 +59,27 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
 10. **Integration Boundary & Worker Integration Test Targets:**
     - *Defect:* `tests/hq-integration-boundary.test.js` and `tests/worker-integration.test.js` used `/api/hq/leads` as their example of an approved legacy route. Now that `/api/hq/leads` is canonical, it reaches the canonical dispatcher rather than the legacy router.
     - *Remediation:* Updated approved legacy route tests to target `/api/hq/overview`, and added explicit tests verifying canonical leads routes reach the canonical dispatcher and enforce auth.
+11. **Lead Update Audit Statement Sequencing:**
+    - *Defect:* `conditionalAuditStatement` in `update()` was pushed to `batch` after the `client_contacts` UPDATE, causing `changes() = 1` to inspect contact rows rather than the client record update.
+    - *Remediation:* Positioned `conditionalAuditStatement` immediately following the `clients` UPDATE in the D1 batch. Added regression test asserting audit logging when contact details remain unchanged.
+12. **Archive / Restore Idempotency & Changed Flag:**
+    - *Defect:* Archive and restore returned `{ success: true, id, archived }` without indicating whether the record state actually changed.
+    - *Remediation:* Inspected D1 batch result (`results?.[1]?.meta?.changes === 1`) and added `changed: true` on state change vs `changed: false` on idempotent repeats. Added regression tests verifying 404 on nonexistent records, 401 unauthenticated guard, and audit record suppression on redundant calls.
+13. **Primary Contact Fallback on Lead Update:**
+    - *Defect:* Updating contact details on a lead that lacked an active primary contact only executed an `UPDATE` on `client_contacts` matching 0 rows, silently failing to synchronize contact details.
+    - *Remediation:* Added atomic, concurrency-safe fallback insert `INSERT INTO client_contacts (...) SELECT ... WHERE NOT EXISTS (...)` in the same D1 batch. Added regression test verifying contact creation and single-primary preservation.
+14. **Project Code Entropy on Conversion:**
+    - *Defect:* Project code derived 8 hex characters (`PRJ-[0-9A-F]{8}`) from `projectId`.
+    - *Remediation:* Increased entropy to 12 hex characters (`PRJ-[0-9A-F]{12}`), expanding collision resistance to ~2.81e14 combinations while maintaining deterministic generation from `projectId`.
 
 ## Verification & QA Evidence
 
 - **TypeScript Compilation:**
   - `npm.cmd run lint` (`tsc --noEmit`): PASSED (0 errors).
 - **Production Build:**
-  - `npm.cmd run build`: PASSED (Built in 10.13s, 17 SPA tool entry points generated, dist/ prepared).
+  - `npm.cmd run build`: PASSED (Built in 12.72s, 17 SPA tool entry points generated, dist/ prepared).
 - **Targeted WP-2 Tests:**
-  - `node --test tests/hq-canonical-leads.test.js`: 30/30 tests PASSED.
+  - `node --test tests/hq-canonical-leads.test.js`: 38/38 tests PASSED (+8 targeted remediation tests).
   - `node --test tests/hq-canonical-leads-router.test.js`: 5/5 tests PASSED.
   - `node --test tests/hq-integration-boundary.test.js`: 12/12 tests PASSED.
   - `node --test tests/hq-migration-0003.test.js`: 9/9 tests PASSED.
@@ -77,12 +89,16 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
   - `tests/hq-crm-financial-foundation.test.js` (21/21 tests PASSED)
   - `tests/hq-project-details-regression.test.js` (14/14 tests PASSED)
   - `tests/hq-overview-invoices.test.js` (5/5 tests PASSED)
+  - `tests/hq-canonical-clients.test.js` (8/8 tests PASSED)
+  - `tests/hq-canonical-projects.test.js` (7/7 tests PASSED)
+- **Core Suite Total:**
+  - Total: 145/145 tests PASSED (0 failures, duration 2.71s).
 - **Broader Suite (19 test files):**
-  - Total: 268/268 tests PASSED (0 failures, 0 regressions).
+  - Total: 276/276 tests PASSED (0 failures, 0 regressions).
   - Note on `tests/studio-hq-api.test.js`: Diagnosed as legacy Phase 3Y tests querying old pre-canonical endpoint expecting non-canonical column names (`name` instead of `full_name` in `client_contacts`); not part of WP-2, left unmodified per safety rules.
 
 ## PR Readiness Assessment
 
 - **Ready for Review / Draft PR:** YES.
-- All WP-2 engineering review items, defect fixes, lifecycle endpoints, contact synchronization, and regression tests are complete and locally verified with passing execution evidence.
+- All approved targeted remediation items, audit sequencing, archive/restore response flags, primary contact fallback, and regression test suites are complete and locally verified with passing execution evidence.
 - No merge, deploy, or remote database operations performed.
