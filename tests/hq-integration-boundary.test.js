@@ -145,7 +145,7 @@ test('4. Existing approved legacy route reaches legacy router and bypasses canon
     });
   };
 
-  const pathname = '/api/hq/leads';
+  const pathname = '/api/hq/overview';
   const context = { request: createRequest(pathname), env: { ENVIRONMENT: 'test' } };
 
   const res = await dispatchHqIntegrationBoundary(pathname, context, {
@@ -269,7 +269,7 @@ test('7. Query strings do not change route classification or boundary security',
 
   // C. Legacy route with query string
   canonicalCalled = false; legacyCalled = false;
-  const pathLegacyQuery = '/api/hq/leads?limit=25&offset=50';
+  const pathLegacyQuery = '/api/hq/overview?limit=25&offset=50';
   await dispatchHqIntegrationBoundary(pathLegacyQuery, { request: createRequest(pathLegacyQuery), env: {} }, {
     canonicalProjectsDispatcher: mockCanonical, legacyRouter: mockLegacy
   });
@@ -359,3 +359,28 @@ test('10. End-to-end integration: real canonical router and real legacy router',
   assert.equal(resRealOptions.status, 204);
   assert.equal(resRealOptions.headers.get('allow'), 'GET, POST, OPTIONS');
 });
+
+test('Canonical lead request reaches canonical leads dispatcher and never legacy router', async () => {
+  let canonicalCalled = false;
+  let legacyCalled = false;
+  const canonicalLeadsDispatcher = async (pathname) => {
+    canonicalCalled = true;
+    return new Response(JSON.stringify({ ok: true, source: 'canonical-leads', path: pathname }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  };
+  const legacyRouter = async () => {
+    legacyCalled = true;
+    return new Response(JSON.stringify({ source: 'legacy' }), { status: 200 });
+  };
+  const path = '/api/hq/leads?stage=new';
+  const response = await dispatchHqIntegrationBoundary(path, {
+    request: createRequest(path), env: { ENVIRONMENT: 'test' }
+  }, { canonicalLeadsDispatcher, legacyRouter });
+  assert.equal(canonicalCalled, true);
+  assert.equal(legacyCalled, false);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).source, 'canonical-leads');
+});
+

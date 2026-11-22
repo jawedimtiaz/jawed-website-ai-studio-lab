@@ -1,0 +1,110 @@
+# Phase 8.0.4 WP-2 — Canonical Leads API Progress Log
+
+**Updated:** 2026-11-22  
+**Repository:** `jawedimtiaz/jawed-website-ai-studio-lab`  
+**Branch:** `feat/phase-8-0-4-wp2-canonical-leads`  
+**Status:** In progress — implementation branch only; no PR, merge, deployment, or remote D1 migration.
+
+## Baseline and scope
+
+WP-1 schema work was merged previously. WP-2 implements the canonical Leads API on the existing `clients` table, preserving compatibility with the CRM UI. It does not introduce a separate leads table.
+
+## Commits recorded on the feature branch
+
+| Commit | Change |
+|---|---|
+| `c78ff486087e9c9cd2d7e8278f1c61fb2240c0d5` | Canonical leads design |
+| `559d57f3b8f22c2aaab487a6a2ba3902694e44e5` | CRM frontend compatibility audit |
+| `80377647e75e004716114e3a0a3e9ec30c087efa` | WP-2 decisions |
+| `ca721e472a4ce433a82e085b972c2c483c3ad6b6` | Normalize canonical lead API errors |
+| `cab31889b58267e0fb86de4e4f6f8becd7b68564` | Frontend edit uses canonical detail endpoint |
+| `7314646c2d41c547be75877f7d85a095336335c4` | Canonical leads route tests |
+| `7f8e2cf15a67b950fa3ac3358bf12fb0170d33ca` | Lost lead reason required in UI |
+| `6274db8f03267a22114265bc5838d77edbeeb514` | Validate conversion payload |
+| `65a1e76c8559f7aa54760ddd49f29cb7f81e4723` | Conditional project creation during conversion |
+| `40cda7774fc51fd609bebe112a60da248371a993` | Boundary regression test for canonical leads |
+| `10210fe83d4864c56a108cc88c6f2016c8298e4f` | Report conversion conflicts from batch result |
+| `fccfc501a7fc7cde69984348b4b1c9241d4089e3` | Create primary contact atomically with inbound lead |
+| `d0bc8449622d99723ec0872fcb1b0b57173b2a26` | Update WP-2 progress and contact sync |
+
+## Defects Discovered & Remediation
+
+1. **Syntax error in `functions/api/hq/canonicalLeads.js`:**
+   - *Defect:* A literal `\n` broke JS module parsing at line 27.
+   - *Remediation:* Cleanly refactored the file with proper multiline JS statements and exports (`validateLead`, `handleAuthorizedHqLeads`, `handleHqLeads`).
+2. **Empty segment route matcher failure:**
+   - *Defect:* `matchCanonicalLeadRoute('/api/hq/leads//archive')` returned `LEAD_NOT_FOUND` instead of `NOT_FOUND`.
+   - *Remediation:* Added empty segment check `if (segments.some(s => !s)) return { matched: true, error: 'NOT_FOUND', status: 404 };` to `functions/lib/hqCanonicalRouter.js`.
+3. **Database source constraint mismatch:**
+   - *Defect:* Frontend sent `source: 'Website Enquiry'`, which failed against `clients.source` schema CHECK constraint `CHECK (source IN ('direct-client','referral','partner','inbound','outbound','repeat','other'))`.
+   - *Remediation:* Added `normalizeSource()` helper to map incoming source strings to schema CHECK values (`Website Enquiry` -> `inbound`).
+4. **List filtering and stage query semantics:**
+   - *Defect:* `stage='All'` or `stage='all'` was filtering out converted and lost leads; default view was not explicitly excluding terminal stages.
+   - *Remediation:* In `functions/api/hq/canonicalLeads.js`, `stage='all'` now explicitly omits terminal-stage exclusion to return all stages. Default view explicitly sets `pipeline_stage NOT IN ('converted', 'lost')`. `archivedOnly=true` and `stage=Archived` properly filter `archived_at IS NOT NULL`.
+5. **Primary contact synchronization on lead updates:**
+   - *Defect:* Updating `contact_name`, `email`, or `phone` on a lead PATCH only updated the `clients` table, leaving `client_contacts` unsynchronized.
+   - *Remediation:* Added atomic update to `client_contacts` for the primary contact in the same D1 batch.
+6. **Lost reason requirement and metadata clearing on reopen:**
+   - *Defect:* Transitioning to `lost` did not strictly enforce a non-empty `lost_reason`, and reopening a lost lead did not clear `lost_at` and `lost_reason` to `NULL`.
+   - *Remediation:* Enforced `LOST_REASON_REQUIRED` when marking as `lost`. Reopening clears `lost_at = NULL` and `lost_reason = NULL`.
+7. **Converted lead editing protection:**
+   - *Defect:* PATCH on an already converted lead was previously allowed.
+   - *Remediation:* Returns `409 LEAD_ALREADY_CONVERTED`.
+8. **Frontend CRM leads archive/restore vs legacy delete:**
+   - *Defect:* `CrmSection.tsx` was calling legacy `DELETE /api/hq/leads?id=...`.
+   - *Remediation:* Replaced legacy delete with canonical archive/restore toggle (`POST /api/hq/leads/:id/archive` and `restore`). Added `LEAD_FILTER_STAGES` with `Archived` filter option.
+9. **TypeScript `lost_reason` and lead type properties missing:**
+   - *Defect:* `src/types/hq.ts` did not declare `lost_reason`, `archived_at`, `pipeline_stage`, `canonical_status`, `converted_at`, `lost_at`, causing `tsc --noEmit` error TS2339.
+   - *Remediation:* Updated `HqLead` interface in `src/types/hq.ts`.
+10. **Integration Boundary & Worker Integration Test Targets:**
+    - *Defect:* `tests/hq-integration-boundary.test.js` and `tests/worker-integration.test.js` used `/api/hq/leads` as their example of an approved legacy route. Now that `/api/hq/leads` is canonical, it reaches the canonical dispatcher rather than the legacy router.
+    - *Remediation:* Updated approved legacy route tests to target `/api/hq/overview`, and added explicit tests verifying canonical leads routes reach the canonical dispatcher and enforce auth.
+11. **Lead Update Audit Statement Sequencing:**
+    - *Defect:* `conditionalAuditStatement` in `update()` was pushed to `batch` after the `client_contacts` UPDATE, causing `changes() = 1` to inspect contact rows rather than the client record update.
+    - *Remediation:* Positioned `conditionalAuditStatement` immediately following the `clients` UPDATE in the D1 batch. Added regression test asserting audit logging when contact details remain unchanged.
+12. **Archive / Restore Idempotency & Changed Flag:**
+    - *Defect:* Archive and restore returned `{ success: true, id, archived }` without indicating whether the record state actually changed.
+    - *Remediation:* Inspected D1 batch result (`results?.[1]?.meta?.changes === 1`) and added `changed: true` on state change vs `changed: false` on idempotent repeats. Added regression tests verifying 404 on nonexistent records, 401 unauthenticated guard, and audit record suppression on redundant calls.
+13. **Primary Contact Fallback on Lead Update:**
+    - *Defect:* Updating contact details on a lead that lacked an active primary contact only executed an `UPDATE` on `client_contacts` matching 0 rows, silently failing to synchronize contact details.
+    - *Remediation:* Added atomic, concurrency-safe fallback insert `INSERT INTO client_contacts (...) SELECT ... WHERE NOT EXISTS (...)` in the same D1 batch. Added regression test verifying contact creation and single-primary preservation.
+14. **Project Code Entropy on Conversion:**
+    - *Defect:* Project code derived 8 hex characters (`PRJ-[0-9A-F]{8}`) from `projectId`.
+    - *Remediation:* Increased entropy to 12 hex characters (`PRJ-[0-9A-F]{12}`), expanding collision resistance to ~2.81e14 combinations while maintaining deterministic generation from `projectId`.
+15. **Conversion Concurrency & Terminal Predicate Guard (PR #66 Review):**
+    - *Defect:* `UPDATE clients` predicate only excluded `pipeline_stage <> 'converted'`. A concurrent transition to `lost` between initial lookup and batch execution could have permitted conversion.
+    - *Remediation:* Changed UPDATE predicate to `WHERE id = ? AND pipeline_stage NOT IN ('converted', 'lost') AND archived_at IS NULL`. Added post-batch inspection returning 409 `LOST_LEAD_CANNOT_CONVERT` if concurrently marked lost, or 409 `LEAD_ALREADY_CONVERTED`. Added simulated concurrency regression tests.
+16. **Duplicate Advisory Match Classification (PR #66 Review):**
+    - *Defect:* `match_type` ternary evaluated `r.phone === phone`, which evaluated to `true` when both phone values were `null`, incorrectly classifying business-name matches as phone matches.
+    - *Remediation:* Refactored to explicitly check non-empty matching: `Boolean(email && r.email && r.email.toLowerCase() === email.toLowerCase())` for email, `Boolean(phone && r.phone && r.phone === phone)` for phone, falling back to `business_name`. Added regression tests for all 4 match variations.
+
+## Verification & QA Evidence
+
+- **TypeScript Compilation:**
+  - `npm.cmd run lint` (`tsc --noEmit`): PASSED (0 errors).
+- **Production Build:**
+  - `npm.cmd run build`: PASSED (Built in 9.37s, 17 SPA tool entry points generated, dist/ prepared).
+- **Targeted WP-2 Tests:**
+  - `node --test tests/hq-canonical-leads.test.js`: 43/43 tests PASSED (+5 targeted remediation tests).
+  - `node --test tests/hq-canonical-leads-router.test.js`: 5/5 tests PASSED.
+  - `node --test tests/hq-integration-boundary.test.js`: 12/12 tests PASSED.
+  - `node --test tests/hq-migration-0003.test.js`: 9/9 tests PASSED.
+  - `node --test tests/worker-integration.test.js`: 12/12 tests PASSED.
+- **CRM Regression Suites:**
+  - `tests/hq-crm-clients-regression.test.js` (14/14 tests PASSED)
+  - `tests/hq-crm-financial-foundation.test.js` (21/21 tests PASSED)
+  - `tests/hq-project-details-regression.test.js` (14/14 tests PASSED)
+  - `tests/hq-overview-invoices.test.js` (5/5 tests PASSED)
+  - `tests/hq-canonical-clients.test.js` (8/8 tests PASSED)
+  - `tests/hq-canonical-projects.test.js` (7/7 tests PASSED)
+- **Core Suite Total:**
+  - Total: 150/150 tests PASSED (0 failures, duration 2.25s).
+- **Broader Suite (19 test files):**
+  - Total: 281/281 tests PASSED (0 failures, 0 regressions).
+  - Note on `tests/studio-hq-api.test.js`: Diagnosed as legacy Phase 3Y tests querying old pre-canonical endpoint expecting non-canonical column names (`name` instead of `full_name` in `client_contacts`); not part of WP-2, left unmodified per safety rules.
+
+## PR Readiness Assessment
+
+- **Ready for Review / Draft PR:** YES (PR #66 Review Remediation Complete).
+- All PR #66 code review findings (conversion race condition terminal state exclusion and duplicate advisory phone/null match classification) are resolved and locally verified with passing execution evidence.
+- No merge, deploy, or remote database operations performed.

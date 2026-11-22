@@ -56,6 +56,8 @@ import {
 } from '../../services/hqClientHelpers';
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
+const LEAD_FILTER_STAGES = [...LEAD_STATUSES, 'Archived'];
+const leadStageForStatus = (status: string) => ({ New: 'new', Contacted: 'contacted', Qualified: 'qualified', 'Proposal Sent': 'proposal-sent', Converted: 'converted', Lost: 'lost' } as Record<string, string>)[status] || 'new';
 const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES, 'archived'];
 const FOLLOWUP_STATUSES = ['Scheduled', 'Completed', 'Cancelled'];
 
@@ -132,7 +134,8 @@ export const CrmSection: React.FC<{
     estimated_major: '0',
     currency: 'INR',
     next_follow_up_at: '',
-    notes: ''
+    notes: '',
+    lost_reason: ''
   });
 
   const [clientForm, setClientForm] = useState({
@@ -190,7 +193,13 @@ export const CrmSection: React.FC<{
       if (activeTab === 'leads') {
         const params = new URLSearchParams({ page: String(page), limit: '25' });
         if (search) params.set('q', search);
-        if (statusFilter !== 'All') params.set('status', statusFilter);
+        if (statusFilter !== 'All') {
+          if (statusFilter.toLowerCase() === 'archived') {
+            params.set('archivedOnly', 'true');
+          } else {
+            params.set('stage', statusFilter);
+          }
+        }
         const res = await hqFetch<{ leads: HqLead[]; total: number }>(`/api/hq/leads?${params.toString()}`);
         setLeads(res.leads || []);
         setTotal(res.total || 0);
@@ -279,7 +288,6 @@ export const CrmSection: React.FC<{
     setBusy(true);
     try {
       const payload = {
-        ...(editingLead ? { id: editingLead.id } : {}),
         business_name: leadForm.business_name.trim(),
         contact_name: leadForm.contact_name.trim(),
         email: leadForm.email.trim(),
@@ -287,14 +295,15 @@ export const CrmSection: React.FC<{
         category: leadForm.category.trim(),
         website: leadForm.website.trim(),
         source: leadForm.source.trim(),
-        status: leadForm.status,
+        pipeline_stage: editingLead ? leadStageForStatus(leadForm.status) : 'new',
         estimated_value_minor: parseMajorToMinor(leadForm.estimated_major),
         currency: leadForm.currency,
         next_follow_up_at: leadForm.next_follow_up_at || null,
-        notes: leadForm.notes.trim()
+        notes: leadForm.notes.trim(),
+        ...(leadForm.status === 'Lost' ? { lost_reason: leadForm.lost_reason.trim() } : {})
       };
-      await hqFetch('/api/hq/leads', {
-        method: editingLead ? 'PUT' : 'POST',
+      await hqFetch(editingLead ? `/api/hq/leads/${encodeURIComponent(editingLead.id)}` : '/api/hq/leads', {
+        method: editingLead ? 'PATCH' : 'POST',
         body: JSON.stringify(payload)
       });
       onToast('success', editingLead ? 'Lead updated' : 'Lead created');
@@ -310,9 +319,9 @@ export const CrmSection: React.FC<{
 
   const handleQualifyLead = async (lead: HqLead) => {
     try {
-      await hqFetch('/api/hq/leads', {
-        method: 'PUT',
-        body: JSON.stringify({ id: lead.id, status: 'Qualified' })
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(lead.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ pipeline_stage: 'qualified' })
       });
       onToast('success', `${lead.business_name} marked as Qualified`);
       loadData();
@@ -325,11 +334,9 @@ export const CrmSection: React.FC<{
     if (!convertLeadTarget) return;
     setBusy(true);
     try {
-      await hqFetch('/api/hq/leads', {
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(convertLeadTarget.id)}/convert`, {
         method: 'POST',
         body: JSON.stringify({
-          action: 'convert',
-          leadId: convertLeadTarget.id,
           createProject: convertCreateProject,
           projectName: convertProjectName.trim() || `${convertLeadTarget.business_name} Website`
         })
@@ -342,6 +349,20 @@ export const CrmSection: React.FC<{
       onToast('error', err.message || 'Conversion failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleLeadArchiveToggle = async (lead: HqLead) => {
+    const isArchived = Boolean(lead.archived_at);
+    try {
+      const action = isArchived ? 'restore' : 'archive';
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(lead.id)}/${action}`, {
+        method: 'POST'
+      });
+      onToast('success', isArchived ? 'Lead restored' : 'Lead archived');
+      loadData();
+    } catch (err: any) {
+      onToast('error', err.message || 'Action failed');
     }
   };
 
@@ -529,7 +550,7 @@ export const CrmSection: React.FC<{
               setStatusFilter(v);
               setPage(1);
             }}
-            filterOptions={LEAD_STATUSES}
+            filterOptions={LEAD_FILTER_STAGES}
             filterLabel="Stage"
             primaryAction={{
               label: 'New Lead',
@@ -547,7 +568,8 @@ export const CrmSection: React.FC<{
                   estimated_major: '0',
                   currency: 'INR',
                   next_follow_up_at: '',
-                  notes: ''
+                  notes: '',
+                  lost_reason: ''
                 });
                 setLeadDrawerOpen(true);
               }
@@ -637,7 +659,8 @@ export const CrmSection: React.FC<{
                                   estimated_major: minorToMajorString(l.estimated_value_minor),
                                   currency: l.currency || 'INR',
                                   next_follow_up_at: l.next_follow_up_at || '',
-                                  notes: l.notes || ''
+                                  notes: l.notes || '',
+                                  lost_reason: l.lost_reason || ''
                                 });
                                 setLeadDrawerOpen(true);
                               }}
@@ -648,23 +671,12 @@ export const CrmSection: React.FC<{
                             </button>
                             <button
                               type="button"
-                              onClick={() =>
-                                setConfirmState({
-                                  open: true,
-                                  title: 'Delete lead?',
-                                  description: `Permanently delete ${l.business_name}? This cannot be undone.`,
-                                  destructive: true,
-                                  onConfirm: async () => {
-                                    await hqFetch(`/api/hq/leads?id=${encodeURIComponent(l.id)}`, { method: 'DELETE' });
-                                    onToast('success', 'Lead deleted');
-                                    loadData();
-                                  }
-                                })
-                              }
-                              aria-label={`Delete ${l.business_name}`}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
+                              onClick={() => handleLeadArchiveToggle(l)}
+                              title={Boolean(l.archived_at) ? 'Restore Lead' : 'Archive Lead'}
+                              aria-label={Boolean(l.archived_at) ? `Restore ${l.business_name}` : `Archive ${l.business_name}`}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {Boolean(l.archived_at) ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
                             </button>
                           </div>
                         </td>
@@ -1469,6 +1481,19 @@ export const CrmSection: React.FC<{
               />
             </div>
           </div>
+          {leadForm.status === 'Lost' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Lost Reason <span className="text-red-600">*</span></label>
+              <textarea
+                rows={2}
+                required
+                value={leadForm.lost_reason}
+                onChange={(e) => setLeadForm({ ...leadForm, lost_reason: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md"
+                placeholder="Why was this lead lost?"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
             <textarea

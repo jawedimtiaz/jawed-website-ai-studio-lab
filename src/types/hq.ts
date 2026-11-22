@@ -97,13 +97,21 @@ export interface HqLead {
   phone: string;
   category: string;
   website: string;
+  website_url?: string;
   source: string;
   status: 'New' | 'Contacted' | 'Qualified' | 'Proposal Sent' | 'Converted' | 'Lost' | string;
+  pipeline_stage?: string;
+  canonical_status?: string;
+  lead_origin?: string;
   estimated_value_minor: number;
   currency: string;
   notes: string;
   next_follow_up_at: string | null;
   converted_client_id: string | null;
+  converted_at?: string | null;
+  lost_at?: string | null;
+  lost_reason?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
