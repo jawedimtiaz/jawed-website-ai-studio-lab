@@ -29,8 +29,11 @@ ALTER TABLE clients ADD COLUMN lost_at TEXT;
 ALTER TABLE clients ADD COLUMN lost_reason TEXT;
 
 -- 2. Precedence Backfill Rule 1: Commercial accounts
--- Any client with linked projects, linked invoices, or an active/paused/completed status
+-- Any active (non-archived) client with linked projects, linked invoices, or an active/paused/completed status
 -- is classified as a converted customer account.
+-- NOTE on archived records: Archived records retain their archived state and baseline default pipeline_stage ('new').
+-- They are explicitly excluded from automatic commercial conversion and lost classification,
+-- preserving their state until an explicit product/owner decision upon restoration.
 -- NOTE on converted_at: Historical records lack discrete conversion-event audit logs prior to Phase 8.
 -- Therefore, converted_at is reconstructed using created_at as an approximation of the account's historical inception,
 -- NOT as an exact historical conversion-event timestamp. This avoids inventing arbitrary event dates.
@@ -38,6 +41,7 @@ UPDATE clients SET
   pipeline_stage = 'converted',
   converted_at = created_at
 WHERE lead_origin = 'legacy-existing'
+  AND archived_at IS NULL
   AND (
     status IN ('active', 'paused', 'completed')
     OR (SELECT COUNT(*) FROM projects WHERE projects.client_id = clients.id) > 0
@@ -45,7 +49,7 @@ WHERE lead_origin = 'legacy-existing'
   );
 
 -- 3. Precedence Backfill Rule 2: Pure lost prospects
--- Only clients with status 'closed' AND zero linked projects AND zero linked invoices
+-- Only active (non-archived) clients with status 'closed' AND zero linked projects AND zero linked invoices
 -- are classified as lost prospects.
 -- NOTE on lost_at: lost_at is set to updated_at to reflect when the record reached its final closed state,
 -- with lost_reason documenting its historical backfill classification origin.
@@ -54,6 +58,7 @@ UPDATE clients SET
   lost_at = updated_at,
   lost_reason = 'Historical closed prospect'
 WHERE lead_origin = 'legacy-existing'
+  AND archived_at IS NULL
   AND status = 'closed'
   AND (SELECT COUNT(*) FROM projects WHERE projects.client_id = clients.id) = 0
   AND (SELECT COUNT(*) FROM invoices WHERE invoices.client_id = clients.id) = 0;

@@ -80,6 +80,13 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
     // Case 7: Active status without project (Retainer client)
     db.exec(`INSERT INTO clients (id, client_code, name, business_name, status, created_by) VALUES ('c7', 'CLI-7', 'Consulting Client', 'Retainer Advisory', 'active', 'u1');`);
 
+    // Case 8: Archived client with status closed and 0 projects/invoices (must remain 'new', NOT 'lost')
+    db.exec(`INSERT INTO clients (id, client_code, name, business_name, status, created_by, archived_at, archived_by) VALUES ('c8', 'CLI-8', 'Archived Closed Client', 'Archived Closed LLC', 'closed', 'u1', '2026-11-22T06:00:00.000Z', 'u1');`);
+
+    // Case 9: Archived client with status active and linked project (must remain 'new', NOT 'converted')
+    db.exec(`INSERT INTO clients (id, client_code, name, business_name, status, created_by, archived_at, archived_by) VALUES ('c9', 'CLI-9', 'Archived Active Client', 'Archived Active LLC', 'active', 'u1', '2026-11-22T06:00:00.000Z', 'u1');`);
+    db.exec(`INSERT INTO projects (id, project_code, client_id, name, created_by) VALUES ('p9', 'PRJ-9', 'c9', 'Archived Past Project', 'u1');`);
+
     // Apply Migration 0003
     db.exec(loadMigration('0003_leads_pipeline.sql'));
 
@@ -122,6 +129,34 @@ describe('Phase 8.0.4 Migration 0003 Verification Suite (R1 Corrections)', () =>
     const c6 = getClient('c6');
     assert.equal(c6.lead_origin, 'legacy-existing');
     assert.equal(c6.pipeline_stage, 'new', 'c6 (Ambiguous prospect) must retain new stage for manual review');
+
+    // Invariant: Archived records must retain their archived state without automatic classification
+    const c8 = getClient('c8');
+    assert.equal(c8.lead_origin, 'legacy-existing');
+    assert.equal(c8.pipeline_stage, 'new', 'c8 (Archived closed client) must retain pipeline_stage = new, NOT lost');
+    assert.equal(c8.lost_at, null, 'c8 lost_at must remain NULL');
+    assert.equal(c8.lost_reason, null, 'c8 lost_reason must remain NULL');
+    assert.ok(c8.archived_at, 'c8 archive timestamp must be preserved');
+
+    const c9 = getClient('c9');
+    assert.equal(c9.lead_origin, 'legacy-existing');
+    assert.equal(c9.pipeline_stage, 'new', 'c9 (Archived client with project) must retain pipeline_stage = new, NOT converted');
+    assert.equal(c9.converted_at, null, 'c9 converted_at must remain NULL');
+    assert.ok(c9.archived_at, 'c9 archive timestamp must be preserved');
+
+    // Isolated regression fixture: Dedicated clean database for an archived closed client with 0 projects/invoices
+    const dbIso = initCleanDatabase();
+    dbIso.exec(`INSERT INTO hq_users (uid, email, display_name) VALUES ('u1', 'owner@example.com', 'Owner');`);
+    dbIso.exec(`INSERT INTO clients (id, client_code, name, business_name, status, created_by, archived_at, archived_by)
+      VALUES ('iso_arch_closed', 'CLI-IAC', 'Isolated Archived Closed', 'Zero Project LLC', 'closed', 'u1', '2026-11-22T08:00:00.000Z', 'u1');`);
+    dbIso.exec(loadMigration('0003_leads_pipeline.sql'));
+    const isoClient = dbIso.prepare("SELECT * FROM clients WHERE id = 'iso_arch_closed'").get();
+    assert.equal(isoClient.lead_origin, 'legacy-existing', 'Isolated archived closed record must have lead_origin = legacy-existing');
+    assert.equal(isoClient.pipeline_stage, 'new', 'Isolated archived closed record must retain pipeline_stage = new, never converted or lost');
+    assert.equal(isoClient.lost_at, null, 'Isolated archived closed record must not have lost_at set');
+    assert.equal(isoClient.lost_reason, null, 'Isolated archived closed record must not have lost_reason set');
+    assert.equal(isoClient.converted_at, null, 'Isolated archived closed record must not have converted_at set');
+    assert.equal(isoClient.archived_at, '2026-11-22T08:00:00.000Z', 'Isolated archived closed record must preserve archived_at timestamp');
   });
 
   test('3. Deterministic duplicate primary contact demotion with identical timestamps and existing valid primary preservation', () => {
