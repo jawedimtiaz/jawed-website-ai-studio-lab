@@ -24,7 +24,7 @@ function validate(body,partial=false){
   if(unknown.length)return {ok:false,error:'UNKNOWN_FIELDS'};
   const out={};
   const strFields=['business_name','contact_name','email','phone','website','source','category','notes','lost_reason'];
-  for(const k of strFields) if(k in body){ if(typeof body[k]!=='string')return {ok:false,error:'INVALID_FIELD'}; out[k]=text(body[k],k==='notes'?4000:MAX_TEXT); }
+  for(const k of strFields) if(k in body){ if(typeof body[k]!=='string')return {ok:false,error:'INVALID_FIELD'}; out[k]=text(body[k],k==='notes'?4000:MAX_TEXT); }\n  if('email' in out)out.email=out.email.toLowerCase();
   if('estimated_value_minor' in body){if(!safeAmount(body.estimated_value_minor))return {ok:false,error:'INVALID_AMOUNT'};out.estimated_value_minor=body.estimated_value_minor;}
   if('currency' in body){if(typeof body.currency!=='string'||!CURRENCIES.has(body.currency))return {ok:false,error:'INVALID_CURRENCY'};out.currency=body.currency;}
   if('next_follow_up_at' in body){const v=body.next_follow_up_at;if(v!==null&&(typeof v!=='string'||!Number.isFinite(Date.parse(v))))return {ok:false,error:'INVALID_FOLLOW_UP'};out.next_follow_up_at=v;}
@@ -50,7 +50,8 @@ async function create(request,db,identity){
   const email=f.email||null;const phone=f.phone||null;
   const stmt=db.prepare(`INSERT INTO clients (id,business_name,name,email,phone,website_url,source,status,lead_origin,pipeline_stage,estimated_value_minor,currency,category,next_follow_up_at,notes,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .bind(id,f.business_name,f.contact_name,email,phone,f.website||null,f.source||'Direct Enquiry','lead','inbound-lead','new',f.estimated_value_minor||0,f.currency||'INR',f.category||null,f.next_follow_up_at||null,f.notes||null,identity.uid,identity.uid,now,now);
-  const batch=[ownerAuthorizationGuardStatement(db,identity),stmt,conditionalAuditStatement(db,identity,'lead.create','client',id,crypto.randomUUID(),null,{business_name:f.business_name,pipeline_stage:'new'})];
+  const contactStmt=db.prepare(`INSERT INTO client_contacts (id,client_id,full_name,role_title,email,phone,is_primary,created_at,updated_at) VALUES (?,?,?,'Primary Contact',?,?,1,?,?)`).bind(crypto.randomUUID(),id,f.contact_name,email,phone,now,now);
+  const batch=[ownerAuthorizationGuardStatement(db,identity),stmt,contactStmt,conditionalAuditStatement(db,identity,'lead.create','client',id,crypto.randomUUID(),null,{business_name:f.business_name,pipeline_stage:'new'})];
   await db.batch(batch);
   const row=await db.prepare('SELECT * FROM clients WHERE id=?').bind(id).first();
   return hqJson({success:true,lead:mapLead(row)},201);
