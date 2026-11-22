@@ -247,17 +247,20 @@ export const CrmSection: React.FC<{
         `/api/hq/clients/${encodeURIComponent(clientId)}`
       );
       let linkedProjects: HqProject[] = [];
+      let projectsError: string | null = null;
       try {
         const projRes = await hqFetch<{ ok?: boolean; projects?: HqProject[] }>(
           `/api/hq/projects?clientId=${encodeURIComponent(clientId)}`
         );
         linkedProjects = projRes.projects || [];
-      } catch {
-        linkedProjects = [];
+      } catch (err: any) {
+        projectsError = err.message || 'Unable to load linked projects';
+        onToast('error', `Customer loaded, but linked projects failed to load: ${projectsError}`);
       }
       const normalized = normalizeClientDetailResponse({
         ...clientRes,
-        projects: linkedProjects
+        projects: linkedProjects,
+        projectsError
       });
       setCustomerDetail(normalized);
     } catch (err: any) {
@@ -1254,10 +1257,43 @@ export const CrmSection: React.FC<{
 
             {/* Linked Projects */}
             <div>
-              <h4 className="text-xs font-semibold uppercase text-slate-500 mb-2">
-                Projects ({customerDetail.projects.length})
-              </h4>
-              {customerDetail.projects.length === 0 ? (
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold uppercase text-slate-500">
+                  Projects {customerDetail.projectsError ? '' : `(${customerDetail.projects.length})`}
+                </h4>
+                {customerDetail.projectsError && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const projRes = await hqFetch<{ ok?: boolean; projects?: HqProject[] }>(
+                          `/api/hq/projects?clientId=${encodeURIComponent(customerDetail.client.id)}`
+                        );
+                        setCustomerDetail((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                projects: projRes.projects || [],
+                                projectsError: null
+                              }
+                            : null
+                        );
+                        onToast('success', 'Projects loaded successfully');
+                      } catch (err: any) {
+                        onToast('error', err.message || 'Retry failed');
+                      }
+                    }}
+                    className="text-xs text-amber-700 hover:underline cursor-pointer"
+                  >
+                    Retry loading
+                  </button>
+                )}
+              </div>
+              {customerDetail.projectsError ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                  <span className="font-semibold">Unable to load linked projects:</span> {customerDetail.projectsError}
+                </div>
+              ) : customerDetail.projects.length === 0 ? (
                 <p className="text-xs text-slate-500">No projects linked to this customer yet.</p>
               ) : (
                 <div className="border border-slate-200 rounded-md divide-y divide-slate-100">

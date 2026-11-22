@@ -582,3 +582,206 @@ test('10. Canonical Router: route matching, URL parsing, and HTTP method enforce
   const deleteBody = await deleteRes.json();
   assert.equal(deleteBody.error, 'METHOD_NOT_ALLOWED');
 });
+
+// ---------------------------------------------------------------------------
+// 10. Independent Code Review Remediation Tests (Findings 1, 2, 3)
+// ---------------------------------------------------------------------------
+
+test('11. Customer Pagination Contract: 1-based page, offset calculation, distinct records, and total consistency (Finding 1)', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare('INSERT INTO hq_users (uid, email) VALUES (?, ?)').run(ownerIdentity.uid, ownerIdentity.email);
+
+    // Seed 60 active clients with deterministic timestamps to test pages 1, 2, 3
+    const insertStmt = db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, updated_at, created_by)
+      VALUES (?, ?, ?, ?, ?, datetime('2026-01-01 00:00:00', '+' || ? || ' seconds'), ?)
+    `);
+
+    for (let i = 1; i <= 60; i++) {
+      const pad = String(i).padStart(3, '0');
+      insertStmt.run(`client-${pad}`, `Customer ${pad}`, `Business ${pad}`, `cust${pad}@test.com`, 'active', i, ownerIdentity.uid);
+    }
+
+    // Page 1: records 0-24 (limit=25, page=1)
+    const page1Req = makeRequest('/api/hq/clients?page=1&limit=25');
+    const page1Res = await callAuthorized(db, page1Req);
+    assert.equal(page1Res.status, 200);
+    const page1Data = await page1Res.json();
+    assert.equal(page1Data.total, 60);
+    assert.equal(page1Data.page, 1);
+    assert.equal(page1Data.offset, 0);
+    assert.equal(page1Data.limit, 25);
+    assert.equal(page1Data.clients.length, 25);
+
+    // Page 2: records 25-49 (limit=25, page=2)
+    const page2Req = makeRequest('/api/hq/clients?page=2&limit=25');
+    const page2Res = await callAuthorized(db, page2Req);
+    assert.equal(page2Res.status, 200);
+    const page2Data = await page2Res.json();
+    assert.equal(page2Data.total, 60);
+    assert.equal(page2Data.page, 2);
+    assert.equal(page2Data.offset, 25);
+    assert.equal(page2Data.limit, 25);
+    assert.equal(page2Data.clients.length, 25);
+
+    // Page 3: records 50-59 (limit=25, page=3)
+    const page3Req = makeRequest('/api/hq/clients?page=3&limit=25');
+    const page3Res = await callAuthorized(db, page3Req);
+    assert.equal(page3Res.status, 200);
+    const page3Data = await page3Res.json();
+    assert.equal(page3Data.total, 60);
+    assert.equal(page3Data.page, 3);
+    assert.equal(page3Data.offset, 50);
+    assert.equal(page3Data.clients.length, 10);
+
+    // Assert Page 1 and Page 2 contain completely distinct, non-overlapping records
+    const page1Ids = new Set(page1Data.clients.map(c => c.id));
+    const page2Ids = new Set(page2Data.clients.map(c => c.id));
+    const page3Ids = new Set(page3Data.clients.map(c => c.id));
+
+    for (const id of page2Ids) {
+      assert.equal(page1Ids.has(id), false, `Record ${id} should not appear on both page 1 and page 2`);
+    }
+    for (const id of page3Ids) {
+      assert.equal(page1Ids.has(id), false, `Record ${id} should not appear on both page 1 and page 3`);
+      assert.equal(page2Ids.has(id), false, `Record ${id} should not appear on both page 2 and page 3`);
+    }
+
+    // Explicit offset parameter should also be supported for backward compatibility
+    const offsetReq = makeRequest('/api/hq/clients?offset=25&limit=25');
+    const offsetRes = await callAuthorized(db, offsetReq);
+    const offsetData = await offsetRes.json();
+    assert.equal(offsetData.offset, 25);
+    assert.equal(offsetData.page, 2);
+    assert.deepEqual(offsetData.clients.map(c => c.id), page2Data.clients.map(c => c.id));
+  } finally {
+    db.close();
+  }
+});
+
+test('12. Archive Filter Semantics: active-only, archived-only, include-archived, and search combination (Finding 2)', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare('INSERT INTO hq_users (uid, email) VALUES (?, ?)').run(ownerIdentity.uid, ownerIdentity.email);
+
+    // Seed: 3 active clients, 2 archived clients
+    // Active
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('c-act-1', 'Alpha Dynamics', 'Alpha Group', 'alpha@alpha.com', 'active', ownerIdentity.uid);
+
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('c-act-2', 'Beta Cloud', 'Beta Systems', 'beta@beta.com', 'active', ownerIdentity.uid);
+
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('c-act-3', 'Gamma Retail', 'Gamma Stores', 'gamma@gamma.com', 'lead', ownerIdentity.uid);
+
+    // Archived
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, archived_at, archived_by, created_by)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+    `).run('c-arch-1', 'Delta Tech (Archived)', 'Delta Inc', 'delta@delta.com', 'closed', ownerIdentity.uid, ownerIdentity.uid);
+
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, archived_at, archived_by, created_by)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+    `).run('c-arch-2', 'Alpha Archives', 'Alpha Legacy', 'alpha.legacy@alpha.com', 'closed', ownerIdentity.uid, ownerIdentity.uid);
+
+    // 1. Default (no archive param): active customers only
+    const defaultRes = await callAuthorized(db, makeRequest('/api/hq/clients'));
+    const defaultData = await defaultRes.json();
+    assert.equal(defaultData.total, 3);
+    assert.equal(defaultData.clients.length, 3);
+    assert.ok(defaultData.clients.every(c => c.archived_at === null));
+
+    // 2. archivedOnly=true: archived customers only
+    const archivedOnlyRes = await callAuthorized(db, makeRequest('/api/hq/clients?archivedOnly=true'));
+    const archivedOnlyData = await archivedOnlyRes.json();
+    assert.equal(archivedOnlyData.total, 2);
+    assert.equal(archivedOnlyData.clients.length, 2);
+    assert.ok(archivedOnlyData.clients.every(c => c.archived_at !== null));
+    assert.ok(archivedOnlyData.clients.some(c => c.id === 'c-arch-1'));
+    assert.ok(archivedOnlyData.clients.some(c => c.id === 'c-arch-2'));
+
+    // 3. includeArchived=true: both active and archived customers
+    const includeArchivedRes = await callAuthorized(db, makeRequest('/api/hq/clients?includeArchived=true'));
+    const includeArchivedData = await includeArchivedRes.json();
+    assert.equal(includeArchivedData.total, 5);
+    assert.equal(includeArchivedData.clients.length, 5);
+    const allIds = new Set(includeArchivedData.clients.map(c => c.id));
+    assert.ok(allIds.has('c-act-1'));
+    assert.ok(allIds.has('c-act-2'));
+    assert.ok(allIds.has('c-act-3'));
+    assert.ok(allIds.has('c-arch-1'));
+    assert.ok(allIds.has('c-arch-2'));
+
+    // 4. Precedence: both archivedOnly=true and includeArchived=true passed
+    // archivedOnly must take precedence
+    const bothRes = await callAuthorized(db, makeRequest('/api/hq/clients?archivedOnly=true&includeArchived=true'));
+    const bothData = await bothRes.json();
+    assert.equal(bothData.total, 2);
+    assert.equal(bothData.clients.length, 2);
+    assert.ok(bothData.clients.every(c => c.archived_at !== null));
+
+    // 5. Search combined with archive filters:
+    // Search 'Alpha' default: matches only 'Alpha Dynamics' (active)
+    const searchDefaultRes = await callAuthorized(db, makeRequest('/api/hq/clients?q=Alpha'));
+    const searchDefaultData = await searchDefaultRes.json();
+    assert.equal(searchDefaultData.total, 1);
+    assert.equal(searchDefaultData.clients[0].id, 'c-act-1');
+
+    // Search 'Alpha' archivedOnly=true: matches only 'Alpha Archives' (archived)
+    const searchArchivedRes = await callAuthorized(db, makeRequest('/api/hq/clients?q=Alpha&archivedOnly=true'));
+    const searchArchivedData = await searchArchivedRes.json();
+    assert.equal(searchArchivedData.total, 1);
+    assert.equal(searchArchivedData.clients[0].id, 'c-arch-2');
+
+    // Search 'Alpha' includeArchived=true: matches both
+    const searchBothRes = await callAuthorized(db, makeRequest('/api/hq/clients?q=Alpha&includeArchived=true'));
+    const searchBothData = await searchBothRes.json();
+    assert.equal(searchBothData.total, 2);
+    const searchBothIds = new Set(searchBothData.clients.map(c => c.id));
+    assert.ok(searchBothIds.has('c-act-1'));
+    assert.ok(searchBothIds.has('c-arch-2'));
+  } finally {
+    db.close();
+  }
+});
+
+test('13. Customer Detail Project Loading: empty array vs error state distinction (Finding 3)', () => {
+  // Case A: Customer with successfully loaded empty projects
+  const successfulEmpty = {
+    client: { id: 'c-empty', name: 'Empty Client', business_name: 'Empty Co' },
+    contacts: [],
+    projects: []
+  };
+
+  const bundleA = normalizeClientDetailResponse(successfulEmpty);
+  assert.equal(bundleA.client.name, 'Empty Client');
+  assert.deepEqual(bundleA.projects, []);
+  assert.equal(bundleA.projectsError, null);
+
+  // Case B: Customer with failed project loading (represented as an error state)
+  const failedProjects = {
+    client: { id: 'c-err', name: 'Error Client', business_name: 'Error Co' },
+    contacts: [{ id: 'ct-1', full_name: 'Contact One' }],
+    projects: [],
+    projectsError: 'Network error: Failed to reach projects service'
+  };
+
+  const bundleB = normalizeClientDetailResponse(failedProjects);
+  assert.equal(bundleB.client.name, 'Error Client');
+  // Customer detail remains accessible
+  assert.equal(bundleB.contacts.length, 1);
+  assert.equal(bundleB.contacts[0].full_name, 'Contact One');
+  // Projects array is safe empty array
+  assert.deepEqual(bundleB.projects, []);
+  // Error state is explicitly captured
+  assert.equal(bundleB.projectsError, 'Network error: Failed to reach projects service');
+});

@@ -72,6 +72,7 @@ export interface NormalizedClientDetailBundle {
   notes: HqNote[];
   followUps: HqFollowUp[];
   projects: HqProject[];
+  projectsError?: string | null;
   invoices: HqInvoice[];
   quotations: HqQuotation[];
 }
@@ -281,6 +282,9 @@ export function normalizeClientDetailResponse(response: any): NormalizedClientDe
   const notes: HqNote[] = Array.isArray(response?.notes) ? response.notes : [];
   const followUps: HqFollowUp[] = Array.isArray(response?.followUps) ? response.followUps : [];
   const projects: HqProject[] = Array.isArray(response?.projects) ? response.projects : [];
+  const projectsError = typeof response?.projectsError === 'string' && response.projectsError.trim()
+    ? response.projectsError.trim()
+    : null;
   const invoices: HqInvoice[] = Array.isArray(response?.invoices) ? response.invoices : [];
   const quotations: HqQuotation[] = Array.isArray(response?.quotations) ? response.quotations : [];
 
@@ -290,6 +294,7 @@ export function normalizeClientDetailResponse(response: any): NormalizedClientDe
     notes,
     followUps,
     projects,
+    projectsError,
     invoices,
     quotations
   };
