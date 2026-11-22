@@ -32,7 +32,7 @@ function validate(body,partial=false){
   if(!partial){if(!out.business_name||!out.contact_name)return {ok:false,error:'REQUIRED_FIELDS'};out.lead_origin='inbound-lead';out.pipeline_stage='new';out.status='lead';}
   return {ok:true,value:out};
 }
-function routeError(error,status=400){return hqJson({ok:false,error},status);}
+function routeError(error,status=400){const message=({INVALID_STAGE:'The selected lead stage is invalid.',INVALID_AMOUNT:'Estimated value must be a non-negative safe integer in minor units.',INVALID_CURRENCY:'Currency is not supported.',INVALID_FOLLOW_UP:'Follow-up date is invalid.',REQUIRED_FIELDS:'Business name and contact name are required.',LOST_REASON_REQUIRED:'A reason is required when marking a lead Lost.',LEAD_NOT_FOUND:'Lead not found.',LEAD_ALREADY_CONVERTED:'This lead has already been converted.',LOST_LEAD_CANNOT_CONVERT:'Lost leads cannot be converted. Reopen the lead first.',NO_VALID_FIELDS:'No valid fields were provided.',UNKNOWN_FIELDS:'The request contains unsupported fields.'})[error]||'The request could not be completed.';return hqJson({ok:false,error:{code:error,message}},status);}
 async function list(request,db){
   const u=new URL(request.url);const page=Math.max(1,Number(u.searchParams.get('page'))||1);const limit=Math.min(100,Math.max(1,Number(u.searchParams.get('limit'))||25));const q=text(u.searchParams.get('q'),100).toLowerCase();const rawStage=u.searchParams.get('stage')||u.searchParams.get('status')||'';const stage=({New:'new',Contacted:'contacted',Qualified:'qualified','Proposal Sent':'proposal-sent',Converted:'converted',Lost:'lost',All:''})[rawStage]??rawStage;
   const clauses=["lead_origin='inbound-lead'","archived_at IS NULL"];const args=[];
@@ -99,13 +99,13 @@ export async function handleHqLeads({request,env,segments=[]}){
   const rate=await checkHqRateLimit(request,env,{type:'general',uid:identity.uid});if(!rate.ok)return rate.response;
   if(['POST','PATCH'].includes(request.method)){const write=await checkHqRateLimit(request,env,{type:'write',uid:identity.uid});if(!write.ok)return write.response;}
   try{
-    if(segments.length===0){if(request.method==='GET')return list(request,db);if(request.method==='POST')return create(request,db,identity);return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:'GET, POST, OPTIONS'});}
+    if(segments.length===0){if(request.method==='GET')return list(request,db);if(request.method==='POST')return create(request,db,identity);return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'GET, POST, OPTIONS'});}
     const [id,action]=segments;if(!id||id.length>80)return routeError('LEAD_NOT_FOUND',404);
-    if(action==='archive'||action==='restore'){if(request.method==='POST'&&segments.length===2)return archive(db,identity,id,action==='restore');return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:'POST, OPTIONS'});}
+    if(action==='archive'||action==='restore'){if(request.method==='POST'&&segments.length===2)return archive(db,identity,id,action==='restore');return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'POST, OPTIONS'});}
     if(action==='convert'){if(request.method==='POST'&&segments.length===2)return convert(request,db,identity,id);return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:'POST, OPTIONS'});}
     if(action)return routeError('NOT_FOUND',404);
     if(request.method==='GET'){const row=await detail(db,id);return row?hqJson({success:true,lead:mapLead(row)}):routeError('LEAD_NOT_FOUND',404);}
     if(request.method==='PATCH')return update(request,db,identity,id);
-    return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:'GET, PATCH, OPTIONS'});
-  }catch(e){console.error('[Studio HQ Leads] Request failed');return hqJson({ok:false,error:'HQ_REQUEST_FAILED'},500);}
+    return hqJson({ok:false,error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}},405,{allow:'GET, PATCH, OPTIONS'});
+  }catch(e){console.error('[Studio HQ Leads] Request failed');return hqJson({ok:false,error:{code:'HQ_REQUEST_FAILED',message:'The request could not be completed.'}},500);}
 }
