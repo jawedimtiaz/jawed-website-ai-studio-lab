@@ -128,5 +128,14 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
    - Executed 9-scenario browser regression suite against Preview environment (`https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev/studio-hq`).
    - **Result:** 9/9 PASS. Zero HTTP 400 errors, zero UI toasts, zero console exceptions. Defect OBS-UI-001 closed.
    - Formal record: See [Phase 8.0.4 WP-4 QA Acceptance Record](phase-8-0-4-wp4-acceptance.md).
-6. **Next Planned Work Package:**
-   - **Phase 8.0.4 WP-5 (Production Migration & Deployment Cutover):** Apply migration 0003 to remote production database `jawed-studio-hq` and deploy `main` to `jawed-website-ai-studio-lab`.
+6. **WP-5A Production Cutover Security Preflight Audit:**
+   - Completed comprehensive, READ-ONLY preflight audit of authentication, bootstrap controls, Firebase config, parity, test coverage, migration safety, and environment isolation.
+   - 135/135 security tests verified passing locally.
+   - **Verdict:** APPROVED WITH CONDITIONS.
+   - Formal record: See [Phase 8.0.4 WP-5A Security Preflight Report](phase-8-0-4-wp5a-security-preflight.md).
+7. **Phase 8.0.4 WP-5 Work Package Stage Progression:**
+   - **WP-5A (Security Preflight):** COMPLETED / APPROVED WITH CONDITIONS.
+   - **WP-5B (Migration Prep & Backup Readiness):** **NEXT / NOT STARTED** (Read-only assessment of backup capability, migration plan, verification commands, and release checklist).
+   - **WP-5C (Production D1 Backup Execution):** BLOCKED pending WP-5B readiness and explicit owner approval.
+   - **WP-5D (Production D1 Migration 0003 Execution):** BLOCKED pending backup and explicit owner approval.
+   - **WP-5E (Production Worker Deployment & Smoke Verification):** PENDING Production D1 migration.
