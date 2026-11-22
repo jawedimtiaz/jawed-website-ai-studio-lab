@@ -8,6 +8,8 @@ import {
   dispatchHqCanonicalProjectsRequest,
   isCanonicalClientsRoute,
   dispatchHqCanonicalClientsRequest,
+  isCanonicalLeadsRoute,
+  dispatchHqCanonicalLeadsRequest,
   isCanonicalHqRoute,
   dispatchHqCanonicalRequest
 } from './hqCanonicalRouter.js';
@@ -112,6 +114,8 @@ export async function dispatchHqIntegrationBoundary(pathname, context, options =
   if (!canonicalDispatcher) {
     if (isCanonicalClientsRoute(pathname)) {
       canonicalDispatcher = options.canonicalClientsDispatcher || dispatchHqCanonicalClientsRequest;
+    } else if (isCanonicalLeadsRoute(pathname)) {
+      canonicalDispatcher = options.canonicalLeadsDispatcher || dispatchHqCanonicalLeadsRequest;
     } else {
       canonicalDispatcher = options.canonicalProjectsDispatcher || dispatchHqCanonicalProjectsRequest;
     }
