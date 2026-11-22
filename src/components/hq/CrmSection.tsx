@@ -52,6 +52,8 @@ import {
   getClientStatusDisplayLabel,
   toCanonicalClientPayload,
   normalizeClientDetailResponse,
+  buildClientQueryParams,
+  buildLeadQueryParams,
   type NormalizedClientDetailBundle
 } from '../../services/hqClientHelpers';
 
@@ -81,10 +83,21 @@ export const CrmSection: React.FC<{
             : 'customers';
 
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+
+  // Tab-scoped filter, search, and pagination state to guarantee complete isolation across CRM tabs
+  const [leadStatusFilter, setLeadStatusFilter] = useState('All');
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadPage, setLeadPage] = useState(1);
+  const [leadTotal, setLeadTotal] = useState(0);
+
+  const [clientStatusFilter, setClientStatusFilter] = useState('All');
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientPage, setClientPage] = useState(1);
+  const [clientTotal, setClientTotal] = useState(0);
+
+  const [contactSearch, setContactSearch] = useState('');
+
+  const [followUpStatusFilter, setFollowUpStatusFilter] = useState('All');
 
   const [leads, setLeads] = useState<HqLead[]>([]);
   const [clients, setClients] = useState<HqClient[]>([]);
@@ -191,39 +204,33 @@ export const CrmSection: React.FC<{
     setLoading(true);
     try {
       if (activeTab === 'leads') {
-        const params = new URLSearchParams({ page: String(page), limit: '25' });
-        if (search) params.set('q', search);
-        if (statusFilter !== 'All') {
-          if (statusFilter.toLowerCase() === 'archived') {
-            params.set('archivedOnly', 'true');
-          } else {
-            params.set('stage', statusFilter);
-          }
-        }
+        const params = buildLeadQueryParams({
+          page: leadPage,
+          limit: 25,
+          search: leadSearch,
+          stageFilter: leadStatusFilter
+        });
         const res = await hqFetch<{ leads: HqLead[]; total: number }>(`/api/hq/leads?${params.toString()}`);
         setLeads(res.leads || []);
-        setTotal(res.total || 0);
+        setLeadTotal(res.total || 0);
       } else if (activeTab === 'customers') {
-        const params = new URLSearchParams({ page: String(page), limit: '25' });
-        if (search) params.set('q', search);
-        if (statusFilter !== 'All') {
-          if (statusFilter.toLowerCase() === 'archived') {
-            params.set('archivedOnly', 'true');
-          } else {
-            params.set('status', statusFilter);
-          }
-        }
+        const params = buildClientQueryParams({
+          page: clientPage,
+          limit: 25,
+          search: clientSearch,
+          statusFilter: clientStatusFilter
+        });
         const res = await hqFetch<{ clients: HqClient[]; total: number }>(`/api/hq/clients?${params.toString()}`);
         setClients(res.clients || []);
-        setTotal(res.total || 0);
+        setClientTotal(res.total || 0);
       } else if (activeTab === 'contacts') {
         const params = new URLSearchParams();
-        if (search) params.set('q', search);
+        if (contactSearch) params.set('q', contactSearch);
         const res = await hqFetch<{ contacts: HqContact[] }>(`/api/hq/contacts?${params.toString()}`);
         setContacts(res.contacts || []);
       } else if (activeTab === 'follow-ups') {
         const params = new URLSearchParams();
-        if (statusFilter !== 'All') params.set('status', statusFilter);
+        if (followUpStatusFilter !== 'All') params.set('status', followUpStatusFilter);
         const res = await hqFetch<{ followUps: HqFollowUp[] }>(`/api/hq/follow-ups?${params.toString()}`);
         setFollowUps(res.followUps || []);
       } else if (activeTab === 'notes') {
@@ -235,13 +242,18 @@ export const CrmSection: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [activeTab, page, search, statusFilter, onToast]);
-
-  useEffect(() => {
-    setStatusFilter('All');
-    setSearch('');
-    setPage(1);
-  }, [activeTab]);
+  }, [
+    activeTab,
+    leadPage,
+    leadSearch,
+    leadStatusFilter,
+    clientPage,
+    clientSearch,
+    clientStatusFilter,
+    contactSearch,
+    followUpStatusFilter,
+    onToast
+  ]);
 
   useEffect(() => {
     loadReferenceClients();
@@ -539,16 +551,16 @@ export const CrmSection: React.FC<{
       {activeTab === 'leads' && (
         <>
           <SectionToolbar
-            searchValue={search}
+            searchValue={leadSearch}
             onSearchChange={(v) => {
-              setSearch(v);
-              setPage(1);
+              setLeadSearch(v);
+              setLeadPage(1);
             }}
             searchPlaceholder="Search leads by business, contact, email or source..."
-            filterValue={statusFilter}
+            filterValue={leadStatusFilter}
             onFilterChange={(v) => {
-              setStatusFilter(v);
-              setPage(1);
+              setLeadStatusFilter(v);
+              setLeadPage(1);
             }}
             filterOptions={LEAD_FILTER_STAGES}
             filterLabel="Stage"
@@ -685,24 +697,24 @@ export const CrmSection: React.FC<{
                   </tbody>
                 </table>
               </div>
-              {total > 25 && (
+              {leadTotal > 25 && (
                 <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
                   <span>
-                    Page {page} · {total} total leads
+                    Page {leadPage} · {leadTotal} total leads
                   </span>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={leadPage <= 1}
+                      onClick={() => setLeadPage((p) => Math.max(1, p - 1))}
                       className="px-2.5 py-1 border border-slate-200 rounded disabled:opacity-40 cursor-pointer"
                     >
                       Previous
                     </button>
                     <button
                       type="button"
-                      disabled={page * 25 >= total}
-                      onClick={() => setPage((p) => p + 1)}
+                      disabled={leadPage * 25 >= leadTotal}
+                      onClick={() => setLeadPage((p) => p + 1)}
                       className="px-2.5 py-1 border border-slate-200 rounded disabled:opacity-40 cursor-pointer"
                     >
                       Next
@@ -719,16 +731,16 @@ export const CrmSection: React.FC<{
       {activeTab === 'customers' && (
         <>
           <SectionToolbar
-            searchValue={search}
+            searchValue={clientSearch}
             onSearchChange={(v) => {
-              setSearch(v);
-              setPage(1);
+              setClientSearch(v);
+              setClientPage(1);
             }}
             searchPlaceholder="Search customers by business name, contact, email or category..."
-            filterValue={statusFilter}
+            filterValue={clientStatusFilter}
             onFilterChange={(v) => {
-              setStatusFilter(v);
-              setPage(1);
+              setClientStatusFilter(v);
+              setClientPage(1);
             }}
             filterOptions={CLIENT_FILTER_OPTIONS}
             filterLabel="Status"
@@ -855,24 +867,24 @@ export const CrmSection: React.FC<{
                   </tbody>
                 </table>
               </div>
-              {total > 25 && (
+              {clientTotal > 25 && (
                 <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
                   <span>
-                    Page {page} · {total} total customers
+                    Page {clientPage} · {clientTotal} total customers
                   </span>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={clientPage <= 1}
+                      onClick={() => setClientPage((p) => Math.max(1, p - 1))}
                       className="px-2.5 py-1 border border-slate-200 rounded disabled:opacity-40 cursor-pointer"
                     >
                       Previous
                     </button>
                     <button
                       type="button"
-                      disabled={page * 25 >= total}
-                      onClick={() => setPage((p) => p + 1)}
+                      disabled={clientPage * 25 >= clientTotal}
+                      onClick={() => setClientPage((p) => p + 1)}
                       className="px-2.5 py-1 border border-slate-200 rounded disabled:opacity-40 cursor-pointer"
                     >
                       Next
@@ -889,8 +901,8 @@ export const CrmSection: React.FC<{
       {activeTab === 'contacts' && (
         <>
           <SectionToolbar
-            searchValue={search}
-            onSearchChange={setSearch}
+            searchValue={contactSearch}
+            onSearchChange={setContactSearch}
             searchPlaceholder="Search contacts by name, email or customer..."
             primaryAction={{
               label: 'New Contact',
@@ -1000,8 +1012,8 @@ export const CrmSection: React.FC<{
       {activeTab === 'follow-ups' && (
         <>
           <SectionToolbar
-            filterValue={statusFilter}
-            onFilterChange={setStatusFilter}
+            filterValue={followUpStatusFilter}
+            onFilterChange={setFollowUpStatusFilter}
             filterOptions={FOLLOWUP_STATUSES}
             filterLabel="Status"
             primaryAction={{

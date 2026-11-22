@@ -49,6 +49,127 @@ export const CLIENT_FILTER_OPTIONS: readonly ClientFilterOption[] = [
   { value: 'archived', label: 'Archived' }
 ] as const;
 
+export const CANONICAL_LEAD_STAGES = [
+  'new',
+  'contacted',
+  'qualified',
+  'proposal-sent',
+  'converted',
+  'lost'
+] as const;
+
+export type CanonicalLeadStage = typeof CANONICAL_LEAD_STAGES[number];
+
+export const CANONICAL_LEAD_STAGE_SET = new Set<string>(CANONICAL_LEAD_STAGES);
+
+/**
+ * Sanitizes a status filter value intended for the Clients API.
+ * Guarantees that Leads-specific pipeline stages (e.g. 'converted', 'lost', 'qualified')
+ * or arbitrary invalid values can never leak into the Clients API query parameters.
+ */
+export function sanitizeClientStatusFilter(
+  filterValue: string | null | undefined
+): { status?: CanonicalClientStatus; archivedOnly?: boolean } {
+  if (!filterValue || typeof filterValue !== 'string') return {};
+  const clean = filterValue.trim().toLowerCase();
+  if (clean === 'all' || !clean) return {};
+  if (clean === 'archived') return { archivedOnly: true };
+  if (CANONICAL_CLIENT_STATUS_SET.has(clean)) {
+    return { status: clean as CanonicalClientStatus };
+  }
+  return {};
+}
+
+/**
+ * Builds safe URLSearchParams for GET /api/hq/clients.
+ * Completely immune to Leads pipeline stages or foreign statuses leaking into the query.
+ */
+export function buildClientQueryParams({
+  page = 1,
+  limit = 25,
+  search = '',
+  statusFilter = 'All'
+}: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  statusFilter?: string;
+} = {}): URLSearchParams {
+  const safePage = Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 25;
+  const params = new URLSearchParams({ page: String(safePage), limit: String(safeLimit) });
+  if (search && typeof search === 'string' && search.trim()) {
+    params.set('q', search.trim());
+  }
+  const sanitized = sanitizeClientStatusFilter(statusFilter);
+  if (sanitized.archivedOnly) {
+    params.set('archivedOnly', 'true');
+  } else if (sanitized.status) {
+    params.set('status', sanitized.status);
+  }
+  return params;
+}
+
+/**
+ * Sanitizes a stage filter value intended for the Leads API.
+ * Guarantees that Customers-specific statuses or arbitrary invalid values
+ * can never leak into the Leads API query parameters.
+ */
+export function sanitizeLeadStageFilter(
+  filterValue: string | null | undefined
+): { stage?: string; archivedOnly?: boolean } {
+  if (!filterValue || typeof filterValue !== 'string') return {};
+  const clean = filterValue.trim();
+  if (clean.toLowerCase() === 'all' || !clean) return {};
+  if (clean.toLowerCase() === 'archived') return { archivedOnly: true };
+
+  const lower = clean.toLowerCase();
+  if (CANONICAL_LEAD_STAGE_SET.has(lower)) {
+    return { stage: lower };
+  }
+  const displayMap: Record<string, string> = {
+    'new': 'new',
+    'contacted': 'contacted',
+    'qualified': 'qualified',
+    'proposal sent': 'proposal-sent',
+    'converted': 'converted',
+    'lost': 'lost'
+  };
+  if (displayMap[lower]) {
+    return { stage: clean };
+  }
+  return {};
+}
+
+/**
+ * Builds safe URLSearchParams for GET /api/hq/leads.
+ */
+export function buildLeadQueryParams({
+  page = 1,
+  limit = 25,
+  search = '',
+  stageFilter = 'All'
+}: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  stageFilter?: string;
+} = {}): URLSearchParams {
+  const safePage = Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 25;
+  const params = new URLSearchParams({ page: String(safePage), limit: String(safeLimit) });
+  if (search && typeof search === 'string' && search.trim()) {
+    params.set('q', search.trim());
+  }
+  const sanitized = sanitizeLeadStageFilter(stageFilter);
+  if (sanitized.archivedOnly) {
+    params.set('archivedOnly', 'true');
+  } else if (sanitized.stage) {
+    params.set('stage', sanitized.stage);
+  }
+  return params;
+}
+
 export interface ClientFormData {
   id?: string;
   name: string;
