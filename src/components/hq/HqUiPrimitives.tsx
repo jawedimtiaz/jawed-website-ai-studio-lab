@@ -310,7 +310,7 @@ export const SectionToolbar: React.FC<{
   searchPlaceholder?: string;
   filterValue?: string;
   onFilterChange?: (val: string) => void;
-  filterOptions?: string[];
+  filterOptions?: readonly (string | { value: string; label: string })[];
   filterLabel?: string;
   extraFilters?: React.ReactNode;
   primaryAction?: { label: string; onClick: () => void };
@@ -348,11 +348,15 @@ export const SectionToolbar: React.FC<{
           className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-md text-slate-700 focus:outline-none focus:border-blue-600"
         >
           <option value="All">All {filterLabel}</option>
-          {filterOptions.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
+          {filterOptions.map((opt) => {
+            const val = typeof opt === 'string' ? opt : opt.value;
+            const lbl = typeof opt === 'string' ? opt : opt.label;
+            return (
+              <option key={val} value={val}>
+                {lbl}
+              </option>
+            );
+          })}
         </select>
       )}
       {extraFilters}

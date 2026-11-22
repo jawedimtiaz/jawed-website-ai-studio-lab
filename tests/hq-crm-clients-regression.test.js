@@ -54,7 +54,8 @@ import {
   getClientStatusDisplayLabel,
   normalizeClientDetailResponse,
   CANONICAL_CLIENT_STATUSES,
-  SELECTABLE_CLIENT_STATUSES
+  SELECTABLE_CLIENT_STATUSES,
+  CLIENT_FILTER_OPTIONS
 } from '../src/services/hqClientHelpers.ts';
 
 class TestD1 {
@@ -784,4 +785,136 @@ test('13. Customer Detail Project Loading: empty array vs error state distinctio
   assert.deepEqual(bundleB.projects, []);
   // Error state is explicitly captured
   assert.equal(bundleB.projectsError, 'Network error: Failed to reach projects service');
+});
+
+// ---------------------------------------------------------------------------
+// 11. Phase 7.6.4: CRM Filter Toolbar Remediation (DEFECT-CRM-001)
+// ---------------------------------------------------------------------------
+
+test('14. CRM Filter Toolbar Remediation: Archived filter option, query param generation, record filtering, and restore action (Phase 7.6.4)', async () => {
+  // 1. Verify Archived option is present in CLIENT_FILTER_OPTIONS with clean label and value
+  assert.equal(CLIENT_FILTER_OPTIONS.length, 7);
+  const archivedOpt = CLIENT_FILTER_OPTIONS.find(o => o.value === 'archived');
+  assert.ok(archivedOpt, 'Archived filter option must be present in CLIENT_FILTER_OPTIONS');
+  assert.equal(archivedOpt.value, 'archived');
+  assert.equal(archivedOpt.label, 'Archived');
+
+  // Verify CANONICAL_CLIENT_STATUSES and SELECTABLE_CLIENT_STATUSES remain unchanged
+  assert.equal(CANONICAL_CLIENT_STATUSES.length, 6);
+  assert.equal(SELECTABLE_CLIENT_STATUSES.length, 6);
+  assert.equal(CANONICAL_CLIENT_STATUSES.includes('archived'), false, 'Canonical lifecycle statuses must not include archived');
+
+  // Helper simulating CrmSection loadData URLSearchParams construction
+  function buildCrmQueryParams({ page = 1, limit = 25, search = '', statusFilter = 'All' } = {}) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (search) params.set('q', search);
+    if (statusFilter !== 'All') {
+      if (statusFilter.toLowerCase() === 'archived') {
+        params.set('archivedOnly', 'true');
+      } else {
+        params.set('status', statusFilter);
+      }
+    }
+    return params;
+  }
+
+  // 2. Query param generation tests
+  // When statusFilter is 'archived' -> sends archivedOnly=true, does NOT send status=archived
+  const archivedParams = buildCrmQueryParams({ statusFilter: 'archived' });
+  assert.equal(archivedParams.get('archivedOnly'), 'true');
+  assert.equal(archivedParams.has('status'), false, 'Selecting Archived must not send status=archived');
+
+  // When statusFilter is 'All' -> sends neither archivedOnly nor status
+  const allParams = buildCrmQueryParams({ statusFilter: 'All' });
+  assert.equal(allParams.has('archivedOnly'), false);
+  assert.equal(allParams.has('status'), false);
+
+  // When statusFilter is 'prospect' -> sends status=prospect, does NOT send archivedOnly
+  const prospectParams = buildCrmQueryParams({ statusFilter: 'prospect' });
+  assert.equal(prospectParams.get('status'), 'prospect');
+  assert.equal(prospectParams.has('archivedOnly'), false);
+
+  // 3. Database integration with backend API
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare('INSERT INTO hq_users (uid, email) VALUES (?, ?)').run(ownerIdentity.uid, ownerIdentity.email);
+
+    // Active client 1 (status: lead)
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('c-active-lead', 'Active Lead Person', 'Active Lead Corp', 'lead@test.com', 'lead', ownerIdentity.uid);
+
+    // Active client 2 (status: prospect)
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('c-active-prospect', 'Active Prospect Person', 'Active Prospect Corp', 'prospect@test.com', 'prospect', ownerIdentity.uid);
+
+    // Archived client (status: prospect, archived_at set)
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, archived_at, archived_by, created_by)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+    `).run('c-archived-prospect', 'QA Automation Lead', 'QA Test Automation Ltd', 'qa.automation@example.com', 'prospect', ownerIdentity.uid, ownerIdentity.uid);
+
+    // A. Query with statusFilter='archived' (archivedOnly=true)
+    const reqArchived = makeRequest(`/api/hq/clients?${archivedParams.toString()}`);
+    const resArchived = await callAuthorized(db, reqArchived);
+    assert.equal(resArchived.status, 200);
+    const dataArchived = await resArchived.json();
+    assert.equal(dataArchived.total, 1);
+    assert.equal(dataArchived.clients.length, 1);
+    assert.equal(dataArchived.clients[0].id, 'c-archived-prospect');
+    assert.equal(dataArchived.clients[0].business_name, 'QA Test Automation Ltd');
+    // Active customers must not be shown in archived-only mode
+    assert.equal(dataArchived.clients.some(c => c.id.startsWith('c-active')), false);
+
+    // B. Query with statusFilter='All' (All Status default: active records only)
+    const reqAll = makeRequest(`/api/hq/clients?${allParams.toString()}`);
+    const resAll = await callAuthorized(db, reqAll);
+    assert.equal(resAll.status, 200);
+    const dataAll = await resAll.json();
+    assert.equal(dataAll.total, 2);
+    assert.equal(dataAll.clients.length, 2);
+    const allIds = new Set(dataAll.clients.map(c => c.id));
+    assert.ok(allIds.has('c-active-lead'));
+    assert.ok(allIds.has('c-active-prospect'));
+    assert.equal(allIds.has('c-archived-prospect'), false, 'Archived client must not appear in All Status list');
+
+    // C. Query with statusFilter='prospect' (canonical status filter)
+    const reqProspect = makeRequest(`/api/hq/clients?${prospectParams.toString()}`);
+    const resProspect = await callAuthorized(db, reqProspect);
+    assert.equal(resProspect.status, 200);
+    const dataProspect = await resProspect.json();
+    assert.equal(dataProspect.total, 1);
+    assert.equal(dataProspect.clients[0].id, 'c-active-prospect');
+    assert.equal(dataProspect.clients[0].business_name, 'Active Prospect Corp');
+
+    // 4. Action button logic verification:
+    // Helper replicating CrmSection action button logic:
+    // title={Boolean(c.archived_at) ? 'Restore Customer' : 'Archive Customer'}
+    // aria-label={Boolean(c.archived_at) ? `Restore ${c.business_name}` : `Archive ${c.business_name}`}
+    function getCustomerAction(client) {
+      const isArchived = Boolean(client.archived_at);
+      return {
+        action: isArchived ? 'restore' : 'archive',
+        title: isArchived ? 'Restore Customer' : 'Archive Customer',
+        ariaLabel: isArchived ? `Restore ${client.business_name}` : `Archive ${client.business_name}`,
+        icon: isArchived ? 'RotateCcw' : 'Archive'
+      };
+    }
+
+    const archivedAction = getCustomerAction(dataArchived.clients[0]);
+    assert.equal(archivedAction.action, 'restore');
+    assert.equal(archivedAction.title, 'Restore Customer');
+    assert.equal(archivedAction.ariaLabel, 'Restore QA Test Automation Ltd');
+    assert.equal(archivedAction.icon, 'RotateCcw');
+
+    const activeAction = getCustomerAction(dataAll.clients[0]);
+    assert.equal(activeAction.action, 'archive');
+    assert.equal(activeAction.title, 'Archive Customer');
+    assert.equal(activeAction.icon, 'Archive');
+  } finally {
+    db.close();
+  }
 });

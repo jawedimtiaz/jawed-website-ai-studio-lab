@@ -48,6 +48,7 @@ import {
 import {
   CANONICAL_CLIENT_STATUSES,
   SELECTABLE_CLIENT_STATUSES,
+  CLIENT_FILTER_OPTIONS,
   getClientStatusDisplayLabel,
   toCanonicalClientPayload,
   normalizeClientDetailResponse,
@@ -55,7 +56,7 @@ import {
 } from '../../services/hqClientHelpers';
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
-const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES];
+const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES, 'archived'];
 const FOLLOWUP_STATUSES = ['Scheduled', 'Completed', 'Cancelled'];
 
 type CustomerDetailBundle = NormalizedClientDetailBundle;
@@ -197,7 +198,7 @@ export const CrmSection: React.FC<{
         const params = new URLSearchParams({ page: String(page), limit: '25' });
         if (search) params.set('q', search);
         if (statusFilter !== 'All') {
-          if (statusFilter === 'archived') {
+          if (statusFilter.toLowerCase() === 'archived') {
             params.set('archivedOnly', 'true');
           } else {
             params.set('status', statusFilter);
@@ -717,7 +718,7 @@ export const CrmSection: React.FC<{
               setStatusFilter(v);
               setPage(1);
             }}
-            filterOptions={CLIENT_STATUSES}
+            filterOptions={CLIENT_FILTER_OPTIONS}
             filterLabel="Status"
             primaryAction={{
               label: 'New Customer',
@@ -830,6 +831,7 @@ export const CrmSection: React.FC<{
                               type="button"
                               onClick={() => handleArchiveToggle(c)}
                               title={Boolean(c.archived_at) ? 'Restore Customer' : 'Archive Customer'}
+                              aria-label={Boolean(c.archived_at) ? `Restore ${c.business_name || c.name}` : `Archive ${c.business_name || c.name}`}
                               className="p-1.5 text-slate-500 hover:text-amber-700 rounded hover:bg-amber-50 cursor-pointer"
                             >
                               {Boolean(c.archived_at) ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}

@@ -39,6 +39,16 @@ export const SELECTABLE_CLIENT_STATUSES: readonly ClientStatusOption[] = [
   { canonical: 'closed', label: 'Closed' }
 ] as const;
 
+export interface ClientFilterOption {
+  value: string;
+  label: string;
+}
+
+export const CLIENT_FILTER_OPTIONS: readonly ClientFilterOption[] = [
+  ...SELECTABLE_CLIENT_STATUSES.map((s) => ({ value: s.canonical, label: s.label })),
+  { value: 'archived', label: 'Archived' }
+] as const;
+
 export interface ClientFormData {
   id?: string;
   name: string;
