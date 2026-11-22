@@ -34,7 +34,7 @@ function validate(body,partial=false){
 }
 function routeError(error,status=400){return hqJson({ok:false,error},status);}
 async function list(request,db){
-  const u=new URL(request.url);const page=Math.max(1,Number(u.searchParams.get('page'))||1);const limit=Math.min(100,Math.max(1,Number(u.searchParams.get('limit'))||25));const q=text(u.searchParams.get('q'),100).toLowerCase();const stage=u.searchParams.get('stage')||u.searchParams.get('status')||'';
+  const u=new URL(request.url);const page=Math.max(1,Number(u.searchParams.get('page'))||1);const limit=Math.min(100,Math.max(1,Number(u.searchParams.get('limit'))||25));const q=text(u.searchParams.get('q'),100).toLowerCase();const rawStage=u.searchParams.get('stage')||u.searchParams.get('status')||'';const stage=({New:'new',Contacted:'contacted',Qualified:'qualified','Proposal Sent':'proposal-sent',Converted:'converted',Lost:'lost',All:''})[rawStage]??rawStage;
   const clauses=["lead_origin='inbound-lead'","archived_at IS NULL"];const args=[];
   if(stage&&stage!=='All'){if(!STAGES.has(stage))return routeError('INVALID_STAGE');clauses.push('pipeline_stage=?');args.push(stage);}else clauses.push("pipeline_stage NOT IN ('converted','lost')");
   if(q){clauses.push("(lower(coalesce(business_name,'')) LIKE ? OR lower(coalesce(name,'')) LIKE ? OR lower(coalesce(email,'')) LIKE ? OR lower(coalesce(phone,'')) LIKE ? OR lower(coalesce(source,'')) LIKE ?)");const p='%'+q+'%';args.push(p,p,p,p,p);}
