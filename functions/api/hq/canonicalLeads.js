@@ -85,12 +85,12 @@ async function convert(request,db,identity,id){
   if(!row)return routeError('LEAD_NOT_FOUND',404);if(row.pipeline_stage==='converted')return routeError('ALREADY_CONVERTED',409);if(row.pipeline_stage==='lost')return routeError('LOST_LEAD_CANNOT_CONVERT',409);
   const parsed=await readHqJson(request);if(!parsed.ok)return parsed.response;const body=parsed.value;
   if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['createProject','projectName'].includes(k))||(body.createProject!==undefined&&typeof body.createProject!=='boolean')||(body.projectName!==undefined&&typeof body.projectName!=='string'))return routeError('INVALID_CONVERSION_INPUT');
-  const createProject=body.createProject===true;const projectId=createProject?crypto.randomUUID():null;const now=new Date().toISOString();
+  const createProject=body.createProject===true;const projectId=createProject?crypto.randomUUID():null;const now=new Date().toISOString();const conversionToken=crypto.randomUUID();
   const projectName=text(body.projectName||((row.business_name||row.name)+' Website'),200);
   const projectCode='PRJ-'+projectId?.slice(0,8).toUpperCase();
-  const stmts=[ownerAuthorizationGuardStatement(db,identity),db.prepare("UPDATE clients SET status='active',pipeline_stage='converted',converted_at=?,conversion_token=?,lost_at=NULL,lost_reason=NULL,updated_at=?,updated_by=? WHERE id=? AND pipeline_stage<>'converted' AND archived_at IS NULL").bind(now,crypto.randomUUID(),now,identity.uid,id)];
-  if(createProject)stmts.push(db.prepare("INSERT INTO projects (id,project_code,client_id,name,project_type,status,priority,currency,quoted_amount_minor,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,'business-website','discovery','normal',?,0,?,?,?,?)").bind(projectId,projectCode,id,projectName,row.currency||'INR',identity.uid,identity.uid,now,now));
+  const stmts=[ownerAuthorizationGuardStatement(db,identity),db.prepare("UPDATE clients SET status='active',pipeline_stage='converted',converted_at=?,conversion_token=?,lost_at=NULL,lost_reason=NULL,updated_at=?,updated_by=? WHERE id=? AND pipeline_stage<>'converted' AND archived_at IS NULL").bind(now,conversionToken,now,identity.uid,id)];
   stmts.push(conditionalAuditStatement(db,identity,'lead.convert','client',id,crypto.randomUUID(),{pipeline_stage:row.pipeline_stage,status:row.status},{pipeline_stage:'converted',status:'active',projectId}));
+  if(createProject)stmts.push(db.prepare("INSERT INTO projects (id,project_code,client_id,name,project_type,status,priority,currency,quoted_amount_minor,created_by,updated_by,created_at,updated_at) SELECT ?,?,?,?,'business-website','discovery','normal',?,0,?,?,?,? WHERE EXISTS (SELECT 1 FROM clients WHERE id=? AND conversion_token=?)").bind(projectId,projectCode,id,projectName,row.currency||'INR',identity.uid,identity.uid,now,now,id,conversionToken));
   await db.batch(stmts);return hqJson({success:true,clientId:id,projectId,leadId:id},201);
 }
 export async function handleHqLeads({request,env,segments=[]}){
