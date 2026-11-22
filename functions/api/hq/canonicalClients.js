@@ -155,27 +155,65 @@ async function getClient(db, id) {
 async function listClients(request, db) {
   const url = new URL(request.url);
   const archivedOnly = url.searchParams.get('archivedOnly') === 'true';
+  const includeArchived = url.searchParams.get('includeArchived') === 'true';
   const status = url.searchParams.get('status');
   if (status && !CLIENT_STATUSES.has(status)) {
     return hqJson({ ok: false, error: 'STATUS_INVALID' }, 400);
   }
+  const q = (url.searchParams.get('q') || '').trim();
   const limitValue = Number.parseInt(url.searchParams.get('limit') || '50', 10);
-  const offsetValue = Number.parseInt(url.searchParams.get('offset') || '0', 10);
   const limit = Number.isFinite(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 50;
-  const offset = Number.isFinite(offsetValue) ? Math.min(10000, Math.max(0, offsetValue)) : 0;
-  const clauses = [archivedOnly ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL'];
+
+  // Pagination support: 1-based page or 0-based offset
+  let offset = 0;
+  let page = 1;
+  if (url.searchParams.has('offset')) {
+    const offsetValue = Number.parseInt(url.searchParams.get('offset') || '0', 10);
+    offset = Number.isFinite(offsetValue) ? Math.min(10000, Math.max(0, offsetValue)) : 0;
+    page = Math.floor(offset / limit) + 1;
+  } else if (url.searchParams.has('page')) {
+    const pageValue = Number.parseInt(url.searchParams.get('page') || '1', 10);
+    page = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1;
+    offset = (page - 1) * limit;
+  }
+
+  // Archive filter semantics:
+  // - archivedOnly=true: archived customers only (c.archived_at IS NOT NULL)
+  // - includeArchived=true: include both active and archived customers (no filter on c.archived_at)
+  // - default (neither): active/non-archived customers only (c.archived_at IS NULL)
+  // If both archivedOnly=true and includeArchived=true are present, archivedOnly takes precedence.
+  const clauses = [];
+  if (archivedOnly) {
+    clauses.push('c.archived_at IS NOT NULL');
+  } else if (!includeArchived) {
+    clauses.push('c.archived_at IS NULL');
+  }
+
   const params = [];
   if (status) {
     clauses.push('c.status = ?');
     params.push(status);
   }
+  if (q) {
+    clauses.push('(LOWER(c.name) LIKE ? OR LOWER(c.business_name) LIKE ? OR LOWER(c.email) LIKE ?)');
+    const pattern = `%${q.toLowerCase()}%`;
+    params.push(pattern, pattern, pattern);
+  }
+
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const countRow = await db.prepare(
+    `SELECT COUNT(*) AS total FROM clients c ${whereClause}`
+  ).bind(...params).first();
+  const total = Number(countRow?.total || 0);
+
   const result = await db.prepare(`SELECT c.id, c.client_code, c.name, c.business_name, c.status, c.email, c.phone, c.website_url, c.billing_address, c.source, c.updated_at, c.archived_at,
     (SELECT COUNT(*) FROM projects p WHERE p.client_id = c.id AND p.archived_at IS NULL) AS active_projects_count
     FROM clients c
-    WHERE ${clauses.join(' AND ')}
+    ${whereClause}
     ORDER BY c.updated_at DESC, c.id ASC LIMIT ? OFFSET ?`)
     .bind(...params, limit, offset).all();
-  return hqJson({ ok: true, clients: result.results || [], limit, offset });
+  return hqJson({ ok: true, clients: result.results || [], total, limit, offset, page });
 }
 
 async function createClient(request, db, identity) {

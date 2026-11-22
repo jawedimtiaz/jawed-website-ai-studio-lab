@@ -45,20 +45,20 @@ import {
   SlideOverDrawer,
   ConfirmDialog
 } from './HqUiPrimitives';
+import {
+  CANONICAL_CLIENT_STATUSES,
+  SELECTABLE_CLIENT_STATUSES,
+  getClientStatusDisplayLabel,
+  toCanonicalClientPayload,
+  normalizeClientDetailResponse,
+  type NormalizedClientDetailBundle
+} from '../../services/hqClientHelpers';
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
-const CLIENT_STATUSES = ['lead', 'onboarding', 'active', 'paused', 'completed', 'archived'];
+const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES];
 const FOLLOWUP_STATUSES = ['Scheduled', 'Completed', 'Cancelled'];
 
-interface CustomerDetailBundle {
-  client: HqClient;
-  contacts: HqContact[];
-  notes: HqNote[];
-  followUps: HqFollowUp[];
-  projects: HqProject[];
-  invoices: HqInvoice[];
-  quotations: HqQuotation[];
-}
+type CustomerDetailBundle = NormalizedClientDetailBundle;
 
 export const CrmSection: React.FC<{
   subView: HqSubView;
@@ -197,8 +197,11 @@ export const CrmSection: React.FC<{
         const params = new URLSearchParams({ page: String(page), limit: '25' });
         if (search) params.set('q', search);
         if (statusFilter !== 'All') {
-          params.set('status', statusFilter);
-          if (statusFilter === 'archived') params.set('includeArchived', 'true');
+          if (statusFilter === 'archived') {
+            params.set('archivedOnly', 'true');
+          } else {
+            params.set('status', statusFilter);
+          }
         }
         const res = await hqFetch<{ clients: HqClient[]; total: number }>(`/api/hq/clients?${params.toString()}`);
         setClients(res.clients || []);
@@ -240,8 +243,26 @@ export const CrmSection: React.FC<{
 
   const openCustomerDetail = async (clientId: string) => {
     try {
-      const res = await hqFetch<CustomerDetailBundle>(`/api/hq/clients?id=${encodeURIComponent(clientId)}`);
-      setCustomerDetail(res);
+      const clientRes = await hqFetch<{ ok?: boolean; client?: HqClient }>(
+        `/api/hq/clients/${encodeURIComponent(clientId)}`
+      );
+      let linkedProjects: HqProject[] = [];
+      let projectsError: string | null = null;
+      try {
+        const projRes = await hqFetch<{ ok?: boolean; projects?: HqProject[] }>(
+          `/api/hq/projects?clientId=${encodeURIComponent(clientId)}`
+        );
+        linkedProjects = projRes.projects || [];
+      } catch (err: any) {
+        projectsError = err.message || 'Unable to load linked projects';
+        onToast('error', `Customer loaded, but linked projects failed to load: ${projectsError}`);
+      }
+      const normalized = normalizeClientDetailResponse({
+        ...clientRes,
+        projects: linkedProjects,
+        projectsError
+      });
+      setCustomerDetail(normalized);
     } catch (err: any) {
       onToast('error', err.message || 'Failed to inspect customer record');
     }
@@ -332,38 +353,48 @@ export const CrmSection: React.FC<{
     }
     setBusy(true);
     try {
-      const payload = {
-        ...(editingClient ? { id: editingClient.id } : {}),
-        ...clientForm
-      };
-      await hqFetch('/api/hq/clients', {
-        method: editingClient ? 'PUT' : 'POST',
-        body: JSON.stringify(payload)
-      });
-      onToast('success', editingClient ? 'Customer updated' : 'Customer created');
+      const payload = toCanonicalClientPayload(clientForm, Boolean(editingClient));
+      if (editingClient) {
+        await hqFetch(`/api/hq/clients/${encodeURIComponent(editingClient.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+        onToast('success', 'Customer updated');
+      } else {
+        await hqFetch('/api/hq/clients', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        onToast('success', 'Customer created');
+      }
       setClientDrawerOpen(false);
       setEditingClient(null);
       loadReferenceClients();
       loadData();
     } catch (err: any) {
-      onToast('error', err.message || 'Failed to save customer');
+      const code = err.code && err.code !== 'API_ERROR' ? `${err.code}: ` : '';
+      onToast('error', `${code}${err.message || 'Failed to save customer'}`);
     } finally {
       setBusy(false);
     }
   };
 
   const handleArchiveToggle = async (client: HqClient) => {
-    const isArchived = client.status === 'archived' || Boolean(client.archived_at);
+    const isArchived = Boolean(client.archived_at);
     try {
-      await hqFetch('/api/hq/clients', {
-        method: 'PUT',
-        body: JSON.stringify({ id: client.id, action: isArchived ? 'restore' : 'archive' })
+      const action = isArchived ? 'restore' : 'archive';
+      await hqFetch(`/api/hq/clients/${encodeURIComponent(client.id)}/${action}`, {
+        method: 'POST'
       });
       onToast('success', isArchived ? 'Customer restored' : 'Customer archived');
       loadReferenceClients();
       loadData();
     } catch (err: any) {
-      onToast('error', err.message || 'Action failed');
+      let msg = err.message || 'Action failed';
+      if (err.message?.includes('CLIENT_HAS_ACTIVE_PROJECTS')) {
+        msg = 'Cannot archive customer: client has active unarchived projects.';
+      }
+      onToast('error', msg);
     }
   };
 
@@ -782,10 +813,10 @@ export const CrmSection: React.FC<{
                                   email: c.email || '',
                                   phone: c.phone || '',
                                   category: c.category || '',
-                                  website: c.website || '',
-                                  address: c.address || '',
+                                  website: c.website || c.website_url || '',
+                                  address: c.address || c.billing_address || '',
                                   status: c.status || 'active',
-                                  lead_source: c.lead_source || '',
+                                  lead_source: c.lead_source || c.source || '',
                                   notes: c.notes || ''
                                 });
                                 setClientDrawerOpen(true);
@@ -798,10 +829,10 @@ export const CrmSection: React.FC<{
                             <button
                               type="button"
                               onClick={() => handleArchiveToggle(c)}
-                              title={c.status === 'archived' ? 'Restore Customer' : 'Archive Customer'}
+                              title={Boolean(c.archived_at) ? 'Restore Customer' : 'Archive Customer'}
                               className="p-1.5 text-slate-500 hover:text-amber-700 rounded hover:bg-amber-50 cursor-pointer"
                             >
-                              {c.status === 'archived' ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                              {Boolean(c.archived_at) ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
                             </button>
                           </div>
                         </td>
@@ -1226,10 +1257,43 @@ export const CrmSection: React.FC<{
 
             {/* Linked Projects */}
             <div>
-              <h4 className="text-xs font-semibold uppercase text-slate-500 mb-2">
-                Projects ({customerDetail.projects.length})
-              </h4>
-              {customerDetail.projects.length === 0 ? (
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold uppercase text-slate-500">
+                  Projects {customerDetail.projectsError ? '' : `(${customerDetail.projects.length})`}
+                </h4>
+                {customerDetail.projectsError && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const projRes = await hqFetch<{ ok?: boolean; projects?: HqProject[] }>(
+                          `/api/hq/projects?clientId=${encodeURIComponent(customerDetail.client.id)}`
+                        );
+                        setCustomerDetail((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                projects: projRes.projects || [],
+                                projectsError: null
+                              }
+                            : null
+                        );
+                        onToast('success', 'Projects loaded successfully');
+                      } catch (err: any) {
+                        onToast('error', err.message || 'Retry failed');
+                      }
+                    }}
+                    className="text-xs text-amber-700 hover:underline cursor-pointer"
+                  >
+                    Retry loading
+                  </button>
+                )}
+              </div>
+              {customerDetail.projectsError ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                  <span className="font-semibold">Unable to load linked projects:</span> {customerDetail.projectsError}
+                </div>
+              ) : customerDetail.projects.length === 0 ? (
                 <p className="text-xs text-slate-500">No projects linked to this customer yet.</p>
               ) : (
                 <div className="border border-slate-200 rounded-md divide-y divide-slate-100">
@@ -1489,9 +1553,9 @@ export const CrmSection: React.FC<{
                 onChange={(e) => setClientForm({ ...clientForm, status: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md"
               >
-                {CLIENT_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
+                {SELECTABLE_CLIENT_STATUSES.map((s) => (
+                  <option key={s.canonical} value={s.canonical}>
+                    {s.label}
                   </option>
                 ))}
               </select>

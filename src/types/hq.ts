@@ -110,22 +110,28 @@ export interface HqLead {
 
 export interface HqClient {
   id: string;
+  client_code?: string;
   name: string;
   business_name: string;
-  status: 'lead' | 'onboarding' | 'active' | 'paused' | 'completed' | 'archived' | string;
+  status: 'lead' | 'prospect' | 'active' | 'paused' | 'completed' | 'closed' | string;
   email: string;
   phone: string;
-  category: string;
-  website: string;
-  address: string;
-  lead_source: string;
+  category?: string;
+  website?: string;
+  website_url?: string;
+  address?: string;
+  billing_address?: string;
+  lead_source?: string;
+  source?: string;
   notes: string;
-  last_contact_at: string;
+  last_contact_at?: string;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
   project_count?: number;
+  active_projects_count?: number;
   outstanding_minor?: number;
+  contacts?: HqContact[];
 }
 
 export interface HqContact {
