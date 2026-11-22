@@ -133,7 +133,8 @@ export const CrmSection: React.FC<{
     estimated_major: '0',
     currency: 'INR',
     next_follow_up_at: '',
-    notes: ''
+    notes: '',
+    lost_reason: ''
   });
 
   const [clientForm, setClientForm] = useState({
@@ -291,7 +292,8 @@ export const CrmSection: React.FC<{
         estimated_value_minor: parseMajorToMinor(leadForm.estimated_major),
         currency: leadForm.currency,
         next_follow_up_at: leadForm.next_follow_up_at || null,
-        notes: leadForm.notes.trim()
+        notes: leadForm.notes.trim(),
+        ...(leadForm.status === 'Lost' ? { lost_reason: leadForm.lost_reason.trim() } : {})
       };
       await hqFetch(editingLead ? `/api/hq/leads/${encodeURIComponent(editingLead.id)}` : '/api/hq/leads', {
         method: editingLead ? 'PATCH' : 'POST',
@@ -545,7 +547,8 @@ export const CrmSection: React.FC<{
                   estimated_major: '0',
                   currency: 'INR',
                   next_follow_up_at: '',
-                  notes: ''
+                  notes: '',
+                  lost_reason: ''
                 });
                 setLeadDrawerOpen(true);
               }
@@ -635,7 +638,8 @@ export const CrmSection: React.FC<{
                                   estimated_major: minorToMajorString(l.estimated_value_minor),
                                   currency: l.currency || 'INR',
                                   next_follow_up_at: l.next_follow_up_at || '',
-                                  notes: l.notes || ''
+                                  notes: l.notes || '',
+                                  lost_reason: l.lost_reason || ''
                                 });
                                 setLeadDrawerOpen(true);
                               }}
@@ -1467,6 +1471,19 @@ export const CrmSection: React.FC<{
               />
             </div>
           </div>
+          {leadForm.status === 'Lost' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Lost Reason <span className="text-red-600">*</span></label>
+              <textarea
+                rows={2}
+                required
+                value={leadForm.lost_reason}
+                onChange={(e) => setLeadForm({ ...leadForm, lost_reason: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-md"
+                placeholder="Why was this lead lost?"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
             <textarea
