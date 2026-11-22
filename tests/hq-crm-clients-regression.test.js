@@ -55,7 +55,9 @@ import {
   normalizeClientDetailResponse,
   CANONICAL_CLIENT_STATUSES,
   SELECTABLE_CLIENT_STATUSES,
-  CLIENT_FILTER_OPTIONS
+  CLIENT_FILTER_OPTIONS,
+  sanitizeClientStatusFilter,
+  buildClientQueryParams
 } from '../src/services/hqClientHelpers.ts';
 
 class TestD1 {
@@ -914,6 +916,52 @@ test('14. CRM Filter Toolbar Remediation: Archived filter option, query param ge
     assert.equal(activeAction.action, 'archive');
     assert.equal(activeAction.title, 'Archive Customer');
     assert.equal(activeAction.icon, 'Archive');
+  } finally {
+    db.close();
+  }
+});
+
+test('15. OBS-UI-001 Remediation: Client query params builder isolates Leads filters and prevents 400 STATUS_INVALID', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare('INSERT INTO hq_users (uid, email) VALUES (?, ?)').run(ownerIdentity.uid, ownerIdentity.email);
+
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES ('c-test-1', 'Active Client', 'Acme Active', 'acme@test.com', 'active', ?)
+    `).run(ownerIdentity.uid);
+
+    // 1. Direct unit verification of sanitizeClientStatusFilter
+    assert.deepEqual(sanitizeClientStatusFilter('Converted'), {});
+    assert.deepEqual(sanitizeClientStatusFilter('Lost'), {});
+    assert.deepEqual(sanitizeClientStatusFilter('Qualified'), {});
+    assert.deepEqual(sanitizeClientStatusFilter('Proposal Sent'), {});
+    assert.deepEqual(sanitizeClientStatusFilter('active'), { status: 'active' });
+    assert.deepEqual(sanitizeClientStatusFilter('archived'), { archivedOnly: true });
+    assert.deepEqual(sanitizeClientStatusFilter('All'), {});
+
+    // 2. buildClientQueryParams with Leads filters produces safe URLSearchParams
+    for (const leadFilter of ['Converted', 'Lost', 'Qualified', 'Proposal Sent', 'New', 'Contacted']) {
+      const params = buildClientQueryParams({ page: 1, limit: 25, statusFilter: leadFilter });
+      assert.equal(params.has('status'), false, `Lead filter "${leadFilter}" must never be present as status in client params`);
+      assert.equal(params.has('archivedOnly'), false);
+      assert.equal(params.get('page'), '1');
+      assert.equal(params.get('limit'), '25');
+
+      // 3. Executing this safe query against the canonical Clients API returns 200 OK
+      const req = makeRequest(`/api/hq/clients?${params.toString()}`);
+      const res = await callAuthorized(db, req);
+      assert.equal(res.status, 200, `Client query with sanitized lead filter "${leadFilter}" must return 200 OK`);
+      const data = await res.json();
+      assert.ok(Array.isArray(data.clients));
+    }
+
+    // 4. Contrast: unsanitized raw query status=Converted returns 400 STATUS_INVALID
+    const unsanitizedReq = makeRequest('/api/hq/clients?page=1&limit=25&status=Converted');
+    const unsanitizedRes = await callAuthorized(db, unsanitizedReq);
+    assert.equal(unsanitizedRes.status, 400);
+    const unsanitizedData = await unsanitizedRes.json();
+    assert.equal(unsanitizedData.error, 'STATUS_INVALID');
   } finally {
     db.close();
   }
