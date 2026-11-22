@@ -23,7 +23,7 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
 | `6274db8f03267a22114265bc5838d77edbeeb514` | Validate conversion payload |
 | `65a1e76c8559f7aa54760ddd49f29cb7f81e4723` | Conditional project creation during conversion |
 | `40cda7774fc51fd609bebe112a60da248371a993` | Boundary regression test for canonical leads |
-| `10210fe83d4864c56a108cc88c6f2016c8298e4f` | Report conversion conflicts from batch result |
+| `10210fe83d4864c56a108cc88c6f2016c8298e4f` | Report conversion conflicts from batch result |\n| `fccfc501a7fc7cde69984348b4b1c9241d4089e3` | Create primary contact atomically with inbound lead |
 
 ## Implemented (source changes committed; not yet runtime-verified)
 
@@ -31,7 +31,7 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
 - Collection `GET` and `POST`; detail `GET` and `PATCH`.
 - Lead actions: `archive`, `restore`, `convert`.
 - List/search/pagination and stage filter.
-- Lead creation uses `clients` with `lead_origin='inbound-lead'`, stage `new`, status `lead`.
+- Lead creation uses `clients` with `lead_origin='inbound-lead'`, stage `new`, status `lead`.\n- Lead creation now also creates the required primary contact in `client_contacts` in the same D1 batch, preserving legacy CRM behavior; email is normalized to lowercase.
 - Allowlisted field validation; currency and minor-unit amount validation; follow-up date validation.
 - Stage/status mapping.
 - Lost stage requires a reason; UI field appears for Lost and is required.
@@ -57,7 +57,7 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
 ## Known issues / review items (not marked complete)
 
 1. **Schema verification:** Confirm every column and constraint against the actual migration files, especially project insert columns. A schema file lookup attempted during review returned 404; this is not evidence of schema correctness.
-2. **Primary contact:** Lead create currently writes contact fields to the clients row; verify whether contacts table synchronization is required and whether existing primary-contact rules must be followed.
+2. **Primary contact:** Lead create now creates a primary `client_contacts` row atomically. Verify this against contact uniqueness and owner/client rules in runtime tests.
 3. **Lost reason clearing:** Inspect update SQL for stage transitions out of Lost and ensure `lost_reason` and `lost_at` are cleared consistently.
 4. **Update/audit consistency:** Confirm update statements, audit conditionality, and returned row semantics under D1 batch behavior.
 5. **Archive/restore:** Review idempotency, owner guard, audit behavior, and response status when no row changes.
