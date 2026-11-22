@@ -258,7 +258,7 @@ describe('2. Lead Creation & Contact Invariants', () => {
     assert.equal(contactRow.role_title, 'Primary Contact');
   });
 
-  test('returns non-blocking duplicate advisories when matching existing client', async () => {
+  test('returns non-blocking duplicate advisories when matching existing client email', async () => {
     // Insert existing customer
     db.sqlite.prepare(`
       INSERT INTO clients (id, name, business_name, email, phone, status, lead_origin, created_by)
@@ -284,6 +284,86 @@ describe('2. Lead Creation & Contact Invariants', () => {
     assert.equal(body.duplicate_advisories.length, 1);
     assert.equal(body.duplicate_advisories[0].id, 'existing-client-1');
     assert.equal(body.duplicate_advisories[0].match_type, 'email');
+  });
+
+  test('duplicate advisory correctly classifies business_name match when email and phone are null', async () => {
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, phone, status, lead_origin, created_by)
+      VALUES ('client-null-contact', 'Anil Mehta', 'Apex Innovations', NULL, NULL, 'active', 'direct-customer', ?)
+    `).run(ownerIdentity.uid);
+
+    const req = makeRequest('/api/hq/leads', {
+      method: 'POST',
+      body: {
+        business_name: 'Apex Innovations',
+        contact_name: 'Anil M'
+      }
+    });
+
+    const res = await callAuthorized(db, req);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(Array.isArray(body.duplicate_advisories));
+    assert.equal(body.duplicate_advisories.length, 1);
+    assert.equal(body.duplicate_advisories[0].id, 'client-null-contact');
+    assert.equal(body.duplicate_advisories[0].match_type, 'business_name', 'Must classify as business_name, not phone, when phones are null');
+
+    // Confirm non-blocking: distinct record created without merging
+    const clientCount = db.sqlite.prepare('SELECT COUNT(*) as count FROM clients WHERE business_name = ?').get('Apex Innovations').count;
+    assert.equal(clientCount, 2, 'Must not merge records automatically');
+  });
+
+  test('duplicate advisory correctly classifies business_name match when phone does not match', async () => {
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, phone, status, lead_origin, created_by)
+      VALUES ('client-phone-mismatch', 'Sunil Rao', 'Beta Global Tech', 'sunil@betaglobal.com', '+91 9123456780', 'active', 'direct-customer', ?)
+    `).run(ownerIdentity.uid);
+
+    const req = makeRequest('/api/hq/leads', {
+      method: 'POST',
+      body: {
+        business_name: 'Beta Global Tech',
+        contact_name: 'Sunil R',
+        email: 'other@different.com',
+        phone: '+91 9999900000'
+      }
+    });
+
+    const res = await callAuthorized(db, req);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(Array.isArray(body.duplicate_advisories));
+    assert.equal(body.duplicate_advisories.length, 1);
+    assert.equal(body.duplicate_advisories[0].id, 'client-phone-mismatch');
+    assert.equal(body.duplicate_advisories[0].match_type, 'business_name', 'Must classify as business_name when phone differs');
+  });
+
+  test('duplicate advisory correctly classifies phone match when phone matches but email and business_name differ', async () => {
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, phone, status, lead_origin, created_by)
+      VALUES ('client-phone-match', 'Karan Varma', 'Gamma Solutions', 'karan@gamma.com', '+91 9888877777', 'active', 'direct-customer', ?)
+    `).run(ownerIdentity.uid);
+
+    const req = makeRequest('/api/hq/leads', {
+      method: 'POST',
+      body: {
+        business_name: 'Different Gamma Entity',
+        contact_name: 'Karan V',
+        email: 'karan@differententity.com',
+        phone: '+91 9888877777'
+      }
+    });
+
+    const res = await callAuthorized(db, req);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.ok(Array.isArray(body.duplicate_advisories));
+    assert.equal(body.duplicate_advisories.length, 1);
+    assert.equal(body.duplicate_advisories[0].id, 'client-phone-match');
+    assert.equal(body.duplicate_advisories[0].match_type, 'phone', 'Must classify as phone when phone matches');
   });
 });
 
@@ -853,6 +933,71 @@ describe('6. Lead Conversion to Customer & Project Creation', () => {
     assert.equal(res.status, 400);
     const body = await res.json();
     assert.equal(body.error.code, 'INVALID_CONVERSION_INPUT');
+  });
+
+  test('rejects conversion with 409 LOST_LEAD_CANNOT_CONVERT when lead transitions to lost concurrently between lookup and batch UPDATE', async () => {
+    const originalBatch = db.batch.bind(db);
+    db.batch = function(statements) {
+      // Intercept execution right before batch: simulate concurrent mark-as-lost
+      db.sqlite.prepare(`
+        UPDATE clients
+        SET pipeline_stage = 'lost', status = 'closed', lost_reason = 'Competitor selected during concurrent race', lost_at = ?
+        WHERE id = ?
+      `).run(new Date().toISOString(), testLeadId);
+      return originalBatch(statements);
+    };
+
+    const convRes = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/convert`, {
+      method: 'POST',
+      body: { createProject: true, projectName: 'Orphaned Project Should Not Exist' }
+    }), [testLeadId, 'convert']);
+
+    assert.equal(convRes.status, 409);
+    const body = await convRes.json();
+    assert.equal(body.error.code, 'LOST_LEAD_CANNOT_CONVERT');
+
+    // Confirm database atomicity: zero projects created
+    const projectsCount = db.sqlite.prepare('SELECT COUNT(*) as count FROM projects WHERE client_id = ?').get(testLeadId).count;
+    assert.equal(projectsCount, 0, 'No project should be created when conversion predicate rejects lead');
+
+    // Confirm database atomicity: zero conversion audit logs written
+    const auditCount = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.convert'").get(testLeadId).count;
+    assert.equal(auditCount, 0, 'No conversion audit log should be written when conversion predicate fails');
+
+    // Confirm client remains in lost stage
+    const client = db.sqlite.prepare('SELECT * FROM clients WHERE id = ?').get(testLeadId);
+    assert.equal(client.pipeline_stage, 'lost');
+    assert.equal(client.status, 'closed');
+  });
+
+  test('rejects repeated/concurrent conversion with 409 LEAD_ALREADY_CONVERTED when converted between lookup and batch UPDATE', async () => {
+    const originalBatch = db.batch.bind(db);
+    db.batch = function(statements) {
+      // Intercept execution right before batch: simulate concurrent conversion by another worker
+      db.sqlite.prepare(`
+        UPDATE clients
+        SET pipeline_stage = 'converted', status = 'active', converted_at = ?, conversion_token = ?
+        WHERE id = ?
+      `).run(new Date().toISOString(), crypto.randomUUID(), testLeadId);
+      return originalBatch(statements);
+    };
+
+    const convRes = await callAuthorized(db, makeRequest(`/api/hq/leads/${testLeadId}/convert`, {
+      method: 'POST',
+      body: { createProject: true, projectName: 'Second Duplicate Project' }
+    }), [testLeadId, 'convert']);
+
+    assert.equal(convRes.status, 409);
+    const body = await convRes.json();
+    assert.equal(body.error.code, 'LEAD_ALREADY_CONVERTED');
+
+    // Confirm rejected call did not insert a second project
+    const projectsCount = db.sqlite.prepare('SELECT COUNT(*) as count FROM projects WHERE client_id = ?').get(testLeadId).count;
+    assert.equal(projectsCount, 0);
+
+    // Confirm rejected call did not insert audit log
+    const auditCount = db.sqlite.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE entity_id = ? AND action = 'lead.convert'").get(testLeadId).count;
+    assert.equal(auditCount, 0);
   });
 });
 

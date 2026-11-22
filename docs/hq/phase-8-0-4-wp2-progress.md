@@ -71,15 +71,21 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
 14. **Project Code Entropy on Conversion:**
     - *Defect:* Project code derived 8 hex characters (`PRJ-[0-9A-F]{8}`) from `projectId`.
     - *Remediation:* Increased entropy to 12 hex characters (`PRJ-[0-9A-F]{12}`), expanding collision resistance to ~2.81e14 combinations while maintaining deterministic generation from `projectId`.
+15. **Conversion Concurrency & Terminal Predicate Guard (PR #66 Review):**
+    - *Defect:* `UPDATE clients` predicate only excluded `pipeline_stage <> 'converted'`. A concurrent transition to `lost` between initial lookup and batch execution could have permitted conversion.
+    - *Remediation:* Changed UPDATE predicate to `WHERE id = ? AND pipeline_stage NOT IN ('converted', 'lost') AND archived_at IS NULL`. Added post-batch inspection returning 409 `LOST_LEAD_CANNOT_CONVERT` if concurrently marked lost, or 409 `LEAD_ALREADY_CONVERTED`. Added simulated concurrency regression tests.
+16. **Duplicate Advisory Match Classification (PR #66 Review):**
+    - *Defect:* `match_type` ternary evaluated `r.phone === phone`, which evaluated to `true` when both phone values were `null`, incorrectly classifying business-name matches as phone matches.
+    - *Remediation:* Refactored to explicitly check non-empty matching: `Boolean(email && r.email && r.email.toLowerCase() === email.toLowerCase())` for email, `Boolean(phone && r.phone && r.phone === phone)` for phone, falling back to `business_name`. Added regression tests for all 4 match variations.
 
 ## Verification & QA Evidence
 
 - **TypeScript Compilation:**
   - `npm.cmd run lint` (`tsc --noEmit`): PASSED (0 errors).
 - **Production Build:**
-  - `npm.cmd run build`: PASSED (Built in 12.72s, 17 SPA tool entry points generated, dist/ prepared).
+  - `npm.cmd run build`: PASSED (Built in 9.37s, 17 SPA tool entry points generated, dist/ prepared).
 - **Targeted WP-2 Tests:**
-  - `node --test tests/hq-canonical-leads.test.js`: 38/38 tests PASSED (+8 targeted remediation tests).
+  - `node --test tests/hq-canonical-leads.test.js`: 43/43 tests PASSED (+5 targeted remediation tests).
   - `node --test tests/hq-canonical-leads-router.test.js`: 5/5 tests PASSED.
   - `node --test tests/hq-integration-boundary.test.js`: 12/12 tests PASSED.
   - `node --test tests/hq-migration-0003.test.js`: 9/9 tests PASSED.
@@ -92,13 +98,13 @@ WP-1 schema work was merged previously. WP-2 implements the canonical Leads API 
   - `tests/hq-canonical-clients.test.js` (8/8 tests PASSED)
   - `tests/hq-canonical-projects.test.js` (7/7 tests PASSED)
 - **Core Suite Total:**
-  - Total: 145/145 tests PASSED (0 failures, duration 2.71s).
+  - Total: 150/150 tests PASSED (0 failures, duration 2.25s).
 - **Broader Suite (19 test files):**
-  - Total: 276/276 tests PASSED (0 failures, 0 regressions).
+  - Total: 281/281 tests PASSED (0 failures, 0 regressions).
   - Note on `tests/studio-hq-api.test.js`: Diagnosed as legacy Phase 3Y tests querying old pre-canonical endpoint expecting non-canonical column names (`name` instead of `full_name` in `client_contacts`); not part of WP-2, left unmodified per safety rules.
 
 ## PR Readiness Assessment
 
-- **Ready for Review / Draft PR:** YES.
-- All approved targeted remediation items, audit sequencing, archive/restore response flags, primary contact fallback, and regression test suites are complete and locally verified with passing execution evidence.
+- **Ready for Review / Draft PR:** YES (PR #66 Review Remediation Complete).
+- All PR #66 code review findings (conversion race condition terminal state exclusion and duplicate advisory phone/null match classification) are resolved and locally verified with passing execution evidence.
 - No merge, deploy, or remote database operations performed.

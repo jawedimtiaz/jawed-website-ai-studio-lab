@@ -278,13 +278,18 @@ async function create(request, db, identity) {
       LIMIT 5
     `).bind(email, email, phone, phone, f.business_name).all();
     if (dupCheck?.results?.length) {
-      duplicateAdvisories = dupCheck.results.map(r => ({
-        id: r.id,
-        name: r.name,
-        business_name: r.business_name,
-        pipeline_stage: r.pipeline_stage,
-        match_type: r.email && r.email.toLowerCase() === email ? 'email' : (r.phone === phone ? 'phone' : 'business_name')
-      }));
+      duplicateAdvisories = dupCheck.results.map(r => {
+        const isEmailMatch = Boolean(email && r.email && r.email.toLowerCase() === email.toLowerCase());
+        const isPhoneMatch = Boolean(phone && r.phone && r.phone === phone);
+        const match_type = isEmailMatch ? 'email' : (isPhoneMatch ? 'phone' : 'business_name');
+        return {
+          id: r.id,
+          name: r.name,
+          business_name: r.business_name,
+          pipeline_stage: r.pipeline_stage,
+          match_type
+        };
+      });
     }
   } catch {
     // Non-fatal advisory check
@@ -536,7 +541,7 @@ async function convert(request, db, identity, id) {
           lost_reason = NULL,
           updated_at = ?,
           updated_by = ?
-      WHERE id = ? AND pipeline_stage <> 'converted' AND archived_at IS NULL
+      WHERE id = ? AND pipeline_stage NOT IN ('converted', 'lost') AND archived_at IS NULL
     `).bind(now, conversionToken, now, identity.uid, id)
   ];
 
@@ -566,6 +571,10 @@ async function convert(request, db, identity, id) {
 
   const results = await db.batch(stmts);
   if (!results?.[1]?.meta?.changes) {
+    const latest = await db.prepare('SELECT pipeline_stage FROM clients WHERE id = ?').bind(id).first();
+    if (latest?.pipeline_stage === 'lost') {
+      return routeError('LOST_LEAD_CANNOT_CONVERT', 409);
+    }
     return routeError('LEAD_ALREADY_CONVERTED', 409);
   }
 
