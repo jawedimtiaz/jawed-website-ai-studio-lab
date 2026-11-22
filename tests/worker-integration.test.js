@@ -106,8 +106,8 @@ test('5. Unknown canonical projects subroute returns controlled 404', async () =
 });
 
 test('6. Approved legacy route reaches legacy dispatcher', async () => {
-  // Unauthenticated request to /api/hq/leads reaches legacy leads handler, which returns 401
-  const req = new Request(`${TEST_ORIGIN}/api/hq/leads`, {
+  // Unauthenticated request to /api/hq/overview reaches legacy overview handler, which returns 401
+  const req = new Request(`${TEST_ORIGIN}/api/hq/overview`, {
     method: 'GET',
     headers: { origin: TEST_ORIGIN }
   });
@@ -119,6 +119,20 @@ test('6. Approved legacy route reaches legacy dispatcher', async () => {
   assert.equal(data.success, false);
   assert.equal(data.error?.code, 'UNAUTHORIZED');
   // Confirm security headers were attached
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+});
+
+test('6c. Canonical leads request without authentication returns 401 AUTH_REQUIRED', async () => {
+  const req = new Request(`${TEST_ORIGIN}/api/hq/leads`, {
+    method: 'GET',
+    headers: { origin: TEST_ORIGIN }
+  });
+  const res = await worker.fetch(req, createMockEnv(), mockCtx);
+
+  assert.equal(res.status, 401);
+  const data = await res.json();
+  assert.equal(data.ok, false);
+  assert.equal(data.error, 'AUTH_REQUIRED');
   assert.equal(res.headers.get('x-frame-options'), 'DENY');
 });
 

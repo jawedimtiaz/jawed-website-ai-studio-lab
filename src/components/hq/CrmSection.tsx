@@ -56,7 +56,8 @@ import {
 } from '../../services/hqClientHelpers';
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Converted', 'Lost'];
-const leadStageForStatus = (status: string) => ({ New: 'new', Contacted: 'contacted', Qualified: 'qualified', 'Proposal Sent': 'proposal-sent', Lost: 'lost' } as Record<string, string>)[status] || 'new';
+const LEAD_FILTER_STAGES = [...LEAD_STATUSES, 'Archived'];
+const leadStageForStatus = (status: string) => ({ New: 'new', Contacted: 'contacted', Qualified: 'qualified', 'Proposal Sent': 'proposal-sent', Converted: 'converted', Lost: 'lost' } as Record<string, string>)[status] || 'new';
 const CLIENT_STATUSES = [...CANONICAL_CLIENT_STATUSES, 'archived'];
 const FOLLOWUP_STATUSES = ['Scheduled', 'Completed', 'Cancelled'];
 
@@ -192,7 +193,13 @@ export const CrmSection: React.FC<{
       if (activeTab === 'leads') {
         const params = new URLSearchParams({ page: String(page), limit: '25' });
         if (search) params.set('q', search);
-        if (statusFilter !== 'All') params.set('status', statusFilter);
+        if (statusFilter !== 'All') {
+          if (statusFilter.toLowerCase() === 'archived') {
+            params.set('archivedOnly', 'true');
+          } else {
+            params.set('stage', statusFilter);
+          }
+        }
         const res = await hqFetch<{ leads: HqLead[]; total: number }>(`/api/hq/leads?${params.toString()}`);
         setLeads(res.leads || []);
         setTotal(res.total || 0);
@@ -342,6 +349,20 @@ export const CrmSection: React.FC<{
       onToast('error', err.message || 'Conversion failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleLeadArchiveToggle = async (lead: HqLead) => {
+    const isArchived = Boolean(lead.archived_at);
+    try {
+      const action = isArchived ? 'restore' : 'archive';
+      await hqFetch(`/api/hq/leads/${encodeURIComponent(lead.id)}/${action}`, {
+        method: 'POST'
+      });
+      onToast('success', isArchived ? 'Lead restored' : 'Lead archived');
+      loadData();
+    } catch (err: any) {
+      onToast('error', err.message || 'Action failed');
     }
   };
 
@@ -529,7 +550,7 @@ export const CrmSection: React.FC<{
               setStatusFilter(v);
               setPage(1);
             }}
-            filterOptions={LEAD_STATUSES}
+            filterOptions={LEAD_FILTER_STAGES}
             filterLabel="Stage"
             primaryAction={{
               label: 'New Lead',
@@ -650,23 +671,12 @@ export const CrmSection: React.FC<{
                             </button>
                             <button
                               type="button"
-                              onClick={() =>
-                                setConfirmState({
-                                  open: true,
-                                  title: 'Delete lead?',
-                                  description: `Permanently delete ${l.business_name}? This cannot be undone.`,
-                                  destructive: true,
-                                  onConfirm: async () => {
-                                    await hqFetch(`/api/hq/leads?id=${encodeURIComponent(l.id)}`, { method: 'DELETE' });
-                                    onToast('success', 'Lead deleted');
-                                    loadData();
-                                  }
-                                })
-                              }
-                              aria-label={`Delete ${l.business_name}`}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
+                              onClick={() => handleLeadArchiveToggle(l)}
+                              title={Boolean(l.archived_at) ? 'Restore Lead' : 'Archive Lead'}
+                              aria-label={Boolean(l.archived_at) ? `Restore ${l.business_name}` : `Archive ${l.business_name}`}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {Boolean(l.archived_at) ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
                             </button>
                           </div>
                         </td>

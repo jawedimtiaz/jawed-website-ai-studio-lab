@@ -145,7 +145,7 @@ test('4. Existing approved legacy route reaches legacy router and bypasses canon
     });
   };
 
-  const pathname = '/api/hq/leads';
+  const pathname = '/api/hq/overview';
   const context = { request: createRequest(pathname), env: { ENVIRONMENT: 'test' } };
 
   const res = await dispatchHqIntegrationBoundary(pathname, context, {
@@ -269,7 +269,7 @@ test('7. Query strings do not change route classification or boundary security',
 
   // C. Legacy route with query string
   canonicalCalled = false; legacyCalled = false;
-  const pathLegacyQuery = '/api/hq/leads?limit=25&offset=50';
+  const pathLegacyQuery = '/api/hq/overview?limit=25&offset=50';
   await dispatchHqIntegrationBoundary(pathLegacyQuery, { request: createRequest(pathLegacyQuery), env: {} }, {
     canonicalProjectsDispatcher: mockCanonical, legacyRouter: mockLegacy
   });

@@ -424,33 +424,84 @@ export async function dispatchHqCanonicalClientsRequest(pathname, context) {
 export function isCanonicalLeadsRoute(pathname) {
   if (typeof pathname !== 'string') return false;
   const clean = pathname.split('?')[0];
-  return clean === CANONICAL_LEADS_BASE || clean === `${CANONICAL_LEADS_BASE}/` || clean.startsWith(`${CANONICAL_LEADS_BASE}/`);
+  return clean === CANONICAL_LEADS_BASE ||
+         clean === `${CANONICAL_LEADS_BASE}/` ||
+         clean.startsWith(`${CANONICAL_LEADS_BASE}/`);
 }
+
 export function matchCanonicalLeadRoute(pathname) {
   if (!isCanonicalLeadsRoute(pathname)) return { matched: false };
   const clean = pathname.split('?')[0];
-  const normalized = clean.length > 1 && clean.endsWith('/') ? clean.slice(0,-1) : clean;
-  const segments = normalized.length > CANONICAL_LEADS_BASE.length ? normalized.slice(CANONICAL_LEADS_BASE.length+1).split('/') : [];
-  if (!segments.length) return { matched:true, segments:[], allowedMethods:['GET','POST','OPTIONS'], allowHeader:'GET, POST, OPTIONS' };
-  const [id,action] = segments;
-  if (!id || id.length>80) return { matched:true,error:'LEAD_NOT_FOUND',status:404 };
-  if (segments.length===1) return { matched:true,segments:[id],allowedMethods:['GET','PATCH','OPTIONS'],allowHeader:'GET, PATCH, OPTIONS' };
-  if (segments.length===2 && ['archive','restore','convert'].includes(action)) return { matched:true,segments:[id,action],allowedMethods:['POST','OPTIONS'],allowHeader:'POST, OPTIONS' };
-  return { matched:true,error:'NOT_FOUND',status:404 };
+  const normalized = clean.length > 1 && clean.endsWith('/') ? clean.slice(0, -1) : clean;
+  const segments = normalized.length > CANONICAL_LEADS_BASE.length
+    ? normalized.slice(CANONICAL_LEADS_BASE.length + 1).split('/')
+    : [];
+
+  if (!segments.length) {
+    return {
+      matched: true,
+      route: 'leads.collection',
+      segments: [],
+      allowedMethods: ['GET', 'POST', 'OPTIONS'],
+      allowHeader: 'GET, POST, OPTIONS'
+    };
+  }
+
+  if (segments.some(s => !s)) {
+    return { matched: true, error: 'NOT_FOUND', status: 404 };
+  }
+
+  const [id, action] = segments;
+  if (!id || id.length > 80) {
+    return { matched: true, error: 'LEAD_NOT_FOUND', status: 404 };
+  }
+
+  if (segments.length === 1) {
+    return {
+      matched: true,
+      route: 'leads.detail',
+      segments: [id],
+      allowedMethods: ['GET', 'PATCH', 'OPTIONS'],
+      allowHeader: 'GET, PATCH, OPTIONS'
+    };
+  }
+
+  if (segments.length === 2 && ['archive', 'restore', 'convert'].includes(action)) {
+    return {
+      matched: true,
+      route: `leads.${action}`,
+      segments: [id, action],
+      allowedMethods: ['POST', 'OPTIONS'],
+      allowHeader: 'POST, OPTIONS'
+    };
+  }
+
+  return { matched: true, error: 'NOT_FOUND', status: 404 };
 }
+
 export async function dispatchHqCanonicalLeadsRequest(pathname, context) {
   if (!isCanonicalLeadsRoute(pathname)) return null;
-  const {request,env}=context||{};
-  const match=matchCanonicalLeadRoute(pathname);
-  if(match.error) return hqJson({ok:false,error:match.error},match.status||404);
-  const method=(request?.method||'GET').toUpperCase();
-  if(method==='OPTIONS'){
-    if(!isHqSameOrigin(request)) return hqJson({ok:false,error:'ORIGIN_NOT_ALLOWED'},403);
-    const limit=await checkHqRateLimit(request,env,{type:'general'});if(!limit.ok)return limit.response;
-    return new Response(null,{status:204,headers:{...HQ_JSON_HEADERS,allow:match.allowHeader}});
+  const { request, env } = context || {};
+  const match = matchCanonicalLeadRoute(pathname);
+  if (match.error) {
+    return hqJson({ ok: false, error: match.error }, match.status || 404);
   }
-  if(!match.allowedMethods.includes(method)) return hqJson({ok:false,error:'METHOD_NOT_ALLOWED'},405,{allow:match.allowHeader});
-  return handleHqLeads({request,env,segments:match.segments});
+  const method = (request?.method || 'GET').toUpperCase();
+  if (method === 'OPTIONS') {
+    if (!isHqSameOrigin(request)) {
+      return hqJson({ ok: false, error: 'ORIGIN_NOT_ALLOWED' }, 403);
+    }
+    const limit = await checkHqRateLimit(request, env, { type: 'general' });
+    if (!limit.ok) return limit.response;
+    return new Response(null, {
+      status: 204,
+      headers: { ...HQ_JSON_HEADERS, allow: match.allowHeader }
+    });
+  }
+  if (!match.allowedMethods.includes(method)) {
+    return hqJson({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405, { allow: match.allowHeader });
+  }
+  return handleHqLeads({ request, env, segments: match.segments });
 }
 
 /**
