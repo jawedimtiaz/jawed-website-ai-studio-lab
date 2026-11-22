@@ -500,5 +500,71 @@ Following initial deployment of Studio HQ, an HTTP 400 Bad Request error occurre
 - **Database:** `HQ_DB` (`jawed-studio-hq` / `d9ec83ea-7114-4179-af8e-a22ba5494508`)
 
 ### Pending Enhancements & Next Action
-1. **Review & Merge Documentation PR:** Review and merge the dedicated documentation branch for Phase 7.8.
-2. **Next Recommended Milestone:** Phase 8.0 — Lead Management & Pipeline Remediation (or Financial Invoices/Quotations integration), with optional phone search polish (OBS-CRM-001).
+1. **Review & Merge Documentation PR:** Review and merge the dedicated documentation branch for Phase 7.8. (Completed)
+2. **Next Milestone:** Proceeded to Phase 8.0.4 — Lead Management & Pipeline Remediation (see Section 17).
+
+---
+
+## 17. Phase 8.0.4 Lead Management & Pipeline Milestone Record — 22 November 2026
+
+### Work Package Progression Summary
+
+Phase 8.0.4 introduces canonical Lead Management and Pipeline Tracking into Studio HQ on the unified `clients` table schema, supporting pipeline stages (`new`, `contacted`, `qualified`, `proposal-sent`, `converted`, `lost`), lead qualification, lost reason tracking, duplicate advisory detection, and conversion to customer with optional project creation.
+
+| Work Package | Scope & Objective | Deliverables | Status | Lineage & Deployment Evidence |
+|---|---|---|:---:|---|
+| **WP-1** | Lead Pipeline Schema & Migration | Migration `0003_leads_pipeline.sql` + automated tests | **COMPLETED** | Merged in PR #65 (`87517bac25f778d91cff3fc8e0303fcb5be7bf09`) |
+| **WP-2** | Canonical Leads API Implementation | `functions/api/hq/canonicalLeads.js`, router, 43+ tests | **COMPLETED** | Merged in PR #66 (`6684682197b345ebd4216d0ea8158b7d0e3e57e4`) |
+| **WP-2 D1** | Preview D1 Database Migration | Apply migration 0003 to preview database | **APPLIED** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) |
+| **WP-2 Worker** | Initial Preview Deployment | Deploy merged commit `66846821` to preview worker | **DEPLOYED** | Version `b199901e-fd7d-4487-9948-ee0ac5a627a7` |
+| **Defect OBS-UI-001** | CRM Tab Filter Leakage Remediation | Fix filter state leakage between Leads & Customers | **RESOLVED** | Remediated in PR #67; merged at `7dd22a5c4080faa67901b2f024beee383e538639` |
+| **WP-3** | Preview Deployment of PR #67 | Deploy merged commit `7dd22a5c` to preview worker | **DEPLOYED** | Version `a50fd458-3cb8-4f4f-98eb-ead5fd19f0db` (100% preview traffic) |
+| **WP-4** | CRM Regression Verification | 9-scenario browser regression suite (OBS-UI-001) | **COMPLETED / PASS / CLOSED** | 9/9 TC PASS; zero HTTP 400 errors; zero toasts; zero console errors |
+| **WP-5** | Production Migration & Cutover | Apply migration 0003 to prod D1; deploy prod worker | **PENDING** | Next planned work package |
+
+### Defect OBS-UI-001 Remediation Summary (PR #67)
+- **Defect:** Navigating from Leads tab (e.g. `status=Converted` or `status=Lost`) to Customers tab temporarily leaked `status=Converted` into `GET /api/hq/clients`, causing transient HTTP 400 `STATUS_INVALID` toasts before resetting to "All".
+- **Root Cause:** A single shared `statusFilter` React state variable in `src/components/hq/CrmSection.tsx` was reused across both Leads and Customers views.
+- **Remediation:**
+  1. Decomposed shared filter state into tab-scoped states: `leadStatusFilter`, `clientStatusFilter`, `followUpStatusFilter`.
+  2. Implemented dedicated query builders (`buildClientQueryParams`, `buildLeadQueryParams`) in `src/services/hqClientHelpers.ts`.
+  3. Added query sanitizers (`sanitizeClientStatusFilter`, `sanitizeLeadStageFilter`) and canonical stage normalization (`LEAD_DISPLAY_TO_CANONICAL_STAGE_MAP`), mapping display label `"Proposal Sent"` to canonical slug `"proposal-sent"`.
+- **Merge Commit:** `7dd22a5c4080faa67901b2f024beee383e538639` on `main`.
+
+### WP-4 QA Regression Verification Results (22 November 2026)
+- **Test Environment:** Headless Chromium via Playwright (1280x800) against `https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev/studio-hq`.
+- **Authentication:** Authenticated D1 Preview owner session (`jawedimtiaz@gmail.com`).
+- **Test Execution:** All 9 test cases passed:
+  - `TC-01` Converted Leads → Customers isolation: **PASS**
+  - `TC-02` Lost Leads → Customers isolation: **PASS**
+  - `TC-03` Qualified Leads → Customers isolation: **PASS**
+  - `TC-04` Customers filter isolation: **PASS**
+  - `TC-05` Contacts regression: **PASS**
+  - `TC-06` Follow-ups regression: **PASS**
+  - `TC-07` Projects regression: **PASS**
+  - `TC-08` Rapid tab-switching (Leads → Customers → Leads → Customers): **PASS**
+  - `TC-09` Filter reset and navigation: **PASS**
+- **Network Validation:** Zero HTTP 400 responses, zero `STATUS_INVALID` errors, clean query strings observed across all tab transitions. Canonical mapping `Proposal Sent` → `proposal-sent` verified on live wire.
+- **Console & UI Validation:** Zero JavaScript/React errors, zero unhandled promise rejections, zero error toasts.
+- **Full QA Acceptance Record:** Documented in [Phase 8.0.4 WP-4 QA Acceptance Record](hq/phase-8-0-4-wp4-acceptance.md).
+
+### Dual-Environment Operational Status
+
+| Parameter | Preview Environment | Production Environment |
+|---|---|---|
+| **Worker Name** | `jawed-website-ai-studio-lab-preview` | `jawed-website-ai-studio-lab` |
+| **Worker Host** | `jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev` | `lab.jawed.co.in` |
+| **Active Version ID** | `a50fd458-3cb8-4f4f-98eb-ead5fd19f0db` | `5ac4bbbf-69cf-436d-bf9d-9670e4478d66` |
+| **Active Git Commit** | `7dd22a5c4080faa67901b2f024beee383e538639` (PR #67) | `7069c33822bea74815719ba36f616df223fcbc10` (PR #63) |
+| **D1 Database** | `jawed-studio-hq-preview` (`623a828d-...`) | `jawed-studio-hq` (`d9ec83ea-...`) |
+| **Migration 0003 Status** | **APPLIED & VERIFIED** | **PENDING** (Untouched) |
+| **Phase 8.0.4 Status** | Fully Deployed & Verified (WP-1 to WP-4) | Stable Phase 7.8 Baseline |
+
+### Next Planned Action (Roadmap Handover)
+**Phase 8.0.4 — WP-5: Production Cutover & Deployment**
+1. Apply migration `migrations/hq/0003_leads_pipeline.sql` to the Production D1 database (`jawed-studio-hq`, ID `d9ec83ea-7114-4179-af8e-a22ba5494508`):
+   ```bash
+   npx wrangler d1 migrations apply jawed-studio-hq --remote
+   ```
+2. Deploy the latest verified `main` commit (`7dd22a5c4080faa67901b2f024beee383e538639`) to Production Cloudflare Worker `jawed-website-ai-studio-lab`.
+3. Perform live production post-deployment smoke verification at `https://lab.jawed.co.in/studio-hq`.
