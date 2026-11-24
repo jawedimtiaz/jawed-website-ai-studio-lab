@@ -591,28 +591,39 @@ The audit evaluated all authentication paths, owner bootstrap controls, Firebase
 | **Production Target Host** | `https://lab.jawed.co.in/` | Custom Domain routing |
 | **Production Active Version ID** | **`c707cc3a-5a76-411c-b227-94811ef5f10d`** (100% traffic) | Cloudflare deployment event |
 | **Production Standby Rollback Version** | `5ac4bbbf-69cf-436d-bf9d-9670e4478d66` | Instant Worker rollback target |
-| **Active Production Source Commit** | [`7dd22a5c4080faa67901b2f024beee383e538639`](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/commit/7dd22a5c4080faa67901b2f024beee383e538639) | Git `main` commit |
+| **Active Production Source Commit** | [`7dd22a5c4080faa67901b2f024beee383e538639`](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/commit/7dd22a5c4080faa67901b2f024beee383e538639) | Git commit running live in Production |
+| **Latest Main Branch Commit** | [`0782b5d5e7f1f2bd5c6bfd7e27835a9b4e29d8b0`](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/commit/0782b5d5e7f1f2bd5c6bfd7e27835a9b4e29d8b0) | PR #75 merged into `main` |
+| **Production Deployment vs Main** | **UNDEPLOYED** (Production Worker strictly NOT running `0782b5d5`) | Release gate standing by for owner authorization |
 | **Production D1 Database Name** | `jawed-studio-hq` | `wrangler.jsonc` binding `HQ_DB` |
 | **Production D1 Database ID** | `d9ec83ea-7114-4179-af8e-a22ba5494508` | Cloudflare D1 identity |
 | **Production Migration Status** | **0001, 0002, 0003 APPLIED** (0 pending) | Verified via `d1_migrations` |
 | **Pre-Migration Backup File** | `jawed-studio-hq-pre-0003-20261122-232627.sql` | Size: 32,167 bytes |
 | **Pre-Migration Backup SHA-256** | `1D74EF2F99DFEA2000EDF0BFF4266C89204303D10BB2AF5AA91B58141B410BA9` | Verified checksum match |
 | **Pre-Migration Time Travel Bookmark**| `00000073-00000000-0000512b-e5e8c4f8ff638d5877932d998632a5c1` | Cloudflare WAL snapshot |
-| **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `a50fd458`) | Functional test environment (`workers.dev`) |
-| **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) | Contains 1 soft-archived test record `PH805B-TEST-001` (5 clients, 2 projects, 4 contacts) |
-| **Phase 8.0.5 Acceptance Status** | **8.0.5A COMPLETE, 8.0.5B PARTIAL, 8.0.5B-R COMPLETE, 8.0.5C PREPARED** | Decision gate pending owner review |
+| **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `4410456b-b4b1-4c1b-a68e-786221abf817`) | Deployed commit `fdc26cdc` (PR #75) |
+| **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) | Migrations 0001–0003 active; Contains synthetic test records |
+| **Phase 8.0.5 Acceptance Status** | **8.0.5A–8.0.5J COMPLETE; PR #75 MERGED; 8.0.5K IN PROGRESS** | Documentation reconciliation active |
 
 ### Phase 8.0.5 Acceptance Sub-Phase Status
 
 | Sub-Phase | Title & Scope | Verification Environment & Reference | Status |
 |---|---|---|:---:|
 | **8.0.5A** | Production Read-Only Acceptance | Production (`https://lab.jawed.co.in/`, 10/10 tests PASS) | **COMPLETE** |
-| **8.0.5B** | Preview Functional CRM Acceptance | Preview UI + local in-memory suite (43/43 tests PASS) | **PARTIAL** |
+| **8.0.5B** | Preview Functional CRM Acceptance | Preview UI + local in-memory suite (43/43 tests PASS) | **COMPLETE** |
 | **8.0.5B-R** | Preview Test Data Reconciliation | Remote Preview D1 (`623a828d-...`, 100% deltas reconciled) | **COMPLETE** |
-| **8.0.5C** | Documentation & Evidence Closure | Dedicated branch `docs/phase-8-0-5-acceptance-record-20261123` | **PREPARED** |
+| **8.0.5C** | Documentation & Evidence Closure | PR #75 documentation baseline (`fdea621a`) | **COMPLETE** |
+| **8.0.5D** | Live Preview Conversion Acceptance | Remote Preview Worker (`PH805B-TEST-002/003` converted) | **COMPLETE** |
+| **8.0.5E** | Defect Investigation | Drawer intermittent 500 & project count 0 root causes identified | **COMPLETE** |
+| **8.0.5F** | Defect Remediation | Dual property export, normalization, and bounded retry | **COMPLETE** |
+| **8.0.5G** | Preview-Only Deployment | Preview Worker Version `4410456b` (commit `fdc26cdc`) | **COMPLETE** |
+| **8.0.5H** | Preview Functional Acceptance | Remote Preview Worker (10/10 checks PASS; drawer 200, count 1) | **COMPLETE** |
+| **8.0.5I** | Final PR #75 Merge Readiness Audit | GitHub API audit (4/4 CI workflow gates PASS; clean mergeable) | **COMPLETE** |
+| **PR #75** | Pull Request Merge | Merged into `main` (commit `0782b5d5`) | **MERGED** |
+| **8.0.5J** | Post-Merge Verification | Main commit `0782b5d5` (4/4 post-merge push workflows PASS) | **COMPLETE** |
+| **8.0.5K** | Post-Merge Documentation Reconciliation | Dedicated branch `docs/phase-8-0-5-post-merge-reconciliation` | **IN PROGRESS** |
 
-> [!NOTE]
-> **Phase 8.0.5 Overall Status:** While Production read-only acceptance (8.0.5A) and Preview test data reconciliation (8.0.5B-R) are complete, Phase 8.0.5 overall is marked pending the project owner's decision on unverified live remote conversion scenarios (see Section 25).
+> [!IMPORTANT]
+> **Production vs Merged Code Isolation:** While PR #75 has been merged to `main` (`0782b5d5`), **NO deployment followed the merge**. The Production Worker continues to run commit `7dd22a5c` (Version `c707cc3a`). Deploying the remediated CRM code to Production is standing by for explicit owner authorization.
 
 ### Work Package Completion Summary (WP-1 through WP-5E)
 
@@ -909,12 +920,89 @@ A strictly read-only audit of remote Preview D1 (`jawed-studio-hq-preview`, ID `
   - Contacts: 0
 - Production Worker: Live on version `c707cc3a-5a76-411c-b227-94811ef5f10d` (100% traffic).
 
-### 25.7 Next Steps & Explicit Decision Gates
-1. **Owner Decision on Live Conversion Acceptance:**
+### 25.7 Historical Decision Gate & Resolution
+1. **Decision Gate on Unverified Scenarios:**
    - **Option 1 (Accept In-Memory Verification):** Accept the 43/43 passing Node.js tests as sufficient proof of conversion and starter project creation without mutating remote Preview D1.
    - **Option 2 (Execute Remote Preview Conversion Test):** Run a dedicated, narrow live conversion test against Preview D1 creating and converting `PH805B-TEST-002` and `PH805B-TEST-003` to verify remote conversion live before phase sign-off.
-2. **Phase 8.0.5 Sign-off:** Update overall Phase 8.0.5 status to `COMPLETE` only after the owner resolves the decision gate.
+2. **Resolution:** The project owner selected **Option 2**, authorizing live Preview conversion testing under Phase 8.0.5D.
 
+---
 
+## 26. Phase 8.0.5 Post-Merge Reconciliation Record — 24 November 2026
 
+### 26.1 Executive Summary & Milestone Progression
+Following the Phase 8.0.5B-R test data reconciliation, the project owner authorized Phase 8.0.5D through Phase 8.0.5J to complete functional acceptance, remediate identified observations, verify fixes in the live Preview environment, and merge the tested code to `main`.
+
+| Milestone / Sub-Phase | Core Scope | Verification Reference | Operational Status |
+|---|---|---|:---:|
+| **Phase 8.0.5D** | Live Preview Conversion Acceptance | Isolated Preview Worker & D1 (`623a828d-...`) | **COMPLETE** |
+| **Phase 8.0.5E** | Defect Root Cause Investigation | Code & architecture inspection | **COMPLETE** |
+| **Phase 8.0.5F** | Defect Remediation & Regression Suites | Dual-property export, normalization, retry | **COMPLETE** |
+| **Phase 8.0.5G** | Preview-Only Worker Deployment | Preview Worker Version `4410456b` (commit `fdc26cdc`) | **COMPLETE** |
+| **Phase 8.0.5H** | Preview Functional Acceptance Verification | 10/10 live browser acceptance checks PASS | **COMPLETE** |
+| **Phase 8.0.5I** | Final PR #75 Merge Readiness Audit | 4/4 CI workflow gates PASS; mergeable clean | **COMPLETE** |
+| **PR #75 Merge** | Pull Request #75 Merged into `main` | Merge commit `0782b5d5e7f1f2bd5c6bfd7e27835a9b4e29d8b0` | **MERGED** |
+| **Phase 8.0.5J** | Post-Merge Main Verification | 4/4 post-merge push workflows PASS | **COMPLETE** |
+| **Phase 8.0.5K** | Post-Merge Documentation Reconciliation | Authoritative continuity & acceptance records | **IN PROGRESS** |
+
+Full detailed records: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase-8-0-5-acceptance-record.md).
+
+### 26.2 Summary of Observations, Remediation & Verification (8.0.5D through 8.0.5H)
+
+1. **Phase 8.0.5D Live Conversion Acceptance:**
+   - Both conversion scenarios succeeded live against `jawed-studio-hq-preview` under explicit owner authorization:
+     - `PH805B-TEST-002`: Deliberately created and converted in Preview D1 without starter project (`client_id: 6eed7258-2534-4039-a414-6752ae20dbcd`).
+     - `PH805B-TEST-003`: Deliberately created and converted in Preview D1 with starter project (`client_id: 717fe1c8-329e-4648-8a45-ded6dd6f2d03`, project `PH805B-TEST-003 — Conversion With Starter Project Website`).
+   - Two defects were observed:
+     - *Defect 1:* Customer 360° Workspace drawer intermittently returned HTTP 500 on first load.
+     - *Defect 2:* Customers table displayed `Projects: 0` for customer TEST-003 instead of `Projects: 1`.
+
+2. **Phase 8.0.5E Investigation & Phase 8.0.5F Remediation:**
+   - *Workspace Resilience:* An intermittent HTTP 500 was observed on Customer 360° Workspace requests during Phase 8.0.5D. The underlying infrastructure cause was **not conclusively established**. The lack of bounded retry resilience in the frontend drawer loading flow was identified and addressed in Phase 8.0.5F: `fetchCustomerDetailBundle` in `hqClientHelpers.ts` implemented bounded 1-retry with 350ms delay for transient 5xx/network errors, while strictly failing fast on permanent 4xx errors (401, 403, 404). Added in-flight loading lock (`loadingCustomerDetailId`) and spinning `<Loader2 />` indicator in `CrmSection.tsx`. Subsequent Preview functional acceptance (Phase 8.0.5H) succeeded without encountering HTTP 500 errors.
+   - *Active Project Count:* Root cause confirmed as property mismatch (`active_projects_count` vs `project_count`). `canonicalClients.js` updated to export both `active_projects_count` and `project_count`. In `hqClientHelpers.ts`, `getClientProjectCount`, `normalizeClientItem`, and `normalizeClientList` implemented to parse numeric fields safely with zero fallback. `CrmSection.tsx` and `AnalyticsSection.tsx` integrated with `getClientProjectCount`.
+   - *Automated Regression:* Added Tests 16, 17, and 18 to `tests/hq-crm-clients-regression.test.js` (100% pass across 18 tests).
+   - *Database Safety:* Zero writes or migrations executed against Production D1 or Preview D1 during Phase 8.0.5F.
+
+3. **Phase 8.0.5G & 8.0.5H Live Preview Acceptance (10/10 PASS):**
+   - Remediated commit `fdc26cdc757665a6c19989192dcaf9cf31c268e5` deployed strictly to Preview Worker `jawed-website-ai-studio-lab-preview` (Version `4410456b-b4b1-4c1b-a68e-786221abf817`). This deployment operation did **not modify Preview D1** and did **not touch Production D1**.
+   - Live browser automation confirmed:
+     - Customer TEST-002 displays **Projects: 0** in CRM and Analytics.
+     - Customer TEST-003 displays **Projects: 1** in CRM and Analytics.
+     - Customer 360° Workspace drawer opened cleanly with **HTTP 200 OK** on the first attempt with zero HTTP 500 errors and visible linked project cards.
+   - The read-only functional acceptance inspection did **not modify Preview D1** and did **not touch Production D1**.
+
+### 26.3 Pull Request #75 Merge & Post-Merge CI Verification
+
+- **PR #75 URL:** `https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/75`
+- **Head Branch:** `fix/phase-8-0-5f-customer-workspace-and-project-count` (Head SHA: `fdc26cdc757665a6c19989192dcaf9cf31c268e5`)
+- **Base Branch:** `main` (Merge-base: `f88f1eec1d01e2e38f8f176dcf413be177a3c58e`)
+- **Pre-Merge CI Audit (Phase 8.0.5I):** 4/4 check runs passed (`AdSense Readiness Gate`, `AI Regression Gate`, `Security Supply Chain Gate`, `Deployment Runtime Reliability Gate`). Zero merge conflicts.
+- **Merge Commit SHA:** `0782b5d5e7f1f2bd5c6bfd7e27835a9b4e29d8b0`
+- **Merge Date:** 24 November 2026
+- **Post-Merge Push Workflows on `main` (Phase 8.0.5J - 4/4 PASS):**
+  1. `Security Supply Chain Gate` (Run ID: `45334756445`) — **SUCCESS**
+  2. `Deployment Runtime Reliability Gate` (Run ID: `45334756413`) — **SUCCESS**
+  3. `AdSense Readiness Gate` (Run ID: `45334756342`) — **SUCCESS**
+  4. `AI Regression Gate` (Run ID: `45334756378`) — **SUCCESS**
+
+### 26.4 Authoritative Post-Merge Infrastructure Baseline
+
+> [!CAUTION]
+> **Strict Operational Separation: Merged Source vs Live Production Worker:**
+> 1. **NO deployment followed the merge of PR #75.**
+> 2. The **Production Worker (`jawed-website-ai-studio-lab`)** continues to serve live traffic on version **`c707cc3a-5a76-411c-b227-94811ef5f10d`**, running candidate `main` commit `7dd22a5c4080faa67901b2f024beee383e538639`.
+> 3. The Production Worker is **strictly NOT running the newly merged code (`0782b5d5`)**.
+> 4. **Production D1 (`jawed-studio-hq`, ID `d9ec83ea-7114-4179-af8e-a22ba5494508`):** Zero writes, zero migrations, and zero modifications occurred during Phase 8.0.5F remediation, PR merge, or post-merge verification. Historical migrations 0001–0003 remain active.
+> 5. **Preview Worker (`jawed-website-ai-studio-lab-preview`):** Active on version **`4410456b-b4b1-4c1b-a68e-786221abf817`** (serving deployed commit `fdc26cdc`).
+> 6. **Preview D1 (`jawed-studio-hq-preview`, ID `623a828d-2909-47e7-a228-130b4eeefef5`):** Retains the synthetic test records deliberately created during Phase 8.0.5D (`PH805B-TEST-001`, `002`, `003`); was not modified during Phase 8.0.5G deployment, 8.0.5H acceptance, PR merge, or post-merge verification.
+
+### 26.5 Production Release Governance
+> [!IMPORTANT]
+> **Production Release Authorization Rules:**
+> 1. **PR merge is NOT production deployment authorization.** Merging PR #75 into `main` simply landed the verified code in the repository branch.
+> 2. **No production deployment is currently authorized by this documentation task.**
+> 3. Any deployment to the Production Worker (`jawed-website-ai-studio-lab`) requires **separate, explicit owner approval**.
+> 4. Production deployment must be planned and executed as a **separately reviewed release phase** (with preflight dry-run and live smoke testing).
+> 5. **No deployment command may be executed during this task.**
+> 6. When authorized, the production deployment requires **zero D1 migrations** (the changes are strictly frontend UI normalization and Worker endpoint serialization).
 
