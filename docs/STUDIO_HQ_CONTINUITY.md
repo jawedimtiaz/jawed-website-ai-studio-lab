@@ -1006,3 +1006,17 @@ Full detailed records: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase
 > 5. **No deployment command may be executed during this task.**
 > 6. When authorized, the production deployment requires **zero D1 migrations** (the changes are strictly frontend UI normalization and Worker endpoint serialization).
 
+## Phase 8.0.7 — Deployment Safety Improvement (development branch)
+
+**Status:** Implementation prepared on `safety/phase-8-0-7-deployment-guard`; pending PR review and automated checks. No deployment or database operation performed.
+
+- Root `wrangler.jsonc` now defaults to the Preview Worker and Preview D1.
+- Explicit `env.production` retains the Production Worker and Production D1 bindings.
+- Added `npm run deploy:preview` and an interactive `npm run deploy:production` confirmation wrapper.
+- Added `scripts/validate-wrangler-deployment-safety.mjs` and `tests/wrangler-deployment-safety.test.js`.
+- Extended the deployment runtime workflow to validate Wrangler environment separation and run the focused regression tests.
+- Updated the existing runtime validator to verify the Production Worker under `env.production`.
+- Added `docs/hq/phase-8-0-7-deployment-safety.md` with command and release-safety guidance.
+- Important limitation: the interactive guard is a procedural safeguard; an operator with direct Wrangler access can still explicitly run `wrangler deploy --env production`. Root/default deploy now resolves to Preview.
+- No Cloudflare Worker deploy, D1 migration, D1 write, secret change, personal-site modification or customer-project modification is included.
+
