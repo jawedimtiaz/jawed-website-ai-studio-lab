@@ -1,6 +1,6 @@
 # Studio HQ — Authoritative Continuity Record
 
-**Last reconciled:** 22 November 2026  
+**Last reconciled:** 23 November 2026  
 **Purpose:** Resume work safely in a new ChatGPT conversation without relying on the previous chat transcript.  
 **Status:** Working continuity record; update this file at every material project milestone.
 
@@ -598,8 +598,21 @@ The audit evaluated all authentication paths, owner bootstrap controls, Firebase
 | **Pre-Migration Backup File** | `jawed-studio-hq-pre-0003-20261122-232627.sql` | Size: 32,167 bytes |
 | **Pre-Migration Backup SHA-256** | `1D74EF2F99DFEA2000EDF0BFF4266C89204303D10BB2AF5AA91B58141B410BA9` | Verified checksum match |
 | **Pre-Migration Time Travel Bookmark**| `00000073-00000000-0000512b-e5e8c4f8ff638d5877932d998632a5c1` | Cloudflare WAL snapshot |
-| **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `a50fd458`) | Isolated & untouched |
-| **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-...` — 0003 Applied) | Isolated & untouched |
+| **Preview Worker Identity** | `jawed-website-ai-studio-lab-preview` (Version `a50fd458`) | Functional test environment (`workers.dev`) |
+| **Preview D1 Database** | `jawed-studio-hq-preview` (`623a828d-2909-47e7-a228-130b4eeefef5`) | Contains 1 soft-archived test record `PH805B-TEST-001` (5 clients, 2 projects, 4 contacts) |
+| **Phase 8.0.5 Acceptance Status** | **8.0.5A COMPLETE, 8.0.5B PARTIAL, 8.0.5B-R COMPLETE, 8.0.5C PREPARED** | Decision gate pending owner review |
+
+### Phase 8.0.5 Acceptance Sub-Phase Status
+
+| Sub-Phase | Title & Scope | Verification Environment & Reference | Status |
+|---|---|---|:---:|
+| **8.0.5A** | Production Read-Only Acceptance | Production (`https://lab.jawed.co.in/`, 10/10 tests PASS) | **COMPLETE** |
+| **8.0.5B** | Preview Functional CRM Acceptance | Preview UI + local in-memory suite (43/43 tests PASS) | **PARTIAL** |
+| **8.0.5B-R** | Preview Test Data Reconciliation | Remote Preview D1 (`623a828d-...`, 100% deltas reconciled) | **COMPLETE** |
+| **8.0.5C** | Documentation & Evidence Closure | Dedicated branch `docs/phase-8-0-5-acceptance-record-20261123` | **PREPARED** |
+
+> [!NOTE]
+> **Phase 8.0.5 Overall Status:** While Production read-only acceptance (8.0.5A) and Preview test data reconciliation (8.0.5B-R) are complete, Phase 8.0.5 overall is marked pending the project owner's decision on unverified live remote conversion scenarios (see Section 25).
 
 ### Work Package Completion Summary (WP-1 through WP-5E)
 
@@ -823,6 +836,84 @@ Following the live operational cutover in WP-5E, Phase 8.0.4 documentation was a
 2. **Contradictions Resolved:** Outdated historical handover blocks in Sections 17–23 were marked as historical audit records, while Section 19 serves as the sole authoritative operational snapshot.
 3. **PR Consolidation:** Pull Requests #68 through #73 remain open for historical reference; the consolidation PR (`docs/phase-8-0-4-final-consolidation-20261122`) provides the unified documentation merge target for `main`.
 4. **Zero Code Changes:** No application source code, build scripts, tests, configuration, secrets, or database state were altered during consolidation.
+
+---
+
+## 25. Phase 8.0.5 Acceptance & Test Data Reconciliation Record — 23 November 2026
+
+### 25.1 Executive Summary & Sub-Phase Overview
+Following the successful Production deployment of Phase 8.0.4 (Worker version `c707cc3a`, Migration 0003), Phase 8.0.5 was initiated to conduct post-cutover CRM acceptance testing and subsequent data reconciliation.
+
+- **Phase 8.0.5A (Production Read-Only Acceptance):** `COMPLETE` — 10/10 tests PASS; strictly read-only; Production remained 100% untouched.
+- **Phase 8.0.5B (Preview Functional CRM Acceptance):** `PARTIAL` — Live Preview UI workflow completed; automated suite passed locally in-memory; live remote conversion scenarios remain unverified due to sandbox restrictions.
+- **Phase 8.0.5B-R (Preview CRM Test Data Reconciliation):** `COMPLETE` — Read-only audit of `jawed-studio-hq-preview` accounted for 100% of count deltas; zero unexplained or orphaned records.
+- **Phase 8.0.5C (Documentation & Evidence Closure):** `PREPARED` — Full evidence recorded on branch `docs/phase-8-0-5-acceptance-record-20261123`.
+- **Phase 8.0.5 Overall Status:** `DECISION GATE PENDING` (Awaiting project owner decision on unverified live remote conversion scenarios).
+
+Full detailed report: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase-8-0-5-acceptance-record.md).
+
+### 25.2 Phase 8.0.5A — Production Read-Only Acceptance (10/10 PASS)
+Conducted strictly read-only on `https://lab.jawed.co.in/studio-hq`:
+- **Owner Authentication:** Session verified for `jawedimtiaz@gmail.com` (`uid: 3L3FUaKwOEYXl0DjgRoL30rKsR02`).
+- **Dashboard & CRM Views:** Executive Overview, Leads Management, and Customers Management rendered cleanly with zero console or network errors.
+- **Filter State Isolation:** Confirmed Leads stage filters and Customers status filters operate independently without cross-leak (OBS-UI-001 fix verified in Production).
+- **Security Barriers:** Live probes to unauthenticated `/api/hq/leads` and `/api/hq/clients` returned HTTP 401 `AUTH_REQUIRED`; deprecated route `/api/hq/session/enroll` returned HTTP 404 `NOT_FOUND`.
+- **Production Data Untouched:** Remote D1 queries confirmed baseline counts remained exactly: Clients: 3 (2 converted, 1 archived), Projects: 1, Milestones: 1, Tasks: 1, Contacts: 0. Zero writes were executed.
+
+### 25.3 Phase 8.0.5B — Preview CRM Functional Acceptance
+Functional testing was authorized exclusively in the isolated Preview environment (`jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev` / `jawed-studio-hq-preview`).
+
+**1. Live Remote Preview UI Operations:**
+- Synthetic lead `PH805B-TEST-001` (`id: 2f70f8d4-41b3-4643-b0a7-cf78d7b190c1`) created with primary contact `Alex Morgan`.
+- Lead updated (name to `Alex J. Morgan`, phone to `+91 98765 00000`, value to `₹95,000.00`).
+- Lead qualified (stage transitioned to `qualified`, status to `prospect`).
+- Lead soft-archived via `POST /api/hq/leads/:id/archive` (`archived_at: 2026-11-23T15:48:02.535Z`).
+- UI verified: Leads & Customers tabs rendered without error toasts; Executive Overview reflected real-time audit entries.
+
+**2. Local Automated Test Suite (`tests/hq-canonical-leads.test.js`):**
+- 43/43 tests passed across payload validation, duplicate advisories, pagination, stage transitions, archival/restoration, conversion logic, and security authorization.
+- *Evidentiary Clarification:* These tests ran in Node.js against an **in-memory SQLite fixture**, NOT against remote Preview D1.
+
+**3. Explicitly Unverified Live Preview Scenarios:**
+- Live remote conversion to customer (`POST /api/hq/leads/:id/convert` with `createProject = false`).
+- Live remote conversion with starter project (`POST /api/hq/leads/:id/convert` with `createProject = true`).
+- Live remote duplicate conversion rejection (`HTTP 409 LEAD_ALREADY_CONVERTED`).
+- Live remote lost lead conversion rejection (`HTTP 409 LOST_LEAD_CANNOT_CONVERT`).
+
+### 25.4 Phase 8.0.5B-R — Preview Test Data Reconciliation Audit
+A strictly read-only audit of remote Preview D1 (`jawed-studio-hq-preview`, ID `623a828d-2909-47e7-a228-130b4eeefef5`) reconciled all changes:
+- **Discovered Synthetic Records:** Exactly ONE synthetic record exists: `PH805B-TEST-001` (`2f70f8d4-41b3-4643-b0a7-cf78d7b190c1`), soft-archived.
+- `PH805B-TEST-002` and `PH805B-TEST-003` were never inserted into remote Preview D1.
+- **Count Delta Reconciliation:**
+  - Clients: 4 &rarr; 5 (+1, `PH805B-TEST-001`)
+  - Leads: 3 &rarr; 4 (+1, `PH805B-TEST-001`)
+  - Converted Clients: 1 &rarr; 1 (0 delta)
+  - Archived Clients: 1 &rarr; 2 (+1, `PH805B-TEST-001` soft-archived)
+  - Projects: 2 &rarr; 2 (0 delta)
+  - Contacts: 3 &rarr; 4 (+1, contact `Alex J. Morgan` linked to `PH805B-TEST-001`)
+  - Audit Log Events: 12 &rarr; 16 (+4, `lead.create`, `lead.update`, `lead.update`, `lead.archive`)
+- **Verdict:** 100% of Preview D1 deltas are explained. Zero orphaned or corrupt records.
+
+### 25.5 Database Health & Integrity Invariants (Preview D1)
+- `PRAGMA foreign_key_check`: **0 violations**.
+- `PRAGMA quick_check`: **`ok`**.
+- Primary contact invariant (`is_primary = 1 AND archived_at IS NULL` &le; 1 per client): **0 violations**.
+- Orphaned contacts / orphaned projects: **0**.
+
+### 25.6 Production Safety Conformance
+- Remote Production D1 (`jawed-studio-hq`, ID `d9ec83ea-7114-4179-af8e-a22ba5494508`) re-verified untouched:
+  - Clients: 3 (2 converted, 1 archived)
+  - Projects: 1
+  - Milestones: 1
+  - Tasks: 1
+  - Contacts: 0
+- Production Worker: Live on version `c707cc3a-5a76-411c-b227-94811ef5f10d` (100% traffic).
+
+### 25.7 Next Steps & Explicit Decision Gates
+1. **Owner Decision on Live Conversion Acceptance:**
+   - **Option 1 (Accept In-Memory Verification):** Accept the 43/43 passing Node.js tests as sufficient proof of conversion and starter project creation without mutating remote Preview D1.
+   - **Option 2 (Execute Remote Preview Conversion Test):** Run a dedicated, narrow live conversion test against Preview D1 creating and converting `PH805B-TEST-002` and `PH805B-TEST-003` to verify remote conversion live before phase sign-off.
+2. **Phase 8.0.5 Sign-off:** Update overall Phase 8.0.5 status to `COMPLETE` only after the owner resolves the decision gate.
 
 
 

@@ -15,7 +15,8 @@ import {
   RotateCcw,
   Trash2,
   Edit3,
-  Eye
+  Eye,
+  Loader2
 } from 'lucide-react';
 import {
   hqFetch,
@@ -52,6 +53,9 @@ import {
   getClientStatusDisplayLabel,
   toCanonicalClientPayload,
   normalizeClientDetailResponse,
+  normalizeClientList,
+  getClientProjectCount,
+  fetchCustomerDetailBundle,
   buildClientQueryParams,
   buildLeadQueryParams,
   type NormalizedClientDetailBundle
@@ -116,6 +120,7 @@ export const CrmSection: React.FC<{
   const [clientDrawerOpen, setClientDrawerOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<HqClient | null>(null);
   const [customerDetail, setCustomerDetail] = useState<CustomerDetailBundle | null>(null);
+  const [loadingCustomerDetailId, setLoadingCustomerDetailId] = useState<string | null>(null);
 
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<HqContact | null>(null);
@@ -194,7 +199,7 @@ export const CrmSection: React.FC<{
   const loadReferenceClients = useCallback(async () => {
     try {
       const res = await hqFetch<{ clients: HqClient[] }>('/api/hq/clients?limit=200');
-      setAllClients(res.clients || []);
+      setAllClients(normalizeClientList(res.clients || []));
     } catch {
       // silent reference load
     }
@@ -221,7 +226,7 @@ export const CrmSection: React.FC<{
           statusFilter: clientStatusFilter
         });
         const res = await hqFetch<{ clients: HqClient[]; total: number }>(`/api/hq/clients?${params.toString()}`);
-        setClients(res.clients || []);
+        setClients(normalizeClientList(res.clients || []));
         setClientTotal(res.total || 0);
       } else if (activeTab === 'contacts') {
         const params = new URLSearchParams();
@@ -264,29 +269,26 @@ export const CrmSection: React.FC<{
   }, [loadData]);
 
   const openCustomerDetail = async (clientId: string) => {
+    if (loadingCustomerDetailId) return;
+    setLoadingCustomerDetailId(clientId);
     try {
-      const clientRes = await hqFetch<{ ok?: boolean; client?: HqClient }>(
-        `/api/hq/clients/${encodeURIComponent(clientId)}`
-      );
-      let linkedProjects: HqProject[] = [];
-      let projectsError: string | null = null;
-      try {
-        const projRes = await hqFetch<{ ok?: boolean; projects?: HqProject[] }>(
-          `/api/hq/projects?clientId=${encodeURIComponent(clientId)}`
-        );
-        linkedProjects = projRes.projects || [];
-      } catch (err: any) {
-        projectsError = err.message || 'Unable to load linked projects';
-        onToast('error', `Customer loaded, but linked projects failed to load: ${projectsError}`);
-      }
-      const normalized = normalizeClientDetailResponse({
-        ...clientRes,
-        projects: linkedProjects,
-        projectsError
+      const bundle = await fetchCustomerDetailBundle(clientId, {
+        fetchFn: hqFetch,
+        maxRetries: 1,
+        retryDelayMs: 350
       });
-      setCustomerDetail(normalized);
+      if (bundle.projectsError) {
+        onToast('error', `Customer loaded, but linked projects failed to load: ${bundle.projectsError}`);
+      }
+      setCustomerDetail(bundle);
     } catch (err: any) {
-      onToast('error', err.message || 'Failed to inspect customer record');
+      const isClientError = typeof err?.status === 'number' && err.status >= 400 && err.status < 500;
+      const fallbackMsg = isClientError
+        ? (err.status === 404 ? 'Customer record not found' : 'Permission denied or invalid customer request')
+        : 'Unable to load customer workspace. Please check your connection and try again.';
+      onToast('error', err?.message || fallbackMsg);
+    } finally {
+      setLoadingCustomerDetailId(null);
     }
   };
 
@@ -812,7 +814,7 @@ export const CrmSection: React.FC<{
                           <StatusDotText status={c.status} />
                         </td>
                         <td className="px-4 py-3 text-right font-mono tabular-nums text-xs text-slate-700">
-                          {c.project_count ?? 0}
+                          {getClientProjectCount(c)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono tabular-nums text-xs font-medium text-slate-900">
                           {formatMoney(c.outstanding_minor ?? 0)}
@@ -823,10 +825,16 @@ export const CrmSection: React.FC<{
                             <button
                               type="button"
                               onClick={() => openCustomerDetail(c.id)}
+                              disabled={loadingCustomerDetailId !== null}
                               title="Open Customer 360° Workspace"
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-50 cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-50 cursor-pointer disabled:opacity-50"
                             >
-                              <Eye className="w-3.5 h-3.5" /> View
+                              {loadingCustomerDetailId === c.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-600" />
+                              ) : (
+                                <Eye className="w-3.5 h-3.5" />
+                              )}{' '}
+                              View
                             </button>
                             <button
                               type="button"

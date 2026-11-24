@@ -53,6 +53,11 @@ import {
   toCanonicalClientStatus,
   getClientStatusDisplayLabel,
   normalizeClientDetailResponse,
+  normalizeClientItem,
+  normalizeClientList,
+  getClientProjectCount,
+  fetchCustomerDetailBundle,
+  isTransientError,
   CANONICAL_CLIENT_STATUSES,
   SELECTABLE_CLIENT_STATUSES,
   CLIENT_FILTER_OPTIONS,
@@ -965,4 +970,337 @@ test('15. OBS-UI-001 Remediation: Client query params builder isolates Leads fil
   } finally {
     db.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// 16. Project Count Normalization & Dual Property Fallback
+// ---------------------------------------------------------------------------
+
+test('16. Project Count Normalization: active_projects_count, project_count fallback, and dual-property synchronization', () => {
+  // A. getClientProjectCount helper verification
+  assert.equal(getClientProjectCount({ active_projects_count: 3 }), 3);
+  assert.equal(getClientProjectCount({ project_count: 5 }), 5);
+  assert.equal(getClientProjectCount({ active_projects_count: 2, project_count: 2 }), 2);
+  assert.equal(getClientProjectCount({ active_projects_count: 0 }), 0);
+  assert.equal(getClientProjectCount({ project_count: 0 }), 0);
+  assert.equal(getClientProjectCount({ active_projects_count: 1 }), 1);
+  assert.equal(getClientProjectCount({}), 0);
+  assert.equal(getClientProjectCount(null), 0);
+  assert.equal(getClientProjectCount(undefined), 0);
+  assert.equal(getClientProjectCount({ active_projects_count: 'invalid' }), 0);
+  assert.equal(getClientProjectCount({ project_count: -3 }), 0);
+  assert.equal(getClientProjectCount({ active_projects_count: 4.8 }), 4);
+
+  // B. normalizeClientItem populates and synchronizes both properties
+  const fromCanonical = normalizeClientItem({
+    id: 'cli-001',
+    name: 'Canonical Client',
+    active_projects_count: 1
+  });
+  assert.equal(fromCanonical.id, 'cli-001');
+  assert.equal(fromCanonical.active_projects_count, 1);
+  assert.equal(fromCanonical.project_count, 1);
+
+  const fromLegacy = normalizeClientItem({
+    id: 'cli-002',
+    name: 'Legacy Client',
+    project_count: 4
+  });
+  assert.equal(fromLegacy.id, 'cli-002');
+  assert.equal(fromLegacy.active_projects_count, 4);
+  assert.equal(fromLegacy.project_count, 4);
+
+  const zeroProjectClient = normalizeClientItem({
+    id: 'cli-003',
+    name: 'Zero Project Client',
+    active_projects_count: 0
+  });
+  assert.equal(zeroProjectClient.active_projects_count, 0);
+  assert.equal(zeroProjectClient.project_count, 0);
+
+  // C. normalizeClientList processes arrays of mixed shapes cleanly
+  const clientList = normalizeClientList([
+    { id: 'c1', active_projects_count: 1 },
+    { id: 'c2', project_count: 2 },
+    { id: 'c3', active_projects_count: 0 },
+    { id: 'c4' }
+  ]);
+  assert.equal(clientList.length, 4);
+  assert.equal(clientList[0].project_count, 1);
+  assert.equal(clientList[0].active_projects_count, 1);
+  assert.equal(clientList[1].project_count, 2);
+  assert.equal(clientList[1].active_projects_count, 2);
+  assert.equal(clientList[2].project_count, 0);
+  assert.equal(clientList[2].active_projects_count, 0);
+  assert.equal(clientList[3].project_count, 0);
+  assert.equal(clientList[3].active_projects_count, 0);
+
+  // D. normalizeClientDetailResponse populates both properties
+  const detailBundle = normalizeClientDetailResponse({
+    client: { id: 'c-det', name: 'Detail Client', active_projects_count: 3 }
+  });
+  assert.equal(detailBundle.client.active_projects_count, 3);
+  assert.equal(detailBundle.client.project_count, 3);
+});
+
+// ---------------------------------------------------------------------------
+// 17. Canonical Clients API List Query Dual Property Export
+// ---------------------------------------------------------------------------
+
+test('17. Canonical Clients API returns both active_projects_count and project_count for list queries', async () => {
+  const db = new TestD1();
+  try {
+    db.sqlite.prepare('INSERT INTO hq_users (uid, email) VALUES (?, ?)').run(ownerIdentity.uid, ownerIdentity.email);
+
+    // Seed 3 clients: c-zero (0 projects), c-one (1 project), c-multi (2 projects)
+    db.sqlite.prepare(`
+      INSERT INTO clients (id, name, business_name, email, status, created_by)
+      VALUES
+        ('c-zero', 'Zero Projects', 'Zero Biz', 'zero@test.com', 'active', ?),
+        ('c-one', 'One Project', 'One Biz', 'one@test.com', 'active', ?),
+        ('c-multi', 'Multi Projects', 'Multi Biz', 'multi@test.com', 'active', ?)
+    `).run(ownerIdentity.uid, ownerIdentity.uid, ownerIdentity.uid);
+
+    // Seed projects: 1 for c-one, 2 for c-multi, 0 for c-zero (plus 1 archived project for c-zero to verify exclusion)
+    db.sqlite.prepare(`
+      INSERT INTO projects (id, project_code, client_id, name, status, created_by, updated_by, archived_at, archived_by)
+      VALUES
+        ('p-one-1', 'PRJ-ONE-1', 'c-one', 'Project 1', 'discovery', ?, ?, NULL, NULL),
+        ('p-mul-1', 'PRJ-MUL-1', 'c-multi', 'Project M1', 'in-progress', ?, ?, NULL, NULL),
+        ('p-mul-2', 'PRJ-MUL-2', 'c-multi', 'Project M2', 'completed', ?, ?, NULL, NULL),
+        ('p-arc-1', 'PRJ-ARC-1', 'c-zero', 'Archived Project', 'discovery', ?, ?, '2026-11-20T00:00:00.000Z', ?)
+    `).run(
+      ownerIdentity.uid, ownerIdentity.uid,
+      ownerIdentity.uid, ownerIdentity.uid,
+      ownerIdentity.uid, ownerIdentity.uid,
+      ownerIdentity.uid, ownerIdentity.uid, ownerIdentity.uid
+    );
+
+    const req = makeRequest('/api/hq/clients?page=1&limit=25');
+    const res = await callAuthorized(db, req);
+    assert.equal(res.status, 200);
+
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.clients.length, 3);
+
+    const zeroClient = data.clients.find(c => c.id === 'c-zero');
+    assert.ok(zeroClient, 'c-zero must exist in response');
+    assert.equal(zeroClient.active_projects_count, 0, 'Zero active projects (archived excluded)');
+    assert.equal(zeroClient.project_count, 0, 'project_count must be 0 for zero-project customer');
+
+    const oneClient = data.clients.find(c => c.id === 'c-one');
+    assert.ok(oneClient, 'c-one must exist in response');
+    assert.equal(oneClient.active_projects_count, 1, '1 active project');
+    assert.equal(oneClient.project_count, 1, 'project_count must be 1 for single-project customer');
+
+    const multiClient = data.clients.find(c => c.id === 'c-multi');
+    assert.ok(multiClient, 'c-multi must exist in response');
+    assert.equal(multiClient.active_projects_count, 2, '2 active projects');
+    assert.equal(multiClient.project_count, 2, 'project_count must be 2 for multi-project customer');
+  } finally {
+    db.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 18. Customer Workspace Resilience & Retry Behavior
+// ---------------------------------------------------------------------------
+
+test('18. Customer Workspace Resilience: fetchCustomerDetailBundle handles success, 1-retry on 5xx, no retry on 4xx, and retry failure', async () => {
+  // A. isTransientError classifier
+  assert.equal(isTransientError({ status: 500 }), true);
+  assert.equal(isTransientError({ status: 502 }), true);
+  assert.equal(isTransientError({ status: 503 }), true);
+  assert.equal(isTransientError({ status: 504 }), true);
+  assert.equal(isTransientError({ status: 400 }), false);
+  assert.equal(isTransientError({ status: 401 }), false);
+  assert.equal(isTransientError({ status: 403 }), false);
+  assert.equal(isTransientError({ status: 404 }), false);
+  assert.equal(isTransientError({ status: 409 }), false);
+  assert.equal(isTransientError({ message: 'Failed to fetch (network error)' }), true);
+  assert.equal(isTransientError({ message: 'Request timeout' }), true);
+  assert.equal(isTransientError(null), false);
+
+  // B. Subtest 1: Successful load on first attempt
+  let callsB = 0;
+  const mockFetchSuccess = async (path) => {
+    callsB++;
+    if (path.startsWith('/api/hq/clients/')) {
+      return { ok: true, client: { id: 'c-test', name: 'Test Customer', active_projects_count: 1 } };
+    }
+    if (path.startsWith('/api/hq/projects')) {
+      return { ok: true, projects: [{ id: 'p-1', name: 'Website Build' }] };
+    }
+    throw new Error('Unknown path: ' + path);
+  };
+
+  const bundleSuccess = await fetchCustomerDetailBundle('c-test', {
+    fetchFn: mockFetchSuccess,
+    maxRetries: 1,
+    retryDelayMs: 0
+  });
+  assert.equal(bundleSuccess.client.id, 'c-test');
+  assert.equal(bundleSuccess.client.project_count, 1);
+  assert.equal(bundleSuccess.projects.length, 1);
+  assert.equal(callsB, 2, 'Must make exactly 1 client call and 1 projects call');
+
+  // C. Subtest 2: Transient HTTP 500 on first attempt, succeeded on 1 retry
+  let clientAttemptsC = 0;
+  let retryNotifiedC = 0;
+  const mockFetchRetrySuccess = async (path) => {
+    if (path.startsWith('/api/hq/clients/')) {
+      clientAttemptsC++;
+      if (clientAttemptsC === 1) {
+        const err = new Error('Request failed with status 500');
+        err.status = 500;
+        throw err;
+      }
+      return { ok: true, client: { id: 'c-retry', name: 'Retry Customer', active_projects_count: 2 } };
+    }
+    if (path.startsWith('/api/hq/projects')) {
+      return { ok: true, projects: [{ id: 'p-1' }, { id: 'p-2' }] };
+    }
+    throw new Error('Unknown path: ' + path);
+  };
+
+  const bundleRetrySuccess = await fetchCustomerDetailBundle('c-retry', {
+    fetchFn: mockFetchRetrySuccess,
+    maxRetries: 1,
+    retryDelayMs: 0,
+    onRetry: (attempt, err) => {
+      retryNotifiedC = attempt;
+      assert.equal(err.status, 500);
+    }
+  });
+  assert.equal(clientAttemptsC, 2, 'Must execute exactly 1 retry after initial 500');
+  assert.equal(retryNotifiedC, 1, 'onRetry callback must be triggered with attempt 1');
+  assert.equal(bundleRetrySuccess.client.name, 'Retry Customer');
+  assert.equal(bundleRetrySuccess.client.project_count, 2);
+  assert.equal(bundleRetrySuccess.projects.length, 2);
+
+  // D. Subtest 3: Transient HTTP 503 (Database Unavailable) on first attempt, succeeded on retry
+  let clientAttemptsD = 0;
+  const mockFetch503 = async (path) => {
+    if (path.startsWith('/api/hq/clients/')) {
+      clientAttemptsD++;
+      if (clientAttemptsD === 1) {
+        const err = new Error('HQ_DATABASE_UNAVAILABLE');
+        err.status = 503;
+        throw err;
+      }
+      return { ok: true, client: { id: 'c-503', name: 'Recovered Customer' } };
+    }
+    return { ok: true, projects: [] };
+  };
+
+  const bundle503 = await fetchCustomerDetailBundle('c-503', {
+    fetchFn: mockFetch503,
+    maxRetries: 1,
+    retryDelayMs: 0
+  });
+  assert.equal(clientAttemptsD, 2, '503 must be retried once');
+  assert.equal(bundle503.client.id, 'c-503');
+
+  // E. Subtest 4: Permanent 404 (Not Found) — must NOT retry
+  let clientAttemptsE = 0;
+  const mockFetch404 = async (path) => {
+    if (path.startsWith('/api/hq/clients/')) {
+      clientAttemptsE++;
+      const err = new Error('Customer not found');
+      err.status = 404;
+      throw err;
+    }
+    return { ok: true, projects: [] };
+  };
+
+  await assert.rejects(
+    async () => {
+      await fetchCustomerDetailBundle('c-nonexistent', {
+        fetchFn: mockFetch404,
+        maxRetries: 1,
+        retryDelayMs: 0
+      });
+    },
+    (err) => {
+      assert.equal(err.status, 404);
+      assert.equal(clientAttemptsE, 1, '404 error must NEVER trigger a retry');
+      return true;
+    }
+  );
+
+  // F. Subtest 5: Permanent 401 / 403 (Unauthorized / Forbidden) — must NOT retry
+  for (const permStatus of [401, 403]) {
+    let attempts = 0;
+    const mockPerm = async () => {
+      attempts++;
+      const err = new Error('Auth error');
+      err.status = permStatus;
+      throw err;
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchCustomerDetailBundle('c-auth', {
+          fetchFn: mockPerm,
+          maxRetries: 1,
+          retryDelayMs: 0
+        });
+      },
+      (err) => {
+        assert.equal(err.status, permStatus);
+        assert.equal(attempts, 1, `Status ${permStatus} must NEVER trigger a retry`);
+        return true;
+      }
+    );
+  }
+
+  // G. Subtest 6: Persistent 500 error where retry also fails
+  let clientAttemptsG = 0;
+  const mockFetchPersistent500 = async (path) => {
+    if (path.startsWith('/api/hq/clients/')) {
+      clientAttemptsG++;
+      const err = new Error('Internal Server Error');
+      err.status = 500;
+      throw err;
+    }
+    return { ok: true, projects: [] };
+  };
+
+  await assert.rejects(
+    async () => {
+      await fetchCustomerDetailBundle('c-broken', {
+        fetchFn: mockFetchPersistent500,
+        maxRetries: 1,
+        retryDelayMs: 0
+      });
+    },
+    (err) => {
+      assert.equal(err.status, 500);
+      assert.equal(clientAttemptsG, 2, 'Persistent 500 must attempt exactly twice (1 initial + 1 retry)');
+      return true;
+    }
+  );
+
+  // H. Subtest 7: Client detail succeeds but linked projects query fails
+  const mockFetchProjectError = async (path) => {
+    if (path.startsWith('/api/hq/clients/')) {
+      return { ok: true, client: { id: 'c-partial', name: 'Partial Customer' } };
+    }
+    if (path.startsWith('/api/hq/projects')) {
+      const err = new Error('Projects service temporarily down');
+      err.status = 503;
+      throw err;
+    }
+    throw new Error('Unknown path: ' + path);
+  };
+
+  const bundlePartial = await fetchCustomerDetailBundle('c-partial', {
+    fetchFn: mockFetchProjectError,
+    maxRetries: 1,
+    retryDelayMs: 0
+  });
+  assert.equal(bundlePartial.client.id, 'c-partial');
+  assert.equal(bundlePartial.projects.length, 0);
+  assert.equal(bundlePartial.projectsError, 'Projects service temporarily down');
 });
