@@ -24,6 +24,12 @@ Production is defined only under `env.production`:
 
 Preview and Production D1 IDs are asserted to be different by the deployment-safety validator.
 
+## Wrangler CLI version control
+
+- Wrangler is declared as an exact development dependency: `wrangler@4.166.0`.
+- Deployment commands use the locally installed CLI, not an unpinned `npx` download.
+- This repository currently has no tracked npm, pnpm, or Yarn lockfile. The exact direct dependency pins the CLI release, but transitive dependency resolution is not lockfile-reproducible. A lockfile policy is a separate repository-wide decision and is not introduced in this phase.
+
 ## Supported commands
 
 From the repository root:
