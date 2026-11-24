@@ -1017,6 +1017,7 @@ Full detailed records: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase
 - Extended the deployment runtime workflow to validate Wrangler environment separation and run the focused regression tests.
 - Updated the existing runtime validator to verify the Production Worker under `env.production`.
 - Added `docs/hq/phase-8-0-7-deployment-safety.md` with command and release-safety guidance.
+- Pinned the Wrangler CLI as exact devDependency `wrangler@4.166.0`; Preview and Production scripts now use the locally installed CLI instead of unpinned `npx` resolution. No tracked lockfile exists on `main` or this branch; transitive dependency reproducibility remains a separate issue.
 - Important limitation: the interactive guard is a procedural safeguard; an operator with direct Wrangler access can still explicitly run `wrangler deploy --env production`. Root/default deploy now resolves to Preview.
 - No Cloudflare Worker deploy, D1 migration, D1 write, secret change, personal-site modification or customer-project modification is included.
 
