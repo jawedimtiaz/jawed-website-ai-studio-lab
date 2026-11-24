@@ -14,7 +14,11 @@ import {
   X,
   Search,
   Lock,
-  Unlock
+  Unlock,
+  History,
+  BookmarkPlus,
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { PortfolioData, CurrencyCode, HoldingItem, AllocationItem } from '../../types/portfolio';
 import { formatPortfolioValue } from '../../services/portfolioService';
@@ -79,6 +83,7 @@ export const DEFAULT_TARGET_WEIGHTS: TargetWeightsMap = {
 };
 
 export const STORAGE_KEY_REBALANCE_TARGETS = 'jawed_portfolio_rebalance_targets';
+export const STORAGE_KEY_REBALANCE_HISTORY = 'jawed_portfolio_rebalance_history';
 
 function readSavedTargetWeights(): TargetWeightsMap {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_TARGET_WEIGHTS };
@@ -100,6 +105,164 @@ function readSavedTargetWeights(): TargetWeightsMap {
 }
 
 export type RebalanceStrategyMode = 'full' | 'cash-only';
+
+export interface RebalanceHistoryActionItem {
+  key: RebalanceSleeveConfig['key'];
+  label: string;
+  currentPct: number;
+  targetPct: number;
+  actionType: 'buy' | 'trim' | 'hold';
+  actionAmountInr: number;
+}
+
+export interface RebalanceHistoryEntry {
+  id: string;
+  timestamp: string;
+  strategyMode: RebalanceStrategyMode;
+  currency: CurrencyCode;
+  freshCapitalInr: number;
+  totalBuyInr: number;
+  totalTrimInr: number;
+  maxDriftPct: number;
+  targetWeights: TargetWeightsMap;
+  actions: RebalanceHistoryActionItem[];
+  note?: string;
+}
+
+export const DEFAULT_REBALANCE_HISTORY_SEED: RebalanceHistoryEntry[] = [
+  {
+    id: 'hist-seed-2026-10-05',
+    timestamp: '2026-10-05T09:30:00.000Z',
+    strategyMode: 'cash-only',
+    currency: 'INR',
+    freshCapitalInr: 250000,
+    totalBuyInr: 250000,
+    totalTrimInr: 0,
+    maxDriftPct: 3.4,
+    targetWeights: { indianEquities: 35, mutualFunds: 25, usEquities: 30, cashLiquid: 10 },
+    actions: [
+      { key: 'usEquities', label: 'US Equities', currentPct: 28.4, targetPct: 30, actionType: 'buy', actionAmountInr: 135000 },
+      { key: 'cashLiquid', label: 'Cash & Liquid', currentPct: 6.6, targetPct: 10, actionType: 'buy', actionAmountInr: 115000 },
+      { key: 'indianEquities', label: 'Indian Equities', currentPct: 38.4, targetPct: 35, actionType: 'hold', actionAmountInr: 0 },
+      { key: 'mutualFunds', label: 'Mutual Funds', currentPct: 26.6, targetPct: 25, actionType: 'hold', actionAmountInr: 0 }
+    ],
+    note: 'Monthly SIP cash-only deployment to underweight sleeves'
+  },
+  {
+    id: 'hist-seed-2026-08-15',
+    timestamp: '2026-08-15T10:15:00.000Z',
+    strategyMode: 'full',
+    currency: 'INR',
+    freshCapitalInr: 0,
+    totalBuyInr: 185000,
+    totalTrimInr: 185000,
+    maxDriftPct: 4.1,
+    targetWeights: { indianEquities: 35, mutualFunds: 25, usEquities: 30, cashLiquid: 10 },
+    actions: [
+      { key: 'indianEquities', label: 'Indian Equities', currentPct: 39.1, targetPct: 35, actionType: 'trim', actionAmountInr: -185000 },
+      { key: 'usEquities', label: 'US Equities', currentPct: 27.6, targetPct: 30, actionType: 'buy', actionAmountInr: 112000 },
+      { key: 'cashLiquid', label: 'Cash & Liquid', currentPct: 8.3, targetPct: 10, actionType: 'buy', actionAmountInr: 73000 },
+      { key: 'mutualFunds', label: 'Mutual Funds', currentPct: 25.0, targetPct: 25, actionType: 'hold', actionAmountInr: 0 }
+    ],
+    note: 'Quarterly portfolio drift realignment'
+  }
+];
+
+export function readSavedRebalanceHistory(): RebalanceHistoryEntry[] {
+  if (typeof localStorage === 'undefined') {
+    return DEFAULT_REBALANCE_HISTORY_SEED.map((entry) => ({
+      ...entry,
+      targetWeights: { ...entry.targetWeights },
+      actions: entry.actions.map((a) => ({ ...a }))
+    }));
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_REBALANCE_HISTORY);
+    if (raw === null) {
+      return DEFAULT_REBALANCE_HISTORY_SEED.map((entry) => ({
+        ...entry,
+        targetWeights: { ...entry.targetWeights },
+        actions: entry.actions.map((a) => ({ ...a }))
+      }));
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is RebalanceHistoryEntry =>
+          Boolean(item) &&
+          typeof item.id === 'string' &&
+          typeof item.timestamp === 'string' &&
+          Array.isArray(item.actions) &&
+          Boolean(item.targetWeights)
+      )
+      .slice(0, 50);
+  } catch {
+    return DEFAULT_REBALANCE_HISTORY_SEED.map((entry) => ({
+      ...entry,
+      targetWeights: { ...entry.targetWeights },
+      actions: entry.actions.map((a) => ({ ...a }))
+    }));
+  }
+}
+
+export function createRebalanceHistoryEntry(
+  plan: ReturnType<typeof computeRebalancePlan>,
+  targets: TargetWeightsMap,
+  freshCapitalInr: number,
+  strategyMode: RebalanceStrategyMode,
+  currency: CurrencyCode,
+  note?: string,
+  timestampIso?: string
+): RebalanceHistoryEntry {
+  const timestamp = timestampIso || new Date().toISOString();
+  const maxDriftPct = Number(
+    plan.rows.reduce((max, row) => Math.max(max, Math.abs(row.driftPct)), 0).toFixed(1)
+  );
+  const trimmedNote = note?.trim();
+
+  return {
+    id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp,
+    strategyMode,
+    currency,
+    freshCapitalInr: Math.max(0, Math.round(freshCapitalInr)),
+    totalBuyInr: Math.round(plan.totalBuyInr),
+    totalTrimInr: Math.round(plan.totalTrimInr),
+    maxDriftPct,
+    targetWeights: {
+      indianEquities: targets.indianEquities,
+      mutualFunds: targets.mutualFunds,
+      usEquities: targets.usEquities,
+      cashLiquid: targets.cashLiquid
+    },
+    actions: plan.rows.map((row) => ({
+      key: row.key,
+      label: row.label,
+      currentPct: Number(row.currentPct.toFixed(1)),
+      targetPct: Number(row.targetPct.toFixed(1)),
+      actionType: row.actionType,
+      actionAmountInr: Math.round(row.actionAmountInr)
+    })),
+    ...(trimmedNote ? { note: trimmedNote } : {})
+  };
+}
+
+export function formatHistoryTimestamp(isoString: string): string {
+  try {
+    const dt = new Date(isoString);
+    if (Number.isNaN(dt.getTime())) return isoString;
+    return dt.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+}
 
 export function classifyHoldingSleeve(
   holding: HoldingItem
@@ -170,6 +333,7 @@ export interface RebalanceRowResult {
   role: string;
   dotClass: string;
   holdingsCount: number;
+  holdingTickers: string[];
   tickers: string[];
   currentValueInr: number;
   currentPct: number;
@@ -352,6 +516,12 @@ export function computeRebalancePlan(
     usEquities: 0,
     cashLiquid: 0
   };
+  const sleeveHoldingTickers: Record<RebalanceSleeveConfig['key'], string[]> = {
+    indianEquities: [],
+    mutualFunds: [],
+    usEquities: [],
+    cashLiquid: []
+  };
   const sleeveTickers: Record<RebalanceSleeveConfig['key'], string[]> = {
     indianEquities: [],
     mutualFunds: [],
@@ -361,8 +531,12 @@ export function computeRebalancePlan(
   for (const holding of data.holdings || []) {
     const sleeveKey = classifyHoldingSleeve(holding);
     holdingsCounts[sleeveKey] += 1;
-    if (holding.ticker) sleeveTickers[sleeveKey].push(holding.ticker);
+    if (holding.ticker) {
+      sleeveHoldingTickers[sleeveKey].push(holding.ticker);
+      sleeveTickers[sleeveKey].push(holding.ticker);
+    }
     if (holding.name) sleeveTickers[sleeveKey].push(holding.name);
+    if (holding.sector) sleeveTickers[sleeveKey].push(holding.sector);
   }
 
   const effectiveAllocation =
@@ -479,6 +653,7 @@ export function computeRebalancePlan(
       role: item.role,
       dotClass: item.sleeve.dotClass,
       holdingsCount: item.holdingsCount,
+      holdingTickers: sleeveHoldingTickers[item.sleeve.key],
       tickers: sleeveTickers[item.sleeve.key],
       currentValueInr: item.currentValueInr,
       currentPct: item.currentPct,
@@ -534,6 +709,10 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
   const [autoLock100, setAutoLock100] = useState<boolean>(false);
   const [weightBoundNotice, setWeightBoundNotice] = useState<string | null>(null);
   const [copiedPlan, setCopiedPlan] = useState<boolean>(false);
+  const [history, setHistory] = useState<RebalanceHistoryEntry[]>(readSavedRebalanceHistory);
+  const [historyNoteInput, setHistoryNoteInput] = useState<string>('');
+  const [justLoggedAction, setJustLoggedAction] = useState<boolean>(false);
+  const [confirmClearHistory, setConfirmClearHistory] = useState<boolean>(false);
   const [isFormulaHovered, setIsFormulaHovered] = useState<boolean>(false);
   const [isFormulaPinned, setIsFormulaPinned] = useState<boolean>(false);
   const formulaTooltipRef = useRef<HTMLDivElement | null>(null);
@@ -607,6 +786,11 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
   const plan = useMemo(
     () => computeRebalancePlan(data, targets, freshCapitalInr, strategyMode),
     [data, targets, freshCapitalInr, strategyMode]
+  );
+
+  const visibleRows = useMemo(
+    () => filterRebalanceRows(plan.rows, searchQuery),
+    [plan.rows, searchQuery]
   );
 
   const maxAbsDriftPct = useMemo(
@@ -708,6 +892,53 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
       setCopiedPlan(true);
       window.setTimeout(() => setCopiedPlan(false), 2000);
     }).catch(() => {});
+  };
+
+  const persistHistory = (nextHistory: RebalanceHistoryEntry[]) => {
+    setHistory(nextHistory);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_REBALANCE_HISTORY, JSON.stringify(nextHistory));
+      } catch {
+        // Ignore storage quota / private mode errors
+      }
+    }
+  };
+
+  const handleLogRebalanceAction = () => {
+    if (!validation.isAllValid) return;
+    const entry = createRebalanceHistoryEntry(
+      plan,
+      targets,
+      freshCapitalInr,
+      strategyMode,
+      currency,
+      historyNoteInput
+    );
+    const nextHistory = [entry, ...history].slice(0, 50);
+    persistHistory(nextHistory);
+    setHistoryNoteInput('');
+    setConfirmClearHistory(false);
+    setJustLoggedAction(true);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => setJustLoggedAction(false), 2000);
+    }
+  };
+
+  const handleRestoreHistoryTargets = (entry: RebalanceHistoryEntry) => {
+    setTargets({ ...entry.targetWeights });
+    setStrategyMode(entry.strategyMode);
+    setWeightBoundNotice(null);
+  };
+
+  const handleDeleteHistoryEntry = (id: string) => {
+    const nextHistory = history.filter((item) => item.id !== id);
+    persistHistory(nextHistory);
+  };
+
+  const handleClearAllHistory = () => {
+    persistHistory([]);
+    setConfirmClearHistory(false);
   };
 
   const deltaFrom100 = Number((plan.targetSum - 100).toFixed(1));
@@ -939,6 +1170,35 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
               <span>Normalize to 100%</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={handleLogRebalanceAction}
+            disabled={!validation.isAllValid}
+            data-testid="rebalance-header-log-btn"
+            title={
+              !validation.isAllValid
+                ? 'Fix validation errors before logging this rebalancing action'
+                : 'Log current rebalancing plan with timestamp to Rebalancing History'
+            }
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              validation.isAllValid
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/35 cursor-pointer'
+                : 'bg-[#0b1120]/60 text-slate-500 border-slate-800 cursor-not-allowed opacity-60'
+            }`}
+          >
+            {justLoggedAction ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Logged</span>
+              </>
+            ) : (
+              <>
+                <BookmarkPlus className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Log Action</span>
+              </>
+            )}
+          </button>
 
           <button
             type="button"
@@ -1420,12 +1680,10 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-sky-400 shrink-0" />
             <span>
-              Filtering actionable Buy / Trim sleeves by{' '}
+              Filtering rebalancing assets by{' '}
               <strong className="text-sky-300">&ldquo;{searchQuery.trim()}&rdquo;</strong> — showing{' '}
-              <strong className="font-mono">
-                {filterRebalanceRows(plan.rows, searchQuery).length}
-              </strong>{' '}
-              of <span className="font-mono">{plan.rows.length}</span> sleeves
+              <strong className="font-mono">{visibleRows.length}</strong> of{' '}
+              <span className="font-mono">{plan.rows.length}</span> asset sleeves
             </span>
           </div>
           {onSearchQueryChange && (
@@ -1444,8 +1702,8 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
 
       {/* Actionable Rebalancing Table */}
       {(() => {
-        const visibleRows = filterRebalanceRows(plan.rows, searchQuery);
         const isFiltered = searchQuery.trim().length > 0;
+        const normalizedTerms = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
         const visibleBuyInr = visibleRows.reduce(
           (sum, r) => sum + (r.actionAmountInr > 0 ? r.actionAmountInr : 0),
           0
@@ -1531,6 +1789,27 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
                                   : 'holdings'
                               }`}
                         </div>
+                        {row.holdingTickers.length > 0 && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-mono text-slate-400">
+                            {row.holdingTickers.map((ticker) => {
+                              const isTickerMatch =
+                                normalizedTerms.length > 0 &&
+                                normalizedTerms.some((term) => ticker.toLowerCase().includes(term));
+                              return (
+                                <span
+                                  key={ticker}
+                                  className={
+                                    isTickerMatch
+                                      ? 'text-sky-300 font-semibold underline decoration-sky-400/70 underline-offset-2'
+                                      : 'text-slate-500'
+                                  }
+                                >
+                                  {ticker}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -1698,6 +1977,272 @@ export const RebalancingCalculatorPanel: React.FC<RebalancingCalculatorPanelProp
       </div>
         );
       })()}
+
+      {/* Rebalancing History Table */}
+      <div
+        data-testid="rebalancing-history-section"
+        className="pt-4 border-t border-slate-800/80 space-y-3"
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 m-0">
+                <History className="w-4 h-4 text-sky-400 shrink-0" />
+                <span>Rebalancing History</span>
+              </h3>
+              <span className="text-[11px] font-mono tabular-nums text-slate-400 px-2 py-0.5 rounded bg-[#0b1120] border border-slate-800">
+                {history.length} {history.length === 1 ? 'Entry' : 'Entries'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5 mb-0">
+              Chronological audit log of recorded rebalancing plans, target weights, and Buy / Trim executions with timestamps.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="text"
+              value={historyNoteInput}
+              onChange={(e) => setHistoryNoteInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && validation.isAllValid) {
+                  handleLogRebalanceAction();
+                }
+              }}
+              placeholder="Optional note (e.g. Q4 Rebalance)..."
+              aria-label="Optional note for rebalancing history log"
+              data-testid="rebalance-history-note-input"
+              maxLength={120}
+              className="w-44 sm:w-56 px-2.5 py-1.5 bg-[#0b1120] border border-slate-800 hover:border-slate-700 focus:border-sky-500 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors"
+            />
+            <button
+              type="button"
+              onClick={handleLogRebalanceAction}
+              disabled={!validation.isAllValid}
+              data-testid="rebalance-log-action-btn"
+              title={
+                !validation.isAllValid
+                  ? 'Fix target allocation and capital validation errors before logging'
+                  : 'Record current Buy / Trim plan and timestamp to Rebalancing History'
+              }
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap ${
+                validation.isAllValid
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/35 cursor-pointer'
+                  : 'bg-[#0b1120]/60 text-slate-500 border-slate-800 cursor-not-allowed opacity-60'
+              }`}
+            >
+              {justLoggedAction ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Action Logged</span>
+                </>
+              ) : (
+                <>
+                  <BookmarkPlus className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Log Rebalance</span>
+                </>
+              )}
+            </button>
+
+            {history.length > 0 && (
+              confirmClearHistory ? (
+                <div className="inline-flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleClearAllHistory}
+                    data-testid="rebalance-confirm-clear-history-btn"
+                    className="px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-medium cursor-pointer"
+                  >
+                    Confirm Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearHistory(false)}
+                    className="px-2 py-1.5 rounded-lg bg-[#0b1120] hover:bg-[#1e293b] text-slate-400 border border-slate-800 text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearHistory(true)}
+                  data-testid="rebalance-clear-history-btn"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0b1120] hover:bg-[#1e293b] text-slate-400 hover:text-rose-300 border border-slate-800 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear</span>
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-800/90 bg-[#0b1120]/60">
+          <table className="w-full text-left border-collapse" data-testid="rebalancing-history-table">
+            <thead>
+              <tr className="border-b border-slate-800 bg-[#0b1120] text-[11px] text-slate-400 font-medium">
+                <th className="py-2.5 pl-4 pr-3 font-medium">Timestamp &amp; Note</th>
+                <th className="py-2.5 px-3 font-medium">Mode &amp; Target Split</th>
+                <th className="py-2.5 px-3 font-medium">Logged Buy / Trim Actions</th>
+                <th className="py-2.5 px-3 font-medium text-right">Net Buy / Trim</th>
+                <th className="py-2.5 pl-3 pr-4 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/70 text-xs">
+              {history.length === 0 ? (
+                <tr data-testid="rebalancing-history-empty">
+                  <td colSpan={5} className="py-7 px-4 text-center text-slate-400">
+                    No rebalancing actions logged yet. Click{' '}
+                    <strong className="text-emerald-300">Log Rebalance</strong> above to snapshot the current calculation with a timestamp.
+                  </td>
+                </tr>
+              ) : (
+                history.map((entry) => {
+                  const activeActions = entry.actions.filter((a) => a.actionType !== 'hold');
+                  const splitLabel = `${entry.targetWeights.indianEquities}/${entry.targetWeights.mutualFunds}/${entry.targetWeights.usEquities}/${entry.targetWeights.cashLiquid}%`;
+                  return (
+                    <tr
+                      key={entry.id}
+                      data-testid={`rebalance-history-row-${entry.id}`}
+                      className="hover:bg-[#1e293b]/40 transition-colors align-top"
+                    >
+                      <td className="py-3 pl-4 pr-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 font-mono tabular-nums text-slate-200 font-medium">
+                          <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                          <time dateTime={entry.timestamp}>
+                            {formatHistoryTimestamp(entry.timestamp)}
+                          </time>
+                        </div>
+                        {entry.note && (
+                          <div className="text-[11px] text-slate-400 mt-1 max-w-xs whitespace-normal">
+                            {entry.note}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                              entry.strategyMode === 'full'
+                                ? 'bg-sky-500/15 border-sky-500/30 text-sky-300'
+                                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                            }`}
+                          >
+                            {entry.strategyMode === 'full' ? 'Buy & Trim' : 'Cash-Only'}
+                          </span>
+                          <span className="font-mono tabular-nums text-slate-300 text-[11px]">
+                            {splitLabel}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono tabular-nums text-slate-500 mt-1">
+                          Fresh Capital:{' '}
+                          <PrivateMoney
+                            value={formatPortfolioValue(entry.freshCapitalInr, currency, usdInr, {
+                              compact: true
+                            })}
+                            currency={currency}
+                            privacyMode={privacyMode}
+                          />
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3">
+                        {activeActions.length === 0 ? (
+                          <span className="text-slate-400 text-[11px]">All sleeves on target (Hold)</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                            {activeActions.map((act) => (
+                              <span
+                                key={act.key}
+                                className="inline-flex items-center gap-1 font-mono tabular-nums whitespace-nowrap"
+                              >
+                                <span
+                                  className={
+                                    act.actionType === 'buy'
+                                      ? 'text-emerald-400 font-semibold'
+                                      : 'text-rose-400 font-semibold'
+                                  }
+                                >
+                                  {act.actionType === 'buy' ? 'Buy' : 'Trim'}
+                                </span>
+                                <span className="font-sans text-slate-300">{act.label}</span>
+                                <span
+                                  className={
+                                    act.actionType === 'buy' ? 'text-emerald-300' : 'text-rose-300'
+                                  }
+                                >
+                                  <PrivateMoney
+                                    value={`${act.actionType === 'buy' ? '+' : '-'}${formatPortfolioValue(
+                                      Math.abs(act.actionAmountInr),
+                                      currency,
+                                      usdInr,
+                                      { compact: true }
+                                    )}`}
+                                    currency={currency}
+                                    privacyMode={privacyMode}
+                                  />
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap">
+                        <div className="text-emerald-400 font-semibold">
+                          +
+                          <PrivateMoney
+                            value={formatPortfolioValue(entry.totalBuyInr, currency, usdInr, {
+                              compact: true
+                            })}
+                            currency={currency}
+                            privacyMode={privacyMode}
+                          />
+                        </div>
+                        <div className="text-rose-400 text-[11px]">
+                          {entry.totalTrimInr > 0 ? '-' : ''}
+                          <PrivateMoney
+                            value={formatPortfolioValue(entry.totalTrimInr, currency, usdInr, {
+                              compact: true
+                            })}
+                            currency={currency}
+                            privacyMode={privacyMode}
+                          />
+                        </div>
+                      </td>
+
+                      <td className="py-3 pl-3 pr-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreHistoryTargets(entry)}
+                            title="Load these target weights and mode into the calculator"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0f172a] hover:bg-[#1e293b] text-sky-300 border border-slate-700 text-[11px] font-medium cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restore</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHistoryEntry(entry.id)}
+                            aria-label={`Delete history entry from ${formatHistoryTimestamp(entry.timestamp)}`}
+                            title="Remove this history entry"
+                            className="p-1 rounded bg-[#0f172a] hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 };

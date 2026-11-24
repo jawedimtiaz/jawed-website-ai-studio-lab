@@ -685,13 +685,22 @@ export const PortfolioDashboardPage: React.FC = () => {
                 <span>Rebalance</span>
               </button>
 
-              {/* Quick Search Filter for Actionable Buy/Trim Rebalancing Items */}
+              {/* Real-Time Text Search Filter for Portfolio Rebalancing Calculation Table */}
               <div className="relative flex items-center">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
                 <input
-                  type="search"
+                  type="text"
+                  role="searchbox"
+                  autoComplete="off"
+                  spellCheck={false}
                   value={rebalanceSearchQuery}
-                  onChange={(e) => setRebalanceSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    const nextQuery = e.target.value;
+                    setRebalanceSearchQuery(nextQuery);
+                    if (nextQuery.trim().length > 0 && activeTab !== 'overview') {
+                      setActiveTab('overview');
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleJumpToRebalancing();
@@ -699,17 +708,17 @@ export const PortfolioDashboardPage: React.FC = () => {
                       setRebalanceSearchQuery('');
                     }
                   }}
-                  placeholder="Filter Buy/Trim..."
-                  aria-label="Filter actionable buy/trim items in Rebalancing panel"
+                  placeholder="Search rebalancing assets..."
+                  aria-label="Search assets in Portfolio Rebalancing calculation table"
                   data-testid="control-bar-rebalance-search"
-                  className="w-36 sm:w-44 pl-8 pr-7 py-1.5 bg-[#0f172a] border border-slate-800 hover:border-slate-700 focus:border-sky-500 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors"
+                  className="w-40 sm:w-52 pl-8 pr-7 py-1.5 bg-[#0f172a] border border-slate-800 hover:border-slate-700 focus:border-sky-500 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors"
                 />
                 {rebalanceSearchQuery && (
                   <button
                     type="button"
                     onClick={() => setRebalanceSearchQuery('')}
                     data-testid="control-bar-rebalance-search-clear"
-                    aria-label="Clear rebalancing filter"
+                    aria-label="Clear rebalancing asset search"
                     className="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer"
                   >
                     <X className="w-3 h-3" />

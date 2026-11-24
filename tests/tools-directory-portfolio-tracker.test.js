@@ -24,6 +24,9 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
   let filterRebalanceRows;
   let validateRebalanceInputs;
   let rebalanceWeightsLocked100;
+  let createRebalanceHistoryEntry;
+  let readSavedRebalanceHistory;
+  let STORAGE_KEY_REBALANCE_HISTORY;
   let DEFAULT_TARGET_WEIGHTS;
   let deriveAllocationFromHoldings;
   let MemoryRouter;
@@ -59,7 +62,7 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
         export { WatchlistPipelineTab } from ${JSON.stringify(path.resolve('src/components/portfolio/WatchlistPipelineTab.tsx'))};
         export { RetirementRoadmapTab } from ${JSON.stringify(path.resolve('src/components/portfolio/RetirementRoadmapTab.tsx'))};
         export { MOCK_PORTFOLIO_DATA } from ${JSON.stringify(path.resolve('src/services/portfolioService.ts'))};
-        export { computeRebalancePlan, filterRebalanceRows, validateRebalanceInputs, rebalanceWeightsLocked100, DEFAULT_TARGET_WEIGHTS, deriveAllocationFromHoldings } from ${JSON.stringify(path.resolve('src/components/portfolio/RebalancingCalculatorPanel.tsx'))};
+        export { computeRebalancePlan, filterRebalanceRows, validateRebalanceInputs, rebalanceWeightsLocked100, createRebalanceHistoryEntry, readSavedRebalanceHistory, STORAGE_KEY_REBALANCE_HISTORY, DEFAULT_TARGET_WEIGHTS, deriveAllocationFromHoldings } from ${JSON.stringify(path.resolve('src/components/portfolio/RebalancingCalculatorPanel.tsx'))};
         export { MemoryRouter, Route, Routes } from 'react-router-dom';
       `,
       'utf8'
@@ -91,6 +94,9 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     filterRebalanceRows = mod.filterRebalanceRows;
     validateRebalanceInputs = mod.validateRebalanceInputs;
     rebalanceWeightsLocked100 = mod.rebalanceWeightsLocked100;
+    createRebalanceHistoryEntry = mod.createRebalanceHistoryEntry;
+    readSavedRebalanceHistory = mod.readSavedRebalanceHistory;
+    STORAGE_KEY_REBALANCE_HISTORY = mod.STORAGE_KEY_REBALANCE_HISTORY;
     DEFAULT_TARGET_WEIGHTS = mod.DEFAULT_TARGET_WEIGHTS;
     deriveAllocationFromHoldings = mod.deriveAllocationFromHoldings;
     MemoryRouter = mod.MemoryRouter;
@@ -261,6 +267,8 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     );
     assert.ok(
       defaultHtml.includes('data-testid="control-bar-rebalance-btn"') &&
+        defaultHtml.includes('type="text"') &&
+        defaultHtml.includes('role="searchbox"') &&
         defaultHtml.includes('data-testid="control-bar-rebalance-search"') &&
         defaultHtml.includes('id="portfolio-rebalancing-panel"') &&
         defaultHtml.includes('data-testid="rebalancing-calculator-panel"') &&
@@ -459,6 +467,10 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     assert.equal(nvdaMatch.length, 1);
     assert.equal(nvdaMatch[0].key, 'usEquities', 'Query "NVDA" must match the US Equities sleeve');
 
+    const sectorMatch = filterRebalanceRows(plan.rows, 'Semiconductors');
+    assert.equal(sectorMatch.length, 1);
+    assert.equal(sectorMatch[0].key, 'usEquities', 'Query "Semiconductors" must match the US Equities sleeve by holding sector');
+
     const noneMatch = filterRebalanceRows(plan.rows, 'nonexistent-sleeve-xyz');
     assert.equal(noneMatch.length, 0);
 
@@ -473,8 +485,9 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     assert.ok(
       filteredHtml.includes('data-testid="rebalance-active-filter-banner"') &&
         filteredHtml.includes('data-testid="rebalance-row-usEquities"') &&
+        filteredHtml.includes('NVDA') &&
         !filteredHtml.includes('data-testid="rebalance-row-indianEquities"'),
-      'ExecutiveOverviewTab must render only matching actionable rows and active filter banner when rebalanceSearchQuery is set'
+      'ExecutiveOverviewTab must render only matching actionable rows with constituent tickers and active filter banner when rebalanceSearchQuery is set'
     );
 
     const emptyHtml = renderToStaticMarkup(
@@ -531,7 +544,86 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     );
   });
 
-  it('9. Static tools/portfolio-tracker/index.html navigation satisfies parity contract across inline and multiline whitespace variations', () => {
+  it('11. Rebalancing History table renders below the calculation table, logs timestamped entries, persists cleared state, and respects Privacy Blur', () => {
+    globalThis.localStorage.clear();
+    const overviewHtml = renderToStaticMarkup(
+      React.createElement(ExecutiveOverviewTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        onNavigateTab: () => {}
+      })
+    );
+
+    const calcTablePos = overviewHtml.indexOf('data-testid="rebalance-results-table"');
+    const historySectionPos = overviewHtml.indexOf('data-testid="rebalancing-history-section"');
+    const historyTablePos = overviewHtml.indexOf('data-testid="rebalancing-history-table"');
+    assert.ok(calcTablePos > 0 && historySectionPos > calcTablePos && historyTablePos > historySectionPos,
+      'Rebalancing History table must render below the main calculation table'
+    );
+    assert.ok(
+      overviewHtml.includes('Rebalancing History') &&
+        overviewHtml.includes('data-testid="rebalance-log-action-btn"') &&
+        overviewHtml.includes('data-testid="rebalance-history-note-input"') &&
+        overviewHtml.includes('<time dateTime="2026-10-05T09:30:00.000Z">') &&
+        overviewHtml.includes('Monthly SIP cash-only deployment'),
+      'Rebalancing History must display log button, note input, timestamps, and seeded entries'
+    );
+
+    // Pure snapshot creation check
+    const plan = computeRebalancePlan(MOCK_PORTFOLIO_DATA, DEFAULT_TARGET_WEIGHTS, 200000, 'cash-only');
+    const fixedIso = '2026-11-24T12:25:00.000Z';
+    const logged = createRebalanceHistoryEntry(
+      plan,
+      DEFAULT_TARGET_WEIGHTS,
+      200000,
+      'cash-only',
+      'INR',
+      'Q4 Bonus Tranche',
+      fixedIso
+    );
+    assert.equal(logged.timestamp, fixedIso);
+    assert.equal(logged.strategyMode, 'cash-only');
+    assert.equal(logged.freshCapitalInr, 200000);
+    assert.equal(logged.totalTrimInr, 0);
+    assert.equal(logged.note, 'Q4 Bonus Tranche');
+    assert.equal(logged.actions.length, 4);
+
+    // Persisted history in localStorage renders in table
+    globalThis.localStorage.setItem(STORAGE_KEY_REBALANCE_HISTORY, JSON.stringify([logged]));
+    const persistedHtml = renderToStaticMarkup(
+      React.createElement(ExecutiveOverviewTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        privacyMode: true,
+        onNavigateTab: () => {}
+      })
+    );
+    assert.ok(
+      persistedHtml.includes('Q4 Bonus Tranche') &&
+        persistedHtml.includes('<time dateTime="2026-11-24T12:25:00.000Z">') &&
+        persistedHtml.includes('35/25/30/10%') &&
+        persistedHtml.includes('₹ ••,••,•••'),
+      'Logged history entry must render with timestamp, target split, and Privacy Blur masking'
+    );
+
+    // Explicitly cleared history persists empty array instead of re-seeding
+    globalThis.localStorage.setItem(STORAGE_KEY_REBALANCE_HISTORY, '[]');
+    assert.equal(readSavedRebalanceHistory().length, 0);
+    const emptyHistoryHtml = renderToStaticMarkup(
+      React.createElement(ExecutiveOverviewTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        onNavigateTab: () => {}
+      })
+    );
+    assert.ok(
+      emptyHistoryHtml.includes('data-testid="rebalancing-history-empty"'),
+      'Cleared Rebalancing History must display the empty-state message'
+    );
+    globalThis.localStorage.removeItem(STORAGE_KEY_REBALANCE_HISTORY);
+  });
+
+  it('12. Static tools/portfolio-tracker/index.html navigation satisfies parity contract across inline and multiline whitespace variations', () => {
     const ptHtml = fs.readFileSync(path.resolve('tools/portfolio-tracker/index.html'), 'utf8');
     const navMatch = ptHtml.match(/<nav id="site-nav" class="site-nav" aria-label="Main navigation">([\s\S]*?)<\/nav>/);
     assert.ok(navMatch, 'tools/portfolio-tracker/index.html must contain #site-nav navigation element');
