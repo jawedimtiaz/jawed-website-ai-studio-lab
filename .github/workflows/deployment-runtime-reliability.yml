@@ -5,6 +5,11 @@ concurrency:
 on:
   pull_request:
     paths:
+      - "wrangler.jsonc"
+      - "package.json"
+      - "scripts/validate-wrangler-deployment-safety.mjs"
+      - "scripts/deploy-production.mjs"
+      - "tests/wrangler-deployment-safety.test.js"
       - "config/deployment-runtime-contract.json"
       - "config/production-smoke-contract.json"
       - "scripts/validate-deployment-runtime-reliability.mjs"
@@ -51,5 +56,9 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Validate Wrangler deployment environment separation
+        run: node scripts/validate-wrangler-deployment-safety.mjs
+      - name: Test Wrangler deployment safety guards
+        run: node --test tests/wrangler-deployment-safety.test.js
       - name: Run deployment runtime reliability validation
         run: node scripts/validate-deployment-runtime-reliability.mjs
