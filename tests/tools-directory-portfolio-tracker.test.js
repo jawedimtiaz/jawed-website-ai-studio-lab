@@ -21,7 +21,11 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
   let RetirementRoadmapTab;
   let MOCK_PORTFOLIO_DATA;
   let computeRebalancePlan;
+  let filterRebalanceRows;
+  let validateRebalanceInputs;
+  let rebalanceWeightsLocked100;
   let DEFAULT_TARGET_WEIGHTS;
+  let deriveAllocationFromHoldings;
   let MemoryRouter;
   let Route;
   let Routes;
@@ -55,7 +59,7 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
         export { WatchlistPipelineTab } from ${JSON.stringify(path.resolve('src/components/portfolio/WatchlistPipelineTab.tsx'))};
         export { RetirementRoadmapTab } from ${JSON.stringify(path.resolve('src/components/portfolio/RetirementRoadmapTab.tsx'))};
         export { MOCK_PORTFOLIO_DATA } from ${JSON.stringify(path.resolve('src/services/portfolioService.ts'))};
-        export { computeRebalancePlan, DEFAULT_TARGET_WEIGHTS } from ${JSON.stringify(path.resolve('src/components/portfolio/RebalancingCalculatorPanel.tsx'))};
+        export { computeRebalancePlan, filterRebalanceRows, validateRebalanceInputs, rebalanceWeightsLocked100, DEFAULT_TARGET_WEIGHTS, deriveAllocationFromHoldings } from ${JSON.stringify(path.resolve('src/components/portfolio/RebalancingCalculatorPanel.tsx'))};
         export { MemoryRouter, Route, Routes } from 'react-router-dom';
       `,
       'utf8'
@@ -84,7 +88,11 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     RetirementRoadmapTab = mod.RetirementRoadmapTab;
     MOCK_PORTFOLIO_DATA = mod.MOCK_PORTFOLIO_DATA;
     computeRebalancePlan = mod.computeRebalancePlan;
+    filterRebalanceRows = mod.filterRebalanceRows;
+    validateRebalanceInputs = mod.validateRebalanceInputs;
+    rebalanceWeightsLocked100 = mod.rebalanceWeightsLocked100;
     DEFAULT_TARGET_WEIGHTS = mod.DEFAULT_TARGET_WEIGHTS;
+    deriveAllocationFromHoldings = mod.deriveAllocationFromHoldings;
     MemoryRouter = mod.MemoryRouter;
     Route = mod.Route;
     Routes = mod.Routes;
@@ -253,11 +261,24 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     );
     assert.ok(
       defaultHtml.includes('data-testid="control-bar-rebalance-btn"') &&
+        defaultHtml.includes('data-testid="control-bar-rebalance-search"') &&
         defaultHtml.includes('id="portfolio-rebalancing-panel"') &&
         defaultHtml.includes('data-testid="rebalancing-calculator-panel"') &&
+        defaultHtml.includes('class="panel scroll-mt-24') &&
         defaultHtml.includes('Portfolio Rebalancing &amp; Capital Deployment') &&
+        defaultHtml.includes('data-testid="rebalance-formula-info-btn"') &&
+        defaultHtml.includes('data-testid="rebalance-formula-tooltip"') &&
+        defaultHtml.includes('data-testid="rebalance-match-current-btn"') &&
+        defaultHtml.includes('data-testid="rebalance-lock-100-btn"') &&
+        defaultHtml.includes('data-testid="rebalance-execution-summary"') &&
+        defaultHtml.includes('Actionable Buy / Trim Formula') &&
+        defaultHtml.includes('(Current Total + Fresh Capital) × Target %') &&
+        defaultHtml.includes('Target Value − Current Sleeve Value') &&
+        defaultHtml.includes('(Sleeve Shortfall ÷ Total Shortfall) × Fresh Capital') &&
+        defaultHtml.includes('(Current Sleeve + Action) ÷ Projected Total') &&
+        defaultHtml.includes('data-testid="rebalance-formula-live-example"') &&
         defaultHtml.includes('Target Sum: 100.0% (Valid)'),
-      'Executive Overview and .dashboard-control-bar must wire the Portfolio Rebalancing & Capital Deployment panel with valid 100% default sum'
+      'Executive Overview and .dashboard-control-bar must wire the Portfolio Rebalancing & Capital Deployment .panel with formula info tooltip and valid 100% default sum'
     );
     assert.ok(
       !defaultHtml.includes('data-privacy-masked="true"') && !defaultHtml.includes('monetary-value privacy-blur'),
@@ -381,6 +402,133 @@ describe('Tools Directory & Multi-Asset Portfolio Tracker Regression Suite', () 
     );
     assert.equal(invalidPlan.targetSum, 110);
     assert.equal(invalidPlan.isValidSum, false);
+
+    // Holdings mutation sync: adding a ₹5,00,000 US holding updates derived allocation and increases US Equities Trim
+    const addedUsHoldings = [
+      {
+        ticker: 'MSFT',
+        name: 'Microsoft Corp',
+        market: 'US',
+        role: 'Core',
+        currentPrice: 430,
+        currency: 'USD',
+        valueInr: 500000,
+        allocationPct: 9.3,
+        pnlPct: 0,
+        thesisStatus: 'On Track'
+      },
+      ...MOCK_PORTFOLIO_DATA.holdings
+    ];
+    const derivedAllocation = deriveAllocationFromHoldings(
+      addedUsHoldings,
+      MOCK_PORTFOLIO_DATA.summary.cashBalanceInr,
+      MOCK_PORTFOLIO_DATA.allocation
+    );
+    const updatedPlan = computeRebalancePlan(
+      { ...MOCK_PORTFOLIO_DATA, holdings: addedUsHoldings, allocation: derivedAllocation },
+      DEFAULT_TARGET_WEIGHTS,
+      0
+    );
+    const usRow = updatedPlan.rows.find((r) => r.key === 'usEquities');
+    assert.equal(usRow.holdingsCount, 4, 'US Equities sleeve must reflect 4 holdings after adding MSFT');
+    assert.equal(usRow.actionType, 'trim', 'Overweight US Equities (~37% vs 30%) must recommend Trim');
+
+    // Live-feed resilience: unmatched allocation labels fall back to holdings-derived sleeves
+    const customFeedPlan = computeRebalancePlan(
+      {
+        ...MOCK_PORTFOLIO_DATA,
+        allocation: [{ category: 'Custom Bucket A', role: 'Core', valueInr: 4850000, pct: 100 }]
+      },
+      DEFAULT_TARGET_WEIGHTS,
+      0
+    );
+    const derivedSum = customFeedPlan.rows.reduce((sum, r) => sum + r.currentValueInr, 0);
+    assert.ok(derivedSum > 4000000, 'Unmatched live feed categories must fall back to holdings-derived sleeve totals');
+  });
+
+  it('9. Control bar search query filters actionable Buy/Trim rows by action, sleeve name, and holding ticker', () => {
+    const plan = computeRebalancePlan(MOCK_PORTFOLIO_DATA, DEFAULT_TARGET_WEIGHTS, 0);
+
+    const buyOnly = filterRebalanceRows(plan.rows, 'buy');
+    assert.ok(buyOnly.length > 0 && buyOnly.every((r) => r.actionType === 'buy'), 'Query "buy" must return only Buy sleeves');
+
+    const trimOnly = filterRebalanceRows(plan.rows, 'trim');
+    assert.ok(trimOnly.length > 0 && trimOnly.every((r) => r.actionType === 'trim'), 'Query "trim" must return only Trim sleeves');
+
+    const nvdaMatch = filterRebalanceRows(plan.rows, 'NVDA');
+    assert.equal(nvdaMatch.length, 1);
+    assert.equal(nvdaMatch[0].key, 'usEquities', 'Query "NVDA" must match the US Equities sleeve');
+
+    const noneMatch = filterRebalanceRows(plan.rows, 'nonexistent-sleeve-xyz');
+    assert.equal(noneMatch.length, 0);
+
+    const filteredHtml = renderToStaticMarkup(
+      React.createElement(ExecutiveOverviewTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        rebalanceSearchQuery: 'NVDA',
+        onNavigateTab: () => {}
+      })
+    );
+    assert.ok(
+      filteredHtml.includes('data-testid="rebalance-active-filter-banner"') &&
+        filteredHtml.includes('data-testid="rebalance-row-usEquities"') &&
+        !filteredHtml.includes('data-testid="rebalance-row-indianEquities"'),
+      'ExecutiveOverviewTab must render only matching actionable rows and active filter banner when rebalanceSearchQuery is set'
+    );
+
+    const emptyHtml = renderToStaticMarkup(
+      React.createElement(ExecutiveOverviewTab, {
+        data: MOCK_PORTFOLIO_DATA,
+        currency: 'INR',
+        rebalanceSearchQuery: 'does-not-exist',
+        onNavigateTab: () => {}
+      })
+    );
+    assert.ok(
+      emptyHtml.includes('data-testid="rebalance-empty-filter-row"'),
+      'Empty search matches must render the empty-state guidance row'
+    );
+  });
+
+  it('10. Client-side validation enforces exact 100% target sum, non-negative inputs, and Lock 100% redistribution', () => {
+    const valid = validateRebalanceInputs(DEFAULT_TARGET_WEIGHTS, '250000');
+    assert.equal(valid.isAllValid, true);
+    assert.equal(valid.isValidSum, true);
+    assert.equal(valid.isFreshCapitalValid, true);
+    assert.equal(valid.errors.length, 0);
+
+    const overSum = validateRebalanceInputs(
+      { indianEquities: 40, mutualFunds: 25, usEquities: 30, cashLiquid: 10 },
+      '0'
+    );
+    assert.equal(overSum.isValidSum, false);
+    assert.equal(overSum.targetSum, 105);
+    assert.equal(overSum.isAllValid, false);
+    assert.ok(overSum.targetSumError.includes('105.0%'));
+
+    const negTarget = validateRebalanceInputs(
+      { indianEquities: -5, mutualFunds: 35, usEquities: 40, cashLiquid: 30 },
+      '0'
+    );
+    assert.equal(negTarget.hasNegativeTarget, true);
+    assert.equal(negTarget.isValidSum, false);
+    assert.equal(negTarget.isAllValid, false);
+
+    const negCapital = validateRebalanceInputs(DEFAULT_TARGET_WEIGHTS, '-50000');
+    assert.equal(negCapital.isFreshCapitalValid, false);
+    assert.equal(negCapital.isAllValid, false);
+    assert.ok(negCapital.freshCapitalError.includes('cannot be negative'));
+
+    const locked = rebalanceWeightsLocked100(DEFAULT_TARGET_WEIGHTS, 'usEquities', 45);
+    const lockedCheck = validateRebalanceInputs(locked, '100000');
+    assert.equal(locked.usEquities, 45);
+    assert.equal(lockedCheck.targetSum, 100);
+    assert.equal(lockedCheck.isValidSum, true);
+    assert.ok(
+      Object.values(locked).every((v) => v >= 0 && v <= 100),
+      'Locked 100% redistribution must keep every sleeve non-negative and <= 100%'
+    );
   });
 
   it('9. Static tools/portfolio-tracker/index.html navigation satisfies parity contract across inline and multiline whitespace variations', () => {
