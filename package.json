@@ -11,7 +11,7 @@
     "test:hq-canonical-projects": "node --test tests/hq-canonical-projects.test.js",
     "test:hq-project-details": "node --test tests/hq-project-details-regression.test.js",
     "test:hq-crm-clients": "node --test tests/hq-crm-clients-regression.test.js",
-    "deploy:preview": "wrangler deploy --env preview",
+    "deploy:preview": "npx wrangler deploy --env preview",
     "deploy:production": "node scripts/deploy-production.mjs"
   },
   "dependencies": {
