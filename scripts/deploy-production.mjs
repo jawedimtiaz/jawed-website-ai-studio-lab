@@ -14,7 +14,7 @@ try {
     console.log("Production deployment cancelled. No Wrangler command was run.");
     process.exitCode = 1;
   } else {
-    const result = spawnSync("npx", ["wrangler", "deploy", "--env", "production"], {
+    const result = spawnSync("wrangler", ["deploy", "--env", "production"], {
       stdio: "inherit",
       shell: process.platform === "win32"
     });
