@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { hqFetch, formatMoney, formatDate } from '../../services/hqService';
 import { HqAnalyticsResponse, HqSubView } from '../../types/hq';
+import { getClientProjectCount } from '../../services/hqClientHelpers';
 import { KpiStatCard, StatusDotText, ProjectStatusBadge, EmptyState, LoadingSkeleton } from './HqUiPrimitives';
 
 export const AnalyticsSection: React.FC<{
@@ -173,7 +174,7 @@ export const AnalyticsSection: React.FC<{
                         <td className="px-4 py-3">
                           <StatusDotText status={c.status} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono tabular-nums text-xs">{c.project_count}</td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums text-xs">{getClientProjectCount(c)}</td>
                         <td className="px-4 py-3 text-right font-mono tabular-nums text-xs">{formatMoney(c.invoiced_minor)}</td>
                         <td className="px-4 py-3 text-right font-mono tabular-nums text-xs text-emerald-700 font-medium">
                           {formatMoney(c.paid_minor)}

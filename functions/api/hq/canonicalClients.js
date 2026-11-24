@@ -213,7 +213,17 @@ async function listClients(request, db) {
     ${whereClause}
     ORDER BY c.updated_at DESC, c.id ASC LIMIT ? OFFSET ?`)
     .bind(...params, limit, offset).all();
-  return hqJson({ ok: true, clients: result.results || [], total, limit, offset, page });
+  const clients = (result.results || []).map((c) => {
+    const projectCount = typeof c.active_projects_count === 'number'
+      ? c.active_projects_count
+      : (typeof c.project_count === 'number' ? c.project_count : 0);
+    return {
+      ...c,
+      active_projects_count: projectCount,
+      project_count: projectCount
+    };
+  });
+  return hqJson({ ok: true, clients, total, limit, offset, page });
 }
 
 async function createClient(request, db, identity) {

@@ -361,6 +361,77 @@ export function toCanonicalClientPayload(
 }
 
 /**
+ * Safely extracts the active project count from any client record, supporting both
+ * canonical `active_projects_count` and legacy/fallback `project_count`.
+ * Returns a non-negative integer (defaults to 0 for missing/invalid values).
+ */
+export function getClientProjectCount(client: any): number {
+  if (!client || typeof client !== 'object') return 0;
+  if (typeof client.active_projects_count === 'number' && Number.isFinite(client.active_projects_count)) {
+    return Math.max(0, Math.trunc(client.active_projects_count));
+  }
+  if (typeof client.project_count === 'number' && Number.isFinite(client.project_count)) {
+    return Math.max(0, Math.trunc(client.project_count));
+  }
+  return 0;
+}
+
+/**
+ * Defensively normalizes an individual client record (e.g. from /api/hq/clients collection)
+ * ensuring that both active_projects_count and project_count are populated and synchronized.
+ */
+export function normalizeClientItem(rawClient: any): HqClient {
+  if (!rawClient || typeof rawClient !== 'object') {
+    return {
+      id: '',
+      name: 'Unnamed Client',
+      business_name: '',
+      status: 'active',
+      email: '',
+      phone: '',
+      notes: '',
+      archived_at: null,
+      created_at: '',
+      updated_at: '',
+      project_count: 0,
+      active_projects_count: 0
+    };
+  }
+
+  const count = getClientProjectCount(rawClient);
+
+  return {
+    ...rawClient,
+    id: String(rawClient.id || ''),
+    name: String(rawClient.name || rawClient.business_name || 'Unnamed Client'),
+    business_name: String(rawClient.business_name || rawClient.name || ''),
+    status: rawClient.status || 'active',
+    email: String(rawClient.email || ''),
+    phone: String(rawClient.phone || ''),
+    category: String(rawClient.category || ''),
+    website: String(rawClient.website_url || rawClient.website || ''),
+    address: String(rawClient.billing_address || rawClient.address || ''),
+    lead_source: String(rawClient.source || rawClient.lead_source || ''),
+    notes: String(rawClient.notes || ''),
+    last_contact_at: String(rawClient.last_contact_at || rawClient.updated_at || ''),
+    archived_at: rawClient.archived_at || null,
+    created_at: String(rawClient.created_at || ''),
+    updated_at: String(rawClient.updated_at || ''),
+    project_count: count,
+    active_projects_count: count,
+    outstanding_minor: typeof rawClient.outstanding_minor === 'number' ? rawClient.outstanding_minor : 0
+  };
+}
+
+/**
+ * Normalizes an array of client items from /api/hq/clients.
+ */
+export function normalizeClientList(clients: any[]): HqClient[] {
+  if (!Array.isArray(clients)) return [];
+  return clients.map(normalizeClientItem);
+}
+
+/**
  * Defensively normalizes client detail responses from the canonical API.
  * Ensures the returned bundle never causes undefined property exceptions in the UI.
  */
@@ -372,6 +443,8 @@ export function normalizeClientDetailResponse(response: any): NormalizedClientDe
   const rawClient = response.client ||
     (response.id ? response : (Array.isArray(response.clients) ? response.clients[0] : null)) ||
     {};
+
+  const projectCount = getClientProjectCount(rawClient);
 
   const client: HqClient = {
     id: String(rawClient.id || ''),
@@ -389,9 +462,8 @@ export function normalizeClientDetailResponse(response: any): NormalizedClientDe
     archived_at: rawClient.archived_at || null,
     created_at: String(rawClient.created_at || ''),
     updated_at: String(rawClient.updated_at || ''),
-    project_count: typeof rawClient.active_projects_count === 'number'
-      ? rawClient.active_projects_count
-      : (typeof rawClient.project_count === 'number' ? rawClient.project_count : 0),
+    project_count: projectCount,
+    active_projects_count: projectCount,
     outstanding_minor: typeof rawClient.outstanding_minor === 'number' ? rawClient.outstanding_minor : 0
   };
 
@@ -434,4 +506,101 @@ export function normalizeClientDetailResponse(response: any): NormalizedClientDe
     invoices,
     quotations
   };
+}
+
+export type CustomerDetailBundle = NormalizedClientDetailBundle;
+
+export interface FetchCustomerDetailBundleOptions {
+  maxRetries?: number;
+  retryDelayMs?: number;
+  fetchFn?: <T = any>(path: string, options?: any) => Promise<T>;
+  delayFn?: (ms: number) => Promise<void>;
+  onRetry?: (attempt: number, error: any) => void;
+}
+
+/**
+ * Distinguishes transient server/network errors (eligible for retry) from permanent client errors.
+ * 5xx status codes and network fetch failures are transient.
+ * 4xx status codes (400, 401, 403, 404, etc.) are permanent.
+ */
+export function isTransientError(error: any): boolean {
+  if (!error) return false;
+  const status = typeof error.status === 'number' ? error.status : null;
+  if (status !== null) {
+    if (status >= 500 && status <= 599) return true;
+    if (status >= 400 && status < 500) return false;
+  }
+  const msg = String(error.message || '').toLowerCase();
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('timeout') || msg.includes('abort')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Fetches customer details and linked projects with bounded retry resilience for transient 5xx errors.
+ */
+export async function fetchCustomerDetailBundle(
+  clientId: string,
+  options: FetchCustomerDetailBundleOptions = {}
+): Promise<NormalizedClientDetailBundle> {
+  const {
+    maxRetries = 1,
+    retryDelayMs = 350,
+    fetchFn = async <T = any>(path: string): Promise<T> => {
+      const r = await fetch(path);
+      if (!r.ok) {
+        const err: any = new Error(`Request failed with status ${r.status}`);
+        err.status = r.status;
+        throw err;
+      }
+      return r.json();
+    },
+    delayFn = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+    onRetry
+  } = options;
+
+  let clientRes: { ok?: boolean; client?: HqClient } | null = null;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      clientRes = await fetchFn<{ ok?: boolean; client?: HqClient }>(
+        `/api/hq/clients/${encodeURIComponent(clientId)}`
+      );
+      break;
+    } catch (err: any) {
+      lastError = err;
+      const isTransient = isTransientError(err);
+      if (attempt < maxRetries && isTransient) {
+        if (onRetry) onRetry(attempt + 1, err);
+        if (retryDelayMs > 0) {
+          await delayFn(retryDelayMs);
+        }
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (!clientRes) {
+    throw lastError || new Error('Failed to load customer record');
+  }
+
+  let linkedProjects: HqProject[] = [];
+  let projectsError: string | null = null;
+  try {
+    const projRes = await fetchFn<{ ok?: boolean; projects?: HqProject[] }>(
+      `/api/hq/projects?clientId=${encodeURIComponent(clientId)}`
+    );
+    linkedProjects = projRes.projects || [];
+  } catch (err: any) {
+    projectsError = err.message || 'Unable to load linked projects';
+  }
+
+  return normalizeClientDetailResponse({
+    ...clientRes,
+    projects: linkedProjects,
+    projectsError
+  });
 }
