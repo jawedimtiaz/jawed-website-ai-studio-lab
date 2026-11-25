@@ -49,7 +49,8 @@ const HQ_HTML_CSP =
 
 function isKnownAppRoute(pathname, routePaths) {
   if (!Array.isArray(routePaths)) return false;
-  const normalizedPath = pathname.length > 1 ? pathname.replace(/\\/+$/, '') : '/';
+  let normalizedPath = pathname;
+  while (normalizedPath.length > 1 && normalizedPath.endsWith('/')) normalizedPath = normalizedPath.slice(0, -1);
 
   return routePaths.some((routePath) => {
     if (typeof routePath !== 'string' || !routePath.startsWith('/')) return false;
@@ -57,10 +58,9 @@ function isKnownAppRoute(pathname, routePaths) {
     const pattern = segments.map((segment) => {
       if (segment === '*') return '.*';
       if (segment.startsWith(':')) return '[^/]+';
-      return segment.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&');
+      return segment.split('').map((character) => '.^$+?()[]{}|\\\\'.includes(character) ? '\\\\' + character : character).join('');
     }).join('/');
-    const regex = new RegExp(`^/${pattern}/?$`);
-    return regex.test(normalizedPath);
+    return new RegExp('^/' + pattern + '/?$').test(normalizedPath);
   });
 }
 
