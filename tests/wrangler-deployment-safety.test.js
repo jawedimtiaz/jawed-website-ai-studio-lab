@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { runProductionDeploymentGuard, PRODUCTION_CONFIRMATION } from "../scripts/deploy-production.mjs";
 
 const config = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
 const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
@@ -30,4 +31,42 @@ test("package scripts provide explicit Preview and guarded Production commands",
 test("deployment safety validator asserts environment separation", () => {
   assert.match(validator, /Default HQ_DB must point only to Preview D1/);
   assert.match(validator, /Production HQ_DB must point only to Production D1/);
+});
+
+test("Production guard does not invoke Wrangler when confirmation is incorrect", () => {
+  let invoked = false;
+  const status = runProductionDeploymentGuard({
+    answer: "wrong confirmation",
+    spawn: () => { invoked = true; return { status: 0 }; },
+    log: () => {}
+  });
+  assert.equal(status, 1);
+  assert.equal(invoked, false);
+});
+
+test("Production guard invokes only the explicit Production environment after exact confirmation", () => {
+  let invocation;
+  const status = runProductionDeploymentGuard({
+    answer: PRODUCTION_CONFIRMATION,
+    platform: "linux",
+    spawn: (...args) => { invocation = args; return { status: 0 }; },
+    log: () => {}
+  });
+  assert.equal(status, 0);
+  assert.deepEqual(invocation, [
+    "wrangler",
+    ["deploy", "--env", "production"],
+    { stdio: "inherit", shell: false }
+  ]);
+});
+
+test("Production guard enables shell command resolution on Windows", () => {
+  let invocation;
+  runProductionDeploymentGuard({
+    answer: PRODUCTION_CONFIRMATION,
+    platform: "win32",
+    spawn: (...args) => { invocation = args; return { status: 0 }; },
+    log: () => {}
+  });
+  assert.equal(invocation[2].shell, true);
 });
