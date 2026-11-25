@@ -28,7 +28,7 @@ Preview and Production D1 IDs are asserted to be different by the deployment-saf
 
 - Wrangler is declared as an exact development dependency: `wrangler@4.166.0`.
 - Deployment commands use the locally installed CLI, not an unpinned `npx` download.
-- This repository currently has no tracked npm, pnpm, or Yarn lockfile. The exact direct dependency pins the CLI release, but transitive dependency resolution is not lockfile-reproducible. A lockfile policy is a separate repository-wide decision and is not introduced in this phase.
+- `bun.lock` is the repository's tracked lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`) and has been reconciled to pin `wrangler@4.166.0`, `jose@6.1.2`, and all transitive dependencies. No `package-lock.json` is tracked; Bun (`bun install --frozen-lockfile`) is the authoritative reproducible install path.
 
 ## Supported commands
 
@@ -61,15 +61,15 @@ The workflow is validation-only. It has read-only repository permissions and con
 
 A second, separate CI job now performs a full application build and Wrangler compile without deployment:
 
-1. Installs project dependencies with `npm install --no-package-lock` (does not create or change a lockfile).
-2. Runs `npm run build` to produce `dist/`.
-3. Runs `npm exec -- wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
+1. Sets up Node.js `22` and Bun `1.4.4` (`oven-sh/setup-bun`), then installs project dependencies with `bun install --frozen-lockfile`.
+2. Runs `bun run build` to produce `dist/`.
+3. Runs `./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
 
-The job uses the root/Preview configuration explicitly and does not use a Cloudflare API token. It is a compile validation only; it does not publish a Worker, run D1 migrations, or modify D1 data. The dry-run and build job passed in GitHub Actions run 352 (run ID `45560816193`) on commit `e00c352124a98c74a4f947d580ba33f59534fa17`.
+The job targets the named `preview` environment (matching root Preview config) and does not use a Cloudflare API token. It is a compile validation only; it does not publish a Worker, run D1 migrations, or modify D1 data. Earlier CI run 352 (run ID `45560816193`) on commit `e00c352124a98c74a4f947d580ba33f59534fa17` validated the initial `npm install --no-package-lock` workflow before `bun.lock` reconciliation.
 
 ## Confirmation guard regression coverage
 
-The Production confirmation logic is exported as a testable function. Mocked tests verify that incorrect confirmation does not invoke Wrangler, exact confirmation invokes only `wrangler deploy --env production`, and Windows uses shell command resolution. These tests do not launch Wrangler or contact Cloudflare.
+The Production confirmation logic is exported as a testable function. Mocked tests verify that incorrect or non-string confirmation does not invoke Wrangler, exact confirmation invokes only the resolved local Wrangler CLI with `--env production` via Node (`process.execPath`, without shell resolution), and non-zero exit codes, signal terminations, and spawn errors propagate. These tests do not launch Wrangler or contact Cloudflare.
 
 
 ## Latest branch verification — 25 November 2026

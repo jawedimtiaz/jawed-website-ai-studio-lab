@@ -95,9 +95,13 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Install dependencies without changing lockfiles
-        run: npm install --no-package-lock
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies with frozen lockfile
+        run: bun install --frozen-lockfile
       - name: Build application assets
-        run: npm run build
+        run: bun run build
       - name: Compile Preview Worker without deploying
-        run: npm exec -- wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run
+        run: ./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run

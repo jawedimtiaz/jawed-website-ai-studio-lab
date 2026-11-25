@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const PREVIEW_WORKER = "jawed-website-ai-studio-lab-preview";
 export const PRODUCTION_WORKER = "jawed-website-ai-studio-lab";
@@ -66,6 +68,7 @@ export function validateWranglerConfig(config) {
 
   failIf(errors, preview?.name !== PREVIEW_WORKER, "The named preview environment must resolve to the Preview Worker.");
   validateEnvironmentVars(errors, preview, "preview", PREVIEW_ORIGIN);
+  validateD1(errors, preview, PREVIEW_DB, "jawed-studio-hq-preview");
   failIf(errors, !sameJson(preview?.ai, config?.ai), "Root and named Preview AI bindings must match.");
   failIf(errors, !sameJson(preview?.d1_databases, config?.d1_databases), "Root and named Preview D1 bindings must match exactly.");
   failIf(errors, !sameJson(preview?.ratelimits, config?.ratelimits), "Root and named Preview rate-limit bindings must match exactly.");
@@ -89,7 +92,12 @@ export function validateWranglerConfig(config) {
   return errors;
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1].replaceAll("\\\\", "/")) {
+const currentFile = fileURLToPath(import.meta.url);
+const invokedFile = process.argv[1]
+  ? path.resolve(process.argv[1])
+  : null;
+
+if (invokedFile === currentFile) {
   const config = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
   const errors = validateWranglerConfig(config);
   if (errors.length) {

@@ -1049,4 +1049,11 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Lockfile limitation remains: Wrangler is exact-pinned at `4.166.0`, but there is no tracked package lockfile, so transitive dependency resolution is not fully reproducible.
 - No Worker deployment, D1 migration/write, secret change, personal-site modification, customer-project modification, or Production operation was performed.
 
-**Next action:** complete the final read-only review of PR #77 and its current checks. Do not merge PR #77 or deploy Preview/Production without separate explicit authorization.
+### Phase 8.0.7 — dependency lockfile reconciliation addendum (25 November 2026)
+
+- Reconciled the repository's tracked `bun.lock` (`bun --use-system-ca install --lockfile-only`, Bun `1.4.4`) to include `wrangler@4.166.0`, `jose@6.1.2`, and all transitive dependencies without upgrading existing application dependencies.
+- Updated `.github/workflows/deployment-runtime-reliability.yml` (`preview-worker-dry-run`) to install via `oven-sh/setup-bun` (`1.4.4`) + `bun install --frozen-lockfile`, build via `bun run build`, and compile via `./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
+- Verified locally: clean `bun install --frozen-lockfile`, `bun run lint`, `bun run build`, Wrangler `--dry-run --env preview`, and all repository safety/supply-chain/runtime validators pass.
+- Note: the statement above from earlier commits regarding "no tracked lockfile" predated this reconciliation; `bun.lock` is the repository's authoritative lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`), and `npm install` remains unsupported for lockfile-reproducible installs because no `package-lock.json` is maintained.
+
+**Next action:** review the uncommitted lockfile reconciliation diff on `safety/phase-8-0-7-deployment-guard` before committing/pushing. Do not merge PR #77 or deploy Preview/Production without separate explicit authorization.
