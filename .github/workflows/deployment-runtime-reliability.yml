@@ -33,6 +33,12 @@ on:
     paths:
       - "wrangler.jsonc"
       - "package.json"
+      - "bun.lock"
+      - "worker.js"
+      - "src/**"
+      - "scripts/prepare-dist.mjs"
+      - "tsconfig.json"
+      - "vite.config.ts"
       - "scripts/validate-wrangler-deployment-safety.mjs"
       - "scripts/deploy-production.mjs"
       - "tests/wrangler-deployment-safety.test.js"
