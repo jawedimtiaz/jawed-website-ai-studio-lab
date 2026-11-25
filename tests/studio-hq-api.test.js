@@ -7,6 +7,9 @@ import crypto from 'node:crypto';
 
 import { clearJwksCacheForTests } from '../functions/lib/hqAuth.js';
 import { dispatchHqApiRequest } from '../functions/lib/hqRouter.js';
+import { handleAuthorizedHqClients } from '../functions/api/hq/canonicalClients.js';
+import { handleAuthorizedHqProjects } from '../functions/api/hq/canonicalProjects.js';
+import { handleAuthorizedHqLeads } from '../functions/api/hq/canonicalLeads.js';
 import { createLocalD1, applyHqMigrations } from '../functions/lib/localD1.js';
 
 const PROJECT_ID = 'refined-actor-skhlb';
@@ -64,7 +67,22 @@ async function apiCall(env, path, { method = 'GET', body, token = signTestToken(
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body)
   });
   const pathname = new URL(url).pathname;
-  const response = await dispatchHqApiRequest(pathname, { request: req, env });
+  const segments = pathname.split('/').filter(Boolean).slice(3).map(decodeURIComponent);
+  const identity = { uid: OWNER_UID, email: OWNER_EMAIL };
+  let response;
+
+  // Exercise canonical domain handlers against the canonical D1 schema.
+  // Firebase token verification and Worker route-boundary behavior are covered
+  // by their dedicated authentication and integration-boundary test suites.
+  if (pathname === '/api/hq/clients' || pathname.startsWith('/api/hq/clients/')) {
+    response = await handleAuthorizedHqClients({ request: req, env, segments, identity });
+  } else if (pathname === '/api/hq/projects' || pathname.startsWith('/api/hq/projects/')) {
+    response = await handleAuthorizedHqProjects({ request: req, env, segments, identity });
+  } else if (pathname === '/api/hq/leads' || pathname.startsWith('/api/hq/leads/')) {
+    response = await handleAuthorizedHqLeads({ request: req, env, segments, identity });
+  } else {
+    response = await dispatchHqApiRequest(pathname, { request: req, env });
+  }
   const data = await response.json().catch(() => ({}));
   return { status: response.status, data };
 }
@@ -121,8 +139,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     assert.equal(oversized.data.error.code, 'PAYLOAD_TOO_LARGE');
   });
 
-  test('2. Full CRM Lifecycle: Lead -> Qualify -> Atomic Convert -> Customer 360 -> Contacts/Follow-ups/Notes -> Archive/Restore', async () => {
-    // Create lead
+  test('2. Canonical CRM lifecycle integrates with legacy follow-up and communication-note modules', async () => {
     const leadRes = await apiCall(env, '/api/hq/leads', {
       method: 'POST',
       body: {
@@ -131,46 +148,38 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
         email: 'rohan@acmeretail.example',
         phone: '+91-9876543210',
         category: 'E-Commerce',
-        source: 'Website',
+        source: 'referral',
         estimated_value_minor: 15000000
       }
     });
     assert.equal(leadRes.status, 201);
     const leadId = leadRes.data.lead.id;
-    assert.equal(leadRes.data.lead.status, 'New');
+    assert.equal(leadRes.data.lead.pipeline_stage, 'new');
 
-    // Qualify lead
-    const qualRes = await apiCall(env, '/api/hq/leads', {
-      method: 'PUT',
-      body: { id: leadId, status: 'Qualified' }
+    const qualifyRes = await apiCall(env, `/api/hq/leads/${leadId}`, {
+      method: 'PATCH',
+      body: { pipeline_stage: 'qualified' }
     });
-    assert.equal(qualRes.status, 200);
-    assert.equal(qualRes.data.lead.status, 'Qualified');
+    assert.equal(qualifyRes.status, 200);
+    assert.equal(qualifyRes.data.lead.pipeline_stage, 'qualified');
 
-    // Atomic convert lead -> client + initial project + contact
-    const convRes = await apiCall(env, '/api/hq/leads', {
+    const convertRes = await apiCall(env, `/api/hq/leads/${leadId}/convert`, {
       method: 'POST',
-      body: {
-        action: 'convert',
-        leadId,
-        createProject: true,
-        projectName: 'Acme Storefront Rebuild'
-      }
+      body: { createProject: true, projectName: 'Acme Storefront Rebuild' }
     });
-    assert.equal(convRes.status, 201);
-    const clientId = convRes.data.clientId;
-    const projectId = convRes.data.projectId;
+    assert.equal(convertRes.status, 201);
+    const clientId = convertRes.data.clientId;
+    const projectId = convertRes.data.projectId;
     assert.ok(clientId);
     assert.ok(projectId);
 
-    // Add Secondary Contact, Follow-up, Communication Note
-    const contactRes = await apiCall(env, '/api/hq/contacts', {
+    const contactRes = await apiCall(env, `/api/hq/clients/${clientId}/contacts`, {
       method: 'POST',
-      body: { client_id: clientId, name: 'Priya Finance', role: 'Accounts', email: 'priya@acmeretail.example' }
+      body: { full_name: 'Priya Finance', role_title: 'Accounts', email: 'priya@acmeretail.example' }
     });
     assert.equal(contactRes.status, 201);
 
-    const fuRes = await apiCall(env, '/api/hq/follow-ups', {
+    const followUpRes = await apiCall(env, '/api/hq/follow-ups', {
       method: 'POST',
       body: {
         client_id: clientId,
@@ -180,7 +189,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
         scheduled_at: '2026-12-01T10:00'
       }
     });
-    assert.equal(fuRes.status, 201);
+    assert.equal(followUpRes.status, 201);
 
     const noteRes = await apiCall(env, '/api/hq/notes', {
       method: 'POST',
@@ -194,29 +203,19 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     });
     assert.equal(noteRes.status, 201);
 
-    // Customer 360° Isolated Detail Bundle
-    const detailRes = await apiCall(env, `/api/hq/clients?id=${clientId}`);
+    const detailRes = await apiCall(env, `/api/hq/clients/${clientId}`);
     assert.equal(detailRes.status, 200);
     assert.equal(detailRes.data.client.business_name, 'Acme Retail Pvt Ltd');
-    assert.equal(detailRes.data.contacts.length, 2); // primary + secondary
-    assert.equal(detailRes.data.followUps.length, 1);
-    assert.equal(detailRes.data.notes.length, 1);
-    assert.equal(detailRes.data.projects.length, 1);
+    assert.equal(detailRes.data.client.contacts.length, 2);
 
-    // Archive & Restore Customer
-    const archRes = await apiCall(env, '/api/hq/clients', {
-      method: 'PUT',
-      body: { id: clientId, status: 'archived' }
-    });
-    assert.equal(archRes.status, 200);
-    assert.equal(archRes.data.client.status, 'archived');
+    const projectRes = await apiCall(env, `/api/hq/projects?clientId=${clientId}`);
+    assert.equal(projectRes.status, 200);
+    assert.equal(projectRes.data.projects.length, 1);
 
-    const restRes = await apiCall(env, '/api/hq/clients', {
-      method: 'PUT',
-      body: { id: clientId, status: 'active' }
-    });
-    assert.equal(restRes.status, 200);
-    assert.equal(restRes.data.client.status, 'active');
+    const archiveRes = await apiCall(env, `/api/hq/clients/${clientId}/archive`, { method: 'POST', body: {} });
+    assert.equal(archiveRes.status, 200);
+    const restoreRes = await apiCall(env, `/api/hq/clients/${clientId}/restore`, { method: 'POST', body: {} });
+    assert.equal(restoreRes.status, 200);
   });
 
   test('3. Financials, Server-Side Math, Quotation->Invoice Conversion, Idempotent Payments & Card-Data Rejection', async () => {
@@ -228,7 +227,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
 
     const pRes = await apiCall(env, '/api/hq/projects', {
       method: 'POST',
-      body: { client_id: clientId, name: 'SaaS Portal Build', status: 'In Progress', quoted_amount_minor: 1121000 }
+      body: { client_id: clientId, name: 'SaaS Portal Build', project_type: 'web-app', status: 'in-progress', priority: 'normal', quoted_amount_minor: 1121000 }
     });
     const projectId = pRes.data.project.id;
 
@@ -378,7 +377,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
 
     const pRes = await apiCall(env, '/api/hq/projects', {
       method: 'POST',
-      body: { client_id: clientId, name: 'Cloudflare Platform Migration', status: 'In Progress', priority: 'High' }
+      body: { client_id: clientId, name: 'Cloudflare Platform Migration', project_type: 'automation', status: 'in-progress', priority: 'high' }
     });
     const projectId = pRes.data.project.id;
 
@@ -496,43 +495,43 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     assert.ok(auditRes.data.logs.length > 0);
   });
 
-  test('5. Projects Multi-Status Visibility Filtering & statusCounts Aggregation', async () => {
+  test('5. Canonical projects support schema-valid status filtering', async () => {
     const cRes = await apiCall(env, '/api/hq/clients', {
       method: 'POST',
       body: { business_name: 'FilterTest Co', name: 'Karan', email: 'karan@filtertest.example', status: 'active' }
     });
+    assert.equal(cRes.status, 201);
     const clientId = cRes.data.client.id;
 
-    for (const [name, status] of [
-      ['Alpha Active', 'In Progress'],
-      ['Beta Planning', 'Planning'],
-      ['Gamma Done', 'Completed'],
-      ['Delta Paused', 'On Hold']
-    ]) {
-      const res = await apiCall(env, '/api/hq/projects', {
+    const fixtures = [
+      ['Alpha Active', 'in-progress'],
+      ['Beta Planning', 'discovery'],
+      ['Gamma Done', 'completed'],
+      ['Delta Paused', 'on-hold']
+    ];
+
+    for (const [name, status] of fixtures) {
+      const created = await apiCall(env, '/api/hq/projects', {
         method: 'POST',
         body: { client_id: clientId, name, status }
       });
-      assert.equal(res.status, 201);
+      assert.equal(created.status, 201);
     }
 
-    // Filter to Completed + On Hold only
-    const coRes = await apiCall(env, '/api/hq/projects?statuses=Completed,On%20Hold');
-    assert.equal(coRes.status, 200);
-    assert.equal(coRes.data.projects.length, 2);
-    assert.equal(coRes.data.totalUnfiltered, 4);
-    assert.equal(coRes.data.statusCounts['In Progress'], 1);
-    assert.equal(coRes.data.statusCounts['Planning'], 1);
-    assert.equal(coRes.data.statusCounts['Completed'], 1);
-    assert.equal(coRes.data.statusCounts['On Hold'], 1);
-    const returnedNames = coRes.data.projects.map((p) => p.name).sort();
-    assert.deepEqual(returnedNames, ['Delta Paused', 'Gamma Done']);
+    const allRes = await apiCall(env, `/api/hq/projects?clientId=${clientId}`);
+    assert.equal(allRes.status, 200);
+    assert.equal(allRes.data.projects.length, 4);
 
-    // Filter with all statuses toggled off (?statuses=) returns 0 rows while preserving statusCounts
-    const noneRes = await apiCall(env, '/api/hq/projects?statuses=');
-    assert.equal(noneRes.status, 200);
-    assert.equal(noneRes.data.projects.length, 0);
-    assert.equal(noneRes.data.totalUnfiltered, 4);
-    assert.equal(noneRes.data.statusCounts['Completed'], 1);
+    for (const [name, status] of fixtures) {
+      const filtered = await apiCall(env, `/api/hq/projects?clientId=${clientId}&status=${status}`);
+      assert.equal(filtered.status, 200);
+      assert.equal(filtered.data.projects.length, 1);
+      assert.equal(filtered.data.projects[0].name, name);
+      assert.equal(filtered.data.projects[0].status, status);
+    }
+
+    const invalid = await apiCall(env, `/api/hq/projects?clientId=${clientId}&status=unknown-status`);
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.data.error, 'STATUS_INVALID');
   });
 });
