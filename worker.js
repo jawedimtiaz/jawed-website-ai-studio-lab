@@ -58,7 +58,7 @@ function isKnownAppRoute(pathname, routePaths) {
     const pattern = segments.map((segment) => {
       if (segment === '*') return '.*';
       if (segment.startsWith(':')) return '[^/]+';
-      return segment.split('').map((character) => '.^$+?()[]{}|\\\\'.includes(character) ? '\\\\' + character : character).join('');
+      return segment;
     }).join('/');
     return new RegExp('^/' + pattern + '/?$').test(normalizedPath);
   });
