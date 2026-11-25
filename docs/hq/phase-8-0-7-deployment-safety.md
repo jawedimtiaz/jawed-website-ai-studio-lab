@@ -70,3 +70,18 @@ The job uses the root/Preview configuration explicitly and does not use a Cloudf
 ## Confirmation guard regression coverage
 
 The Production confirmation logic is exported as a testable function. Mocked tests verify that incorrect confirmation does not invoke Wrangler, exact confirmation invokes only `wrangler deploy --env production`, and Windows uses shell command resolution. These tests do not launch Wrangler or contact Cloudflare.
+
+
+## Latest branch verification — 25 November 2026
+
+The PR branch was synchronized with current `main` through merge commit `7f0aaa59317bd578e65047e5b67847efea6613ef`. The branch is no longer behind `main`.
+
+All three GitHub Actions gates passed for that exact commit:
+
+- Deployment Runtime Reliability Gate: run #355, ID `45561207386` — success. Both the runtime validation job and Preview Worker dry-run build job completed successfully.
+- Security Supply Chain Gate: run #556, ID `45561207418` — success.
+- AdSense Readiness Gate: run #665, ID `45561207465` — success.
+
+The dry-run is compile/build evidence only. It does not establish live Preview Worker behavior and does not mean a Worker was deployed.
+
+PR #77 remains open and unmerged. No Worker deployment, D1 migration/write, secret change, or Production operation was performed. Production deployment remains separately unauthorized.
