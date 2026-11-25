@@ -45,6 +45,22 @@ export function createLocalD1(dbPath = ':memory:') {
         },
         async run() {
           const stmt = sqlite.prepare(sql);
+          const columns = stmt.columns();
+          if (columns.length > 0) {
+            // D1 returns rows for statements that use RETURNING. Match that
+            // behavior in the local SQLite adapter so canonical handlers can
+            // consume batch results consistently in Node regression tests.
+            const rows = stmt.all(...params);
+            const isMutation = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql);
+            const changes = isMutation
+              ? Number(sqlite.prepare('SELECT changes() AS changes').get()?.changes ?? 0)
+              : 0;
+            return {
+              success: true,
+              results: rows.map((row) => ({ ...row })),
+              meta: { changes, last_row_id: 0 }
+            };
+          }
           const info = stmt.run(...params);
           return {
             success: true,
