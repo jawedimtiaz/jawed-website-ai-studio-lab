@@ -51,7 +51,7 @@ export function createLocalD1(dbPath = ':memory:') {
             // behavior in the local SQLite adapter so canonical handlers can
             // consume batch results consistently in Node regression tests.
             const rows = stmt.all(...params);
-            const isMutation = /^\\s*(INSERT|UPDATE|DELETE|REPLACE)\\b/i.test(sql);
+            const isMutation = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql);
             const changes = isMutation
               ? Number(sqlite.prepare('SELECT changes() AS changes').get()?.changes ?? 0)
               : 0;
