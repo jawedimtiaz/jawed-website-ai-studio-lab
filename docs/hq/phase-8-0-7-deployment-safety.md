@@ -56,3 +56,17 @@ The workflow is validation-only. It has read-only repository permissions and con
 - A Worker code rollback does not restore D1 data.
 - Any future Production release requires separate explicit owner authorization, a reviewed release plan, a Wrangler dry run, and live smoke verification.
 - Any D1 migration or data restoration requires separate review and authorization.
+
+## Preview Worker dry-run CI
+
+A second, separate CI job now performs a full application build and Wrangler compile without deployment:
+
+1. Installs project dependencies with `npm install --no-package-lock` (does not create or change a lockfile).
+2. Runs `npm run build` to produce `dist/`.
+3. Runs `npm exec -- wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
+
+The job uses the root/Preview configuration explicitly and does not use a Cloudflare API token. It is a compile validation only; it does not publish a Worker, run D1 migrations, or modify D1 data. The dry-run and build job passed in GitHub Actions run 352 (run ID `45560816193`) on commit `e00c352124a98c74a4f947d580ba33f59534fa17`.
+
+## Confirmation guard regression coverage
+
+The Production confirmation logic is exported as a testable function. Mocked tests verify that incorrect confirmation does not invoke Wrangler, exact confirmation invokes only `wrangler deploy --env production`, and Windows uses shell command resolution. These tests do not launch Wrangler or contact Cloudflare.
