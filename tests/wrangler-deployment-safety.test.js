@@ -96,20 +96,10 @@ test("Production guard invokes only the explicit Production environment after ex
     log: () => {}
   });
   assert.equal(status, 0);
-  assert.deepEqual(invocation, [
-    "wrangler",
-    ["deploy", "--env", "production"],
-    { stdio: "inherit", shell: false }
-  ]);
+  assert.equal(invocation[0], process.execPath);
+  assert.match(invocation[1][0], /wrangler/);
+  assert.deepEqual(invocation[1].slice(1), ["deploy", "--env", "production"]);
+  assert.deepEqual(invocation[2], { stdio: "inherit" });
 });
 
-test("Production guard enables shell command resolution on Windows", () => {
-  let invocation;
-  runProductionDeploymentGuard({
-    answer: PRODUCTION_CONFIRMATION,
-    platform: "win32",
-    spawn: (...args) => { invocation = args; return { status: 0 }; },
-    log: () => {}
-  });
-  assert.equal(invocation[2].shell, true);
-});
+test("Production guard rejects non-string confirmation without invoking Wrangler", () => {\n  let invoked = false;\n  const status = runProductionDeploymentGuard({\n    answer: undefined,\n    spawn: () => { invoked = true; return { status: 0 }; },\n    log: () => {}\n  });\n  assert.equal(status, 1);\n  assert.equal(invoked, false);\n});\n\ntest("Production guard propagates non-zero Wrangler exit status", () => {\n  const status = runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ status: 2 }),\n    log: () => {}\n  });\n  assert.equal(status, 2);\n});\n\ntest("Production guard returns failure when Wrangler is terminated without an exit status", () => {\n  const status = runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ status: null, signal: "SIGTERM" }),\n    log: () => {}\n  });\n  assert.equal(status, 1);\n});\n\ntest("Production guard propagates Wrangler spawn errors", () => {\n  const expected = new Error("spawn failed");\n  assert.throws(() => runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ error: expected }),\n    log: () => {}\n  }), expected);\n});
