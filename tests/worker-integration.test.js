@@ -230,3 +230,63 @@ test('10. End-to-end exception containment: canonical errors never fall through 
   // Legacy router would return { error: 'HQ endpoint not found' } or legacy payload structure
   assert.equal(data.ok, false);
 });
+
+test('11. Known client-side routes are served while unknown browser routes return branded HTTP 404', async () => {
+  const env = createMockEnv({
+    ASSETS: {
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        if (url.pathname === '/app-routes.json') {
+          return new Response(JSON.stringify({
+            version: 1,
+            routes: ['/', '/tools/:slug', '/tools/:slug/', '/studio-hq', '/studio-hq/*']
+          }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }
+        if (url.pathname === '/' || url.pathname === '/index.html') {
+          return new Response('<!DOCTYPE html><html><body>Lab SPA Shell</body></html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html; charset=utf-8' }
+          });
+        }
+        if (url.pathname === '/tools/portfolio-tracker/' || url.pathname === '/studio-hq') {
+          return new Response('<!DOCTYPE html><html><body>Known route shell</body></html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html; charset=utf-8' }
+          });
+        }
+        return new Response('Not Found', { status: 404 });
+      }
+    }
+  });
+
+  const knownPaths = ['/tools/portfolio-tracker/', '/studio-hq', '/studio-hq/projects'];
+  for (const path of knownPaths) {
+    const res = await worker.fetch(new Request(`${TEST_ORIGIN}${path}`, {
+      headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+    }), env, mockCtx);
+    assert.equal(res.status, 200, `Expected known route ${path} to remain available`);
+  }
+
+  const unknown = await worker.fetch(new Request(`${TEST_ORIGIN}/this-route-does-not-exist`, {
+    headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+  }), env, mockCtx);
+  assert.equal(unknown.status, 404);
+  assert.match(await unknown.text(), /Lab SPA Shell/);
+  assert.equal(unknown.headers.get('x-frame-options'), 'DENY');
+});
+
+test('12. Unknown API and missing static assets remain 404 and never receive the SPA shell', async () => {
+  const env = createMockEnv();
+  const api = await worker.fetch(new Request(`${TEST_ORIGIN}/api/unknown-route`, {
+    headers: { accept: 'text/html' }
+  }), env, mockCtx);
+  assert.equal(api.status, 404);
+  assert.match(api.headers.get('content-type') || '', /application\\/json/);
+
+  const asset = await worker.fetch(new Request(`${TEST_ORIGIN}/assets/missing.js`, {
+    headers: { accept: '*/*' }
+  }), env, mockCtx);
+  assert.equal(asset.status, 404);
+  assert.doesNotMatch(await asset.text(), /SPA Root/);
+});
+
