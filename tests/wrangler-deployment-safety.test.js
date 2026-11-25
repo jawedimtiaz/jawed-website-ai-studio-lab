@@ -91,7 +91,7 @@ test("Production guard invokes only the explicit Production environment after ex
   let invocation;
   const status = runProductionDeploymentGuard({
     answer: PRODUCTION_CONFIRMATION,
-    platform: "linux",
+    wranglerEntry: "/mock/wrangler.js",
     spawn: (...args) => { invocation = args; return { status: 0 }; },
     log: () => {}
   });
