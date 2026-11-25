@@ -1057,3 +1057,21 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Note: the statement above from earlier commits regarding "no tracked lockfile" predated this reconciliation; `bun.lock` is the repository's authoritative lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`), and `npm install` remains unsupported for lockfile-reproducible installs because no `package-lock.json` is maintained.
 
 **Next action:** review the uncommitted lockfile reconciliation diff on `safety/phase-8-0-7-deployment-guard` before committing/pushing. Do not merge PR #77 or deploy Preview/Production without separate explicit authorization.
+
+---
+
+### Phase 8.0.16-R — missing static asset 404 regression fix (25 November 2026)
+
+- **Verified live Preview defect on PR #78 (`e01f689b24db3e2ab1f26c6c54808a264baa47c5`):** `https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev` returned `HTTP 200 OK` (`text/html`, `index.html`) for missing static assets (`/assets/nonexistent-phase-8-0-16.js` and `/missing-script.js`) because `wrangler.jsonc` configured `"not_found_handling": "single-page-application"`.
+- **Bounded fix (`fix/phase-8-0-16r-missing-asset-404`):** updated `wrangler.jsonc` to `"not_found_handling": "none"` while keeping `"run_worker_first": ["/*", "!/assets/*"]`. With `"not_found_handling": "none"`, Cloudflare Assets returns `404` for missing `/assets/*` and missing root static resources, while `worker.js` continues to serve known SPA routes (`200`), unknown HTML navigation routes with the React Not-Found shell (`404`), unknown `/api/*` routes (`404` JSON), and existing assets (`200`).
+- **Regression coverage (`tests/worker-integration.test.js`):** updated `ASSETS.fetch` simulation to enforce `wrangler.jsonc`'s `not_found_handling` and `run_worker_first` semantics, and added explicit assertions for missing `/assets/nonexistent.js`, missing `/assets/nonexistent.css`, missing `/missing-script.js`, known SPA routes, unknown browser routes, unknown API routes, and existing assets.
+- **Controlled Preview deployment gate:** `.github/workflows/deploy-preview-artifact.yml` on `main` (`37548a3a`) hardcodes PR `#78`, head branch `fix/phase-8-0-16-spa-true-404`, and head SHA verification; it cannot deploy a separate Phase 8.0.16-R PR artifact without an approved workflow update on `main` or incorporating this fix into PR #78. No direct Wrangler deploy or Production change was performed.
+
+---
+
+### Phase 8.0.16-S — SPA shell `/index.html` redirect regression fix (25 November 2026)
+
+- **Post-PR #80 live Preview deployment (`Version 0e15ea87-cf69-4713-83ca-5a912f48b061`, Run `45618262849`):** Confirmed missing static JS/CSS assets now return `HTTP 404` (`0` bytes), `/`, `/tools/portfolio-tracker/`, existing assets, and `/api/unknown-route` pass, while non-static SPA routes (`/studio-hq`, `/studio-hq/projects`, `/about`, `/about/`) returned `HTTP 301 Location: /` and unknown browser routes (`/this-route-does-not-exist-8016r`) returned `HTTP 404 Location: /` with `0` bytes (`net::ERR_INVALID_RESPONSE`).
+- **Confirmed root cause:** Under `not_found_handling: "none"`, Cloudflare Workers Assets defaults to `html_handling: "auto-trailing-slash"`, which responds to `env.ASSETS.fetch('/index.html')` with `HTTP 301 Location: /` (`0`-byte body).
+- **Bounded fix (`fix/phase-8-0-16s-spa-shell-response`):** Updated `worker.js` (`createSpaShellResponse`) to fetch `/` with an explicit `GET` (`Accept: text/html`) instead of `/index.html`, delete any `location` header, and construct a fresh `200 OK` (known routes) or `404 Not Found` (unknown routes) HTML response.
+- **Regression tests (`tests/worker-integration.test.js`):** Updated `createMockAssets` to return `301 Location: /` for `/index.html` while serving `/` with `200` HTML, and added Test 14 asserting known routes (`/`, `/studio-hq`, `/studio-hq/projects`, `/about`, `/about/`), unknown routes, missing/existing assets, API `404`, and zero `/index.html` fallback fetches.

@@ -103,5 +103,24 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build application assets
         run: bun run build
+      - name: Test Worker route and API integration boundaries
+        run: node --test tests/worker-integration.test.js
       - name: Compile Preview Worker without deploying
         run: ./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run
+      - name: Verify deployment artifact inputs
+        run: |
+          set -euo pipefail
+          test -s worker.js
+          test -s wrangler.jsonc
+          test -s dist/index.html
+          test -s dist/app-routes.json
+      - name: Package Preview Worker artifact for controlled deployment
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: preview-worker-${{ github.event.pull_request.head.sha }}
+          path: |
+            worker.js
+            wrangler.jsonc
+            dist/
+          if-no-files-found: error
+          retention-days: 3

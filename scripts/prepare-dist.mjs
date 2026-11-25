@@ -177,6 +177,40 @@ function generateToolStaticRoutes() {
   );
 }
 
+
+function generateAppRouteManifest() {
+  const appPath = path.resolve('src/App.tsx');
+  const sourceText = fs.readFileSync(appPath, 'utf8');
+  const sourceFile = ts.createSourceFile(appPath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const routes = new Set();
+
+  function visit(node) {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxElement(node)) &&
+        node.tagName && ts.isIdentifier(node.tagName) && node.tagName.text === 'Route') {
+      const attributes = node.attributes?.properties || node.openingElement?.attributes?.properties || [];
+      for (const attribute of attributes) {
+        if (!ts.isJsxAttribute(attribute) || !ts.isIdentifier(attribute.name) || attribute.name.text !== 'path') continue;
+        const initializer = attribute.initializer;
+        if (initializer && ts.isStringLiteral(initializer) && initializer.text !== '*') {
+          routes.add(initializer.text);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  if (routes.size === 0) {
+    console.error('No explicit React Router paths found in src/App.tsx.');
+    process.exit(1);
+  }
+
+  const manifestPath = path.join(distDir, 'app-routes.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ version: 1, routes: [...routes].sort() }, null, 2), 'utf8');
+  console.log(`✓ Generated app route manifest with ${routes.size} explicit route patterns.`);
+}
+
 generateToolStaticRoutes();
+generateAppRouteManifest();
 console.log('✓ Successfully prepared self-contained dist/ for production deployment.');
 

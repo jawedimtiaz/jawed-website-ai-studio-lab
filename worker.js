@@ -46,6 +46,23 @@ const SECURITY_HEADERS = {
 const HQ_HTML_CSP =
   "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'self' https://refined-actor-skhlb.firebaseapp.com https://accounts.google.com; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com; worker-src 'self' blob:; connect-src 'self' https://lab.jawed.co.in https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://www.googleapis.com https://firestore.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://lab.jawed.co.in https://jawed.co.in; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;";
 
+function isKnownAppRoute(pathname, routePaths) {
+  if (!Array.isArray(routePaths)) return false;
+  let normalizedPath = pathname;
+  while (normalizedPath.length > 1 && normalizedPath.endsWith('/')) normalizedPath = normalizedPath.slice(0, -1);
+
+  return routePaths.some((routePath) => {
+    if (typeof routePath !== 'string' || !routePath.startsWith('/')) return false;
+    const segments = routePath.split('/').filter(Boolean);
+    const pattern = segments.map((segment) => {
+      if (segment === '*') return '.*';
+      if (segment.startsWith(':')) return '[^/]+';
+      return segment;
+    }).join('/');
+    return new RegExp('^/' + pattern + '/?$', 'i').test(normalizedPath);
+  });
+}
+
 function addSecurityHeaders(response, pathname = '') {
   const newHeaders = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
@@ -68,6 +85,30 @@ function addSecurityHeaders(response, pathname = '') {
     statusText: response.statusText,
     headers: newHeaders
   });
+}
+
+/** Fetch `/` via explicit GET and construct a fresh SPA shell response without redirect headers. */
+async function createSpaShellResponse(env, requestUrl, status, statusText, pathname) {
+  const rootRequest = new Request(new URL('/', requestUrl), {
+    method: 'GET',
+    headers: { accept: 'text/html' }
+  });
+  const shell = await env.ASSETS.fetch(rootRequest);
+  const headers = new Headers(shell.headers);
+  headers.delete('location');
+  if (!shell.ok) {
+    await shell.body?.cancel?.();
+    return addSecurityHeaders(new Response('Not Found', {
+      status: status === 200 ? 502 : 404,
+      statusText: status === 200 ? 'Bad Gateway' : 'Not Found',
+      headers: { 'content-type': 'text/plain; charset=utf-8' }
+    }), pathname);
+  }
+  return addSecurityHeaders(new Response(shell.body, {
+    status,
+    statusText,
+    headers
+  }), pathname);
 }
 
 export default {
@@ -195,20 +236,47 @@ export default {
       }), pathname);
     }
 
-    // 8. Serve static assets via Cloudflare Workers Assets binding if present
+    // 8. Serve static assets and apply the generated React route contract.
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
-        if (assetResponse.status !== 404) {
-          return addSecurityHeaders(assetResponse, pathname);
-        }
-        // Fallback to /index.html for SPA routing
         const accept = request.headers.get('accept') || '';
-        if (request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.')) {
-          const indexRequest = new Request(new URL('/index.html', request.url), request);
-          const indexResponse = await env.ASSETS.fetch(indexRequest);
-          return addSecurityHeaders(indexResponse, pathname);
+        const isHtmlNavigation = request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.');
+
+        if (isHtmlNavigation) {
+          const manifestRequest = new Request(new URL('/app-routes.json', request.url), {
+            method: 'GET',
+            headers: { accept: 'application/json' }
+          });
+          const manifestResponse = await env.ASSETS.fetch(manifestRequest);
+          let routePaths = [];
+          if (manifestResponse.ok) {
+            try {
+              const manifest = await manifestResponse.json();
+              if (manifest?.version === 1 && Array.isArray(manifest.routes)) routePaths = manifest.routes;
+            } catch {}
+          }
+
+          if (isKnownAppRoute(pathname, routePaths)) {
+            if (assetResponse.status !== 404) return addSecurityHeaders(assetResponse, pathname);
+            await assetResponse.body?.cancel?.();
+            return createSpaShellResponse(env, request.url, 200, 'OK', pathname);
+          }
+
+          if (assetResponse.ok && assetResponse.status === 200) {
+            const headers = new Headers(assetResponse.headers);
+            headers.delete('location');
+            return addSecurityHeaders(new Response(assetResponse.body, {
+              status: 404,
+              statusText: 'Not Found',
+              headers
+            }), pathname);
+          }
+
+          await assetResponse.body?.cancel?.();
+          return createSpaShellResponse(env, request.url, 404, 'Not Found', pathname);
         }
+
         return addSecurityHeaders(assetResponse, pathname);
       } catch (err) {
         console.error('Static asset fetch failed:', err);
