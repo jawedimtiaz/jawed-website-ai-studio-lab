@@ -25,7 +25,7 @@ test("package scripts provide explicit Preview and guarded Production commands",
   assert.equal(packageJson.devDependencies.wrangler, "4.166.0");
   assert.equal(packageJson.scripts["deploy:production"], "node scripts/deploy-production.mjs");
   assert.match(guard, /DEPLOY jawed-website-ai-studio-lab PRODUCTION/);
-  assert.match(guard, /spawnSync\("wrangler", \["deploy", "--env", "production"\]/);
+  assert.match(guard, /spawn\("wrangler", \["deploy", "--env", "production"\]/);
 });
 
 test("deployment safety validator asserts environment separation", () => {
