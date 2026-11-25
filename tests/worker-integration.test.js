@@ -16,6 +16,12 @@ function createMockEnv(overrides = {}) {
     ASSETS: {
       fetch: async (req) => {
         const url = new URL(req.url);
+        if (url.pathname === '/app-routes.json') {
+          return new Response(JSON.stringify({ version: 1, routes: ['/', '/studio-hq', '/studio-hq/*'] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
         if (url.pathname === '/' || url.pathname === '/index.html') {
           return new Response('<!DOCTYPE html><html><body>SPA Root</body></html>', {
             status: 200,
