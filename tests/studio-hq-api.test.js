@@ -272,7 +272,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
       }
     });
     assert.equal(propRes.status, 201);
-    assert.match(propRes.data.proposal.proposal_number, /^PRP-\d{4}-0001$/);
+    assert.match(propRes.data.proposal.proposal_number, /^QUO-\d{4}-\d{4}$/);
 
     // Convert Quotation -> Invoice
     const invConv = await apiCall(env, '/api/hq/quotations', {
