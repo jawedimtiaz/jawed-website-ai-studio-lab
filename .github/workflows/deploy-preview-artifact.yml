@@ -46,6 +46,7 @@ jobs:
           test "$(jq -r .event <<<"$run")" = "pull_request"
           test "$(jq -r .head_branch <<<"$run")" = "fix/phase-8-0-16-spa-true-404"
           test "$(jq -r .pull_requests[0].head.sha // empty <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r .pull_requests[0].number // empty <<<"$run")" = "78"
           test "$(jq -r .status <<<"$run")" = "completed"
           test "$(jq -r .conclusion <<<"$run")" = "success"
           workflow_id="$(jq -r .workflow_id <<<"$run")"
@@ -70,6 +71,7 @@ jobs:
           test -s preview-artifact/worker.js
           test -s preview-artifact/wrangler.jsonc
           test -s preview-artifact/dist/index.html
+          test -s preview-artifact/dist/app-routes.json
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const c = JSON.parse(fs.readFileSync('preview-artifact/wrangler.jsonc', 'utf8'));
