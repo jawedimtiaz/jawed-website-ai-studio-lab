@@ -1021,3 +1021,13 @@ Full detailed records: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase
 - Important limitation: the interactive guard is a procedural safeguard; an operator with direct Wrangler access can still explicitly run `wrangler deploy --env production`. Root/default deploy now resolves to Preview.
 - No Cloudflare Worker deploy, D1 migration, D1 write, secret change, personal-site modification or customer-project modification is included.
 
+
+### Phase 8.0.7 CI evidence update — 25 November 2026
+
+- Latest verified development-branch commit before this documentation update: `e00c352124a98c74a4f947d580ba33f59534fa17`.
+- Deployment Runtime Reliability Gate run #352 (run ID `45560816193`) passed. Its two jobs both passed: the configuration/guard/runtime validator job and the Preview Worker dry-run build job.
+- The dry-run job successfully installed dependencies without creating a lockfile, ran the TypeScript/Vite application build, and compiled Wrangler with `--dry-run --env preview`. No deployment or D1 operation occurred.
+- Security Supply Chain Gate run #553 and AdSense Readiness Gate run #662 also passed for the same commit.
+- The Production guard has mocked regression tests for invalid confirmation, exact confirmation, and Windows shell resolution. They passed as part of the Deployment Runtime Reliability Gate.
+- PR #77 remains open and unmerged. The latest CI evidence applies to commit `e00c352...`; the documentation commits that follow must receive their own CI checks before merge consideration.
+- No Preview or Production Worker deployment, D1 migration/write, secret change, or Production operation was performed. Production deployment remains separately unauthorized.
