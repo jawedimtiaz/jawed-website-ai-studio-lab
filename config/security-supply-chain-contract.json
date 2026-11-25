@@ -8,8 +8,8 @@
     "workflow_untrusted_shell_interpolation": "blocked",
     "workflow_target_elevation": "blocked",
     "workflow_action_sha_pinning": "required",
-    "workflow_permissions": "contents-read",
-    "workflow_secret_access": "blocked",
+    "workflow_permissions": "contents-read; actions-read-only-for-preview-artifact-download",
+    "workflow_secret_access": "allowlisted-preview-only-protected-environment",
     "runtime_dependency_manifest": "package.json-required",
     "dependency_lockfile": "bun.lock-required",
     "firebase_client_configuration": "allowlisted-public-client-config-with-strict-schema"
