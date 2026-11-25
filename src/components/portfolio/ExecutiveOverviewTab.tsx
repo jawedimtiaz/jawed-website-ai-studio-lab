@@ -18,6 +18,8 @@ interface ExecutiveOverviewTabProps {
   currency: CurrencyCode;
   privacyMode?: boolean;
   highlightRebalancing?: boolean;
+  rebalanceSearchQuery?: string;
+  onRebalanceSearchChange?: (next: string) => void;
   onNavigateTab: (tab: 'overview' | 'holdings' | 'watchlist' | 'research' | 'retirement') => void;
 }
 
@@ -33,6 +35,8 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
   currency,
   privacyMode = false,
   highlightRebalancing = false,
+  rebalanceSearchQuery = '',
+  onRebalanceSearchChange,
   onNavigateTab
 }) => {
   const [activeSliceIdx, setActiveSliceIdx] = useState<number | null>(null);
@@ -797,6 +801,8 @@ export const ExecutiveOverviewTab: React.FC<ExecutiveOverviewTabProps> = ({
         currency={currency}
         privacyMode={privacyMode}
         highlighted={highlightRebalancing}
+        searchQuery={rebalanceSearchQuery}
+        onSearchQueryChange={onRebalanceSearchChange}
       />
     </div>
   );

@@ -24,7 +24,9 @@ import {
   Filter,
   Eye,
   EyeOff,
-  Scale
+  Scale,
+  Search,
+  X
 } from 'lucide-react';
 import {
   PortfolioData,
@@ -45,6 +47,7 @@ import { WatchlistPipelineTab } from '../components/portfolio/WatchlistPipelineT
 import { ResearchEventsTab } from '../components/portfolio/ResearchEventsTab';
 import { RetirementRoadmapTab } from '../components/portfolio/RetirementRoadmapTab';
 import { LiveFeedSettingsModal } from '../components/portfolio/LiveFeedSettingsModal';
+import { deriveAllocationFromHoldings } from '../components/portfolio/RebalancingCalculatorPanel';
 
 type DashboardTab = 'overview' | 'holdings' | 'watchlist' | 'research' | 'retirement';
 
@@ -75,6 +78,7 @@ export const PortfolioDashboardPage: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [highlightRebalancing, setHighlightRebalancing] = useState(false);
+  const [rebalanceSearchQuery, setRebalanceSearchQuery] = useState<string>('');
 
   // Asset Filter & Sort State (Sector & Thesis Status)
   const [selectedSector, setSelectedSector] = useState<string>('ALL');
@@ -312,6 +316,12 @@ export const PortfolioDashboardPage: React.FC = () => {
       const newPnlInr = newTotalValueInr - prev.summary.cashBalanceInr - newInvestedInr;
       const newPnlPct = newInvestedInr > 0 ? (newPnlInr / newInvestedInr) * 100 : 0;
 
+      const updatedAllocation = deriveAllocationFromHoldings(
+        updatedHoldings,
+        prev.summary.cashBalanceInr,
+        prev.allocation
+      );
+
       return {
         ...prev,
         meta: {
@@ -325,6 +335,7 @@ export const PortfolioDashboardPage: React.FC = () => {
           unrealizedPnlInr: Math.round(newPnlInr),
           unrealizedPnlPct: Number(newPnlPct.toFixed(2))
         },
+        allocation: updatedAllocation,
         holdings: updatedHoldings
       };
     });
@@ -366,6 +377,13 @@ export const PortfolioDashboardPage: React.FC = () => {
         (((prev.summary.totalValueInr - remainingCash) / prev.summary.totalValueInr) * 100).toFixed(1)
       );
 
+      const updatedHoldings = [newHolding, ...prev.holdings];
+      const updatedAllocation = deriveAllocationFromHoldings(
+        updatedHoldings,
+        remainingCash,
+        prev.allocation
+      );
+
       return {
         ...prev,
         summary: {
@@ -374,7 +392,8 @@ export const PortfolioDashboardPage: React.FC = () => {
           cashBalanceInr: remainingCash,
           investedPct: newInvestedPct
         },
-        holdings: [newHolding, ...prev.holdings],
+        allocation: updatedAllocation,
+        holdings: updatedHoldings,
         watchlist: prev.watchlist.filter((w) => w.ticker !== item.ticker)
       };
     });
@@ -479,7 +498,7 @@ export const PortfolioDashboardPage: React.FC = () => {
       {/* Institutional Dark-Slate Console Surface */}
       <div
         data-privacy-blur={privacyMode ? 'true' : 'false'}
-        className="portfolio-dark-console rounded-2xl bg-[#0b1120] text-slate-100 border border-slate-800 shadow-2xl overflow-hidden font-sans"
+        className="portfolio-dark-console rounded-2xl bg-[#0b1120] text-slate-100 border border-slate-800 shadow-2xl overflow-x-clip font-sans"
       >
         {/* Sticky Institutional Top Console Header */}
         <header className="sticky top-0 z-30 bg-[#0b1120]/95 backdrop-blur-md border-b border-slate-800/90">
@@ -653,13 +672,59 @@ export const PortfolioDashboardPage: React.FC = () => {
                 type="button"
                 onClick={handleJumpToRebalancing}
                 data-testid="control-bar-rebalance-btn"
+                aria-pressed={highlightRebalancing}
                 title="Jump to Portfolio Rebalancing & Capital Deployment panel in Executive Overview"
                 aria-label="Open Portfolio Rebalancing and Capital Deployment panel"
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border border-slate-800 hover:border-slate-700 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer"
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                  highlightRebalancing
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/45 font-semibold shadow-sm'
+                    : 'bg-[#0f172a] hover:bg-[#1e293b] text-slate-200 border-slate-800 hover:border-slate-700'
+                }`}
               >
                 <Scale className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Rebalance</span>
               </button>
+
+              {/* Real-Time Text Search Filter for Portfolio Rebalancing Calculation Table */}
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  role="searchbox"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={rebalanceSearchQuery}
+                  onChange={(e) => {
+                    const nextQuery = e.target.value;
+                    setRebalanceSearchQuery(nextQuery);
+                    if (nextQuery.trim().length > 0 && activeTab !== 'overview') {
+                      setActiveTab('overview');
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleJumpToRebalancing();
+                    } else if (e.key === 'Escape' && rebalanceSearchQuery) {
+                      setRebalanceSearchQuery('');
+                    }
+                  }}
+                  placeholder="Search rebalancing assets..."
+                  aria-label="Search assets in Portfolio Rebalancing calculation table"
+                  data-testid="control-bar-rebalance-search"
+                  className="w-40 sm:w-52 pl-8 pr-7 py-1.5 bg-[#0f172a] border border-slate-800 hover:border-slate-700 focus:border-sky-500 rounded-lg text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors"
+                />
+                {rebalanceSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setRebalanceSearchQuery('')}
+                    data-testid="control-bar-rebalance-search-clear"
+                    aria-label="Clear rebalancing asset search"
+                    className="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
 
               {/* Sync / Endpoint Settings Trigger */}
               {dataSource === 'live' && (
@@ -909,6 +974,8 @@ export const PortfolioDashboardPage: React.FC = () => {
               currency={currency}
               privacyMode={privacyMode}
               highlightRebalancing={highlightRebalancing}
+              rebalanceSearchQuery={rebalanceSearchQuery}
+              onRebalanceSearchChange={setRebalanceSearchQuery}
               onNavigateTab={(t) => setActiveTab(t)}
             />
           )}
