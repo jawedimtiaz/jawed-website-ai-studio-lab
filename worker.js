@@ -57,7 +57,14 @@ function isKnownAppRoute(pathname, routePaths) {
     const pattern = segments.map((segment) => {
       if (segment === '*') return '.*';
       if (segment.startsWith(':')) return '[^/]+';
-      return segment.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\function addSecurityHeaders(response, pathname = '') {');
+      return segment.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&');
+    }).join('/');
+    const regex = new RegExp(`^/${pattern}/?$`);
+    return regex.test(normalizedPath);
+  });
+}
+
+function addSecurityHeaders(response, pathname = '') {');
     }).join('/');
     const regex = new RegExp(`^/${pattern}/?import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
 import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
