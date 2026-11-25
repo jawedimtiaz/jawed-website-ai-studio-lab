@@ -46,6 +46,72 @@ const SECURITY_HEADERS = {
 const HQ_HTML_CSP =
   "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'self' https://refined-actor-skhlb.firebaseapp.com https://accounts.google.com; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com; worker-src 'self' blob:; connect-src 'self' https://lab.jawed.co.in https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://www.googleapis.com https://firestore.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://lab.jawed.co.in https://jawed.co.in; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;";
 
+
+function isKnownAppRoute(pathname, routePaths) {
+  if (!Array.isArray(routePaths)) return false;
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\\/+$/, '') : '/';
+
+  return routePaths.some((routePath) => {
+    if (typeof routePath !== 'string' || !routePath.startsWith('/')) return false;
+    const segments = routePath.split('/').filter(Boolean);
+    const pattern = segments.map((segment) => {
+      if (segment === '*') return '.*';
+      if (segment.startsWith(':')) return '[^/]+';
+      return segment.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\function addSecurityHeaders(response, pathname = '') {');
+    }).join('/');
+    const regex = new RegExp(`^/${pattern}/?import { onRequestGet as aiGet, onRequestPost as aiPost, onRequestOptions as aiOptions } from './functions/api/ai.js';
+import { onRequestGet as contactGet, onRequestPost as contactPost, onRequestOptions as contactOptions } from './functions/api/contact.js';
+import { dispatchHqApiRequest } from './functions/lib/hqRouter.js';
+import { dispatchHqIntegrationBoundary } from './functions/lib/hqIntegrationBoundary.js';
+
+// Pre-defined legacy redirects
+const LEGACY_REDIRECTS = {
+  '/index.html': '/',
+  '/About_Me.html': '/about/',
+  '/Feedback.html': '/contact/',
+  '/Disclaimer.html': '/privacy/',
+  '/Disclaimer_Contd.html': '/privacy/',
+  '/Resources.html': '/resources/',
+  '/Resources2.html': '/resources/',
+  '/MCSE.html': '/work/skills/',
+  '/CCNA.html': '/work/skills/',
+  '/Software.html': '/resources/',
+  '/Horoscope.html': '/',
+  '/Games.html': '/',
+  '/Jokes.html': '/',
+  '/Excel.html': '/tools/',
+  '/SMS.html': '/',
+  '/Interview.html': '/work/experience/',
+  '/Quotes.html': '/',
+  '/Gallery.html': '/',
+  '/CCNA': '/work/skills/',
+  '/Tips_&_Tricks': '/resources/',
+  '/Tips_&_Tricks2': '/resources/',
+  '/fortune_': '/'
+};
+
+// Keep canonical HQ routes referenced for deployment runtime contract verification:
+// '/api/hq/session', '/api/hq/clients', '/api/hq/projects', '/api/hq/tasks', '/api/hq/milestones'
+
+const SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Permitted-Cross-Domain-Policies': 'none',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+  'Strict-Transport-Security': 'max-age=31536000',
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'none'; form-action 'self' mailto:; object-src 'none'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://www.google-analytics.com https://www.googletagmanager.com https://lab.jawed.co.in https://jawed.co.in; img-src 'self' data: https://jawed.co.in https://lab.jawed.co.in; style-src 'self' 'unsafe-inline'; font-src 'self';"
+};
+
+const HQ_HTML_CSP =
+  "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src 'self' https://refined-actor-skhlb.firebaseapp.com https://accounts.google.com; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com; worker-src 'self' blob:; connect-src 'self' https://lab.jawed.co.in https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://www.googleapis.com https://firestore.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://lab.jawed.co.in https://jawed.co.in; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;";
+
+);
+    return regex.test(normalizedPath);
+  });
+}
+
 function addSecurityHeaders(response, pathname = '') {
   const newHeaders = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
@@ -195,19 +261,48 @@ export default {
       }), pathname);
     }
 
-    // 8. Serve static assets via Cloudflare Workers Assets binding if present
+    // 8. Serve static assets and apply the generated React route contract.
     if (env?.ASSETS?.fetch) {
       try {
         const assetResponse = await env.ASSETS.fetch(request);
+        const accept = request.headers.get('accept') || '';
+        const isHtmlNavigation = request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.');
+
+        if (isHtmlNavigation) {
+          const manifestRequest = new Request(new URL('/app-routes.json', request.url), {
+            method: 'GET',
+            headers: { accept: 'application/json' }
+          });
+          const manifestResponse = await env.ASSETS.fetch(manifestRequest);
+          let routePaths = [];
+          if (manifestResponse.ok) {
+            try {
+              const manifest = await manifestResponse.json();
+              if (manifest?.version === 1 && Array.isArray(manifest.routes)) routePaths = manifest.routes;
+            } catch {}
+          }
+
+          if (isKnownAppRoute(pathname, routePaths)) {
+            if (assetResponse.status !== 404) {
+              return addSecurityHeaders(assetResponse, pathname);
+            }
+            const indexRequest = new Request(new URL('/index.html', request.url), request);
+            return addSecurityHeaders(await env.ASSETS.fetch(indexRequest), pathname);
+          }
+
+          // Keep the Lab React shell so its existing NotFoundPage renders, but return a real HTTP 404.
+          const shell = assetResponse.status === 404
+            ? await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request))
+            : assetResponse;
+          return addSecurityHeaders(new Response(shell.body, {
+            status: 404,
+            statusText: 'Not Found',
+            headers: shell.headers
+          }), pathname);
+        }
+
         if (assetResponse.status !== 404) {
           return addSecurityHeaders(assetResponse, pathname);
-        }
-        // Fallback to /index.html for SPA routing
-        const accept = request.headers.get('accept') || '';
-        if (request.method === 'GET' && accept.includes('text/html') && !pathname.includes('.')) {
-          const indexRequest = new Request(new URL('/index.html', request.url), request);
-          const indexResponse = await env.ASSETS.fetch(indexRequest);
-          return addSecurityHeaders(indexResponse, pathname);
         }
         return addSecurityHeaders(assetResponse, pathname);
       } catch (err) {
