@@ -5,34 +5,100 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import worker from '../worker.js';
 
 const TEST_ORIGIN = 'https://lab.jawed.co.in';
+
+const wranglerConfig = JSON.parse(
+  fs.readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+    .replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (match) => (match.startsWith('"') ? match : ''))
+);
+const configuredAssets = wranglerConfig.assets ?? {};
+
+function matchesAssetRoutePattern(pathname, pattern) {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`).test(pathname);
+}
+
+function shouldRunWorkerFirst(pathname, rules = configuredAssets.run_worker_first ?? []) {
+  const negativeRules = rules.filter((rule) => rule.startsWith('!')).map((rule) => rule.slice(1));
+  if (negativeRules.some((rule) => matchesAssetRoutePattern(pathname, rule))) {
+    return false;
+  }
+  const positiveRules = rules.filter((rule) => !rule.startsWith('!'));
+  return positiveRules.some((rule) => matchesAssetRoutePattern(pathname, rule));
+}
+
+function createMockAssets(options = {}) {
+  const notFoundHandling = options.notFoundHandling ?? configuredAssets.not_found_handling ?? 'none';
+  const staticFiles = new Map([
+    ['/app-routes.json', {
+      body: JSON.stringify({ version: 1, routes: ['/', '/tools/:slug', '/tools/:slug/', '/studio-hq', '/studio-hq/*'] }),
+      contentType: 'application/json'
+    }],
+    ['/', {
+      body: '<!DOCTYPE html><html><body>SPA Root</body></html>',
+      contentType: 'text/html; charset=utf-8'
+    }],
+    ['/index.html', {
+      body: '<!DOCTYPE html><html><body>SPA Root</body></html>',
+      contentType: 'text/html; charset=utf-8'
+    }],
+    ['/tools/portfolio-tracker/', {
+      body: '<!DOCTYPE html><html><body>Known route shell</body></html>',
+      contentType: 'text/html; charset=utf-8'
+    }],
+    ['/assets/index-test.js', {
+      body: 'console.log("jawed-lab-asset");',
+      contentType: 'application/javascript; charset=utf-8'
+    }],
+    ['/assets/index-test.css', {
+      body: 'body { color: #111; }',
+      contentType: 'text/css; charset=utf-8'
+    }]
+  ]);
+
+  return {
+    fetch: async (req) => {
+      const url = new URL(req.url);
+      const asset = staticFiles.get(url.pathname);
+      if (asset) {
+        return new Response(asset.body, {
+          status: 200,
+          headers: { 'content-type': asset.contentType }
+        });
+      }
+      if (notFoundHandling === 'single-page-application') {
+        const shell = staticFiles.get('/index.html');
+        return new Response(shell.body, {
+          status: 200,
+          headers: { 'content-type': shell.contentType }
+        });
+      }
+      return new Response('Not Found', {
+        status: 404,
+        headers: { 'content-type': 'text/plain; charset=utf-8' }
+      });
+    }
+  };
+}
 
 function createMockEnv(overrides = {}) {
   return {
     ENVIRONMENT: 'test',
     CANONICAL_ORIGIN: TEST_ORIGIN,
-    ASSETS: {
-      fetch: async (req) => {
-        const url = new URL(req.url);
-        if (url.pathname === '/app-routes.json') {
-          return new Response(JSON.stringify({ version: 1, routes: ['/', '/studio-hq', '/studio-hq/*'] }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' }
-          });
-        }
-        if (url.pathname === '/' || url.pathname === '/index.html') {
-          return new Response('<!DOCTYPE html><html><body>SPA Root</body></html>', {
-            status: 200,
-            headers: { 'content-type': 'text/html; charset=utf-8' }
-          });
-        }
-        return new Response('Not Found', { status: 404 });
-      }
-    },
+    ASSETS: createMockAssets(),
     ...overrides
   };
+}
+
+async function simulateCloudflareEdge(req, env, ctx = mockCtx) {
+  const pathname = new URL(req.url).pathname;
+  if (shouldRunWorkerFirst(pathname)) {
+    return worker.fetch(req, env, ctx);
+  }
+  return env.ASSETS.fetch(req);
 }
 
 const mockCtx = {
@@ -294,5 +360,80 @@ test('12. Unknown API and missing static assets remain 404 and never receive the
   }), env, mockCtx);
   assert.equal(asset.status, 404);
   assert.doesNotMatch(await asset.text(), /SPA Root/);
+});
+
+test('13. Wrangler assets config and edge routing return 404 for missing static assets while preserving SPA and API routing', async () => {
+  assert.equal(configuredAssets.not_found_handling, 'none');
+  assert.ok(Array.isArray(configuredAssets.run_worker_first));
+  assert.ok(configuredAssets.run_worker_first.includes('/*'));
+  assert.ok(configuredAssets.run_worker_first.includes('!/assets/*'));
+
+  const env = createMockEnv();
+
+  // 1. Missing /assets/nonexistent.js (served directly by Cloudflare Assets via !/assets/*) -> 404
+  const missingJs = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.js`, {
+    headers: { accept: '*/*' }
+  }), env);
+  assert.equal(missingJs.status, 404);
+  assert.doesNotMatch(await missingJs.text(), /SPA Root/);
+
+  // 2. Missing /assets/nonexistent.css -> 404
+  const missingCss = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.css`, {
+    headers: { accept: 'text/css,*/*;q=0.1' }
+  }), env);
+  assert.equal(missingCss.status, 404);
+  assert.doesNotMatch(await missingCss.text(), /SPA Root/);
+
+  // 3. Missing non-asset static resource /missing-script.js (runs through worker.js) -> 404 even with HTML Accept header
+  for (const accept of ['*/*', 'text/html']) {
+    const missingRootScript = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/missing-script.js`, {
+      headers: { accept }
+    }), env);
+    assert.equal(missingRootScript.status, 404, `Expected 404 for /missing-script.js with Accept: ${accept}`);
+    assert.doesNotMatch(await missingRootScript.text(), /SPA Root/);
+  }
+
+  // 4. Known SPA routes -> HTTP 200 HTML shell
+  for (const route of ['/', '/studio-hq', '/studio-hq/projects', '/tools/portfolio-tracker/']) {
+    const spaRes = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}${route}`, {
+      headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+    }), env);
+    assert.equal(spaRes.status, 200, `Expected HTTP 200 for known SPA route ${route}`);
+    assert.match(spaRes.headers.get('content-type') || '', /text\/html/);
+  }
+
+  // 5. Unknown browser navigation route -> HTTP 404 React shell
+  const unknownRoute = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/this-route-does-not-exist`, {
+    headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+  }), env);
+  assert.equal(unknownRoute.status, 404);
+  assert.match(unknownRoute.headers.get('content-type') || '', /text\/html/);
+  assert.match(await unknownRoute.text(), /SPA Root/);
+
+  // 6. Unknown API route -> JSON HTTP 404
+  const unknownApi = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/api/unknown-route`, {
+    headers: { accept: 'text/html' }
+  }), env);
+  assert.equal(unknownApi.status, 404);
+  assert.match(unknownApi.headers.get('content-type') || '', /application\/json/);
+
+  // 7. Existing static assets -> HTTP 200 with real asset bodies
+  const existingJs = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/index-test.js`), env);
+  assert.equal(existingJs.status, 200);
+  assert.match(existingJs.headers.get('content-type') || '', /application\/javascript/);
+  assert.match(await existingJs.text(), /jawed-lab-asset/);
+
+  const existingCss = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/index-test.css`), env);
+  assert.equal(existingCss.status, 200);
+  assert.match(existingCss.headers.get('content-type') || '', /text\/css/);
+  assert.match(await existingCss.text(), /color: #111/);
+
+  // Guard check: verify the realistic mock reproduces the pre-fix regression under single-page-application mode
+  const buggyEnv = createMockEnv({
+    ASSETS: createMockAssets({ notFoundHandling: 'single-page-application' })
+  });
+  const buggyMissingAsset = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.js`), buggyEnv);
+  assert.equal(buggyMissingAsset.status, 200);
+  assert.match(await buggyMissingAsset.text(), /SPA Root/);
 });
 

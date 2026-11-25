@@ -1057,3 +1057,12 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Note: the statement above from earlier commits regarding "no tracked lockfile" predated this reconciliation; `bun.lock` is the repository's authoritative lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`), and `npm install` remains unsupported for lockfile-reproducible installs because no `package-lock.json` is maintained.
 
 **Next action:** review the uncommitted lockfile reconciliation diff on `safety/phase-8-0-7-deployment-guard` before committing/pushing. Do not merge PR #77 or deploy Preview/Production without separate explicit authorization.
+
+---
+
+### Phase 8.0.16-R — missing static asset 404 regression fix (25 November 2026)
+
+- **Verified live Preview defect on PR #78 (`e01f689b24db3e2ab1f26c6c54808a264baa47c5`):** `https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev` returned `HTTP 200 OK` (`text/html`, `index.html`) for missing static assets (`/assets/nonexistent-phase-8-0-16.js` and `/missing-script.js`) because `wrangler.jsonc` configured `"not_found_handling": "single-page-application"`.
+- **Bounded fix (`fix/phase-8-0-16r-missing-asset-404`):** updated `wrangler.jsonc` to `"not_found_handling": "none"` while keeping `"run_worker_first": ["/*", "!/assets/*"]`. With `"not_found_handling": "none"`, Cloudflare Assets returns `404` for missing `/assets/*` and missing root static resources, while `worker.js` continues to serve known SPA routes (`200`), unknown HTML navigation routes with the React Not-Found shell (`404`), unknown `/api/*` routes (`404` JSON), and existing assets (`200`).
+- **Regression coverage (`tests/worker-integration.test.js`):** updated `ASSETS.fetch` simulation to enforce `wrangler.jsonc`'s `not_found_handling` and `run_worker_first` semantics, and added explicit assertions for missing `/assets/nonexistent.js`, missing `/assets/nonexistent.css`, missing `/missing-script.js`, known SPA routes, unknown browser routes, unknown API routes, and existing assets.
+- **Controlled Preview deployment gate:** `.github/workflows/deploy-preview-artifact.yml` on `main` (`37548a3a`) hardcodes PR `#78`, head branch `fix/phase-8-0-16-spa-true-404`, and head SHA verification; it cannot deploy a separate Phase 8.0.16-R PR artifact without an approved workflow update on `main` or incorporating this fix into PR #78. No direct Wrangler deploy or Production change was performed.
