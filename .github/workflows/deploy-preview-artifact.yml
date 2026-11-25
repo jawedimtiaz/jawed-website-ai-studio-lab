@@ -1,0 +1,131 @@
+name: Controlled Preview Worker Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful Deployment Runtime Reliability run ID for PR #78"
+        required: true
+        type: string
+      expected_sha:
+        description: "Exact 40-character PR commit SHA to deploy"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: studio-hq-preview-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    name: Validate artifact and deploy Preview only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: preview-deployment
+    steps:
+      - name: Checkout trusted deployment configuration from main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate source run identity and result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid run ID"; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid commit SHA"; exit 1; }
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          test "$(jq -r .event <<<"$run")" = "pull_request"
+          test "$(jq -r .head_branch <<<"$run")" = "fix/phase-8-0-16-spa-true-404"
+          test "$(jq -r .head_sha <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r .status <<<"$run")" = "completed"
+          test "$(jq -r .conclusion <<<"$run")" = "success"
+          workflow_id="$(jq -r .workflow_id <<<"$run")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")"
+          test "$(jq -r .path <<<"$workflow")" = ".github/workflows/deployment-runtime-reliability.yml"
+          echo "Verified successful source run $SOURCE_RUN_ID for $EXPECTED_SHA"
+
+      - name: Download exact PR build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preview-worker-${{ inputs.expected_sha }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          path: preview-artifact
+
+      - name: Validate artifact and construct isolated Preview-only Wrangler config
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          test -s preview-artifact/worker.js
+          test -s preview-artifact/wrangler.jsonc
+          test -s preview-artifact/dist/index.html
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const c = JSON.parse(fs.readFileSync('preview-artifact/wrangler.jsonc', 'utf8'));
+          const expected = {
+            rootName: 'jawed-website-ai-studio-lab-preview',
+            previewName: 'jawed-website-ai-studio-lab-preview',
+            previewDb: '623a828d-2909-47e7-a228-130b4eeefef5',
+            previewOrigin: 'https://preview.lab.jawed.co.in'
+          };
+          if (c.name !== expected.rootName || c.env?.preview?.name !== expected.previewName) throw new Error('Unexpected Worker target');
+          if (c.assets?.directory !== './dist' || c.assets?.binding !== 'ASSETS') throw new Error('Unexpected assets configuration');
+          if (c.d1_databases?.[0]?.database_id !== expected.previewDb || c.env?.preview?.d1_databases?.[0]?.database_id !== expected.previewDb) throw new Error('Preview D1 binding mismatch');
+          if (c.vars?.CANONICAL_ORIGIN !== expected.previewOrigin || c.env?.preview?.vars?.CANONICAL_ORIGIN !== expected.previewOrigin) throw new Error('Preview origin mismatch');
+          if (c.env?.production?.name !== 'jawed-website-ai-studio-lab' || c.env?.production?.d1_databases?.[0]?.database_id !== 'd9ec83ea-7114-4179-af8e-a22ba5494508') throw new Error('Production isolation contract mismatch');
+          const isolated = {
+            $schema: c.$schema,
+            name: expected.rootName,
+            main: 'worker.js',
+            compatibility_date: c.compatibility_date,
+            compatibility_flags: c.compatibility_flags,
+            assets: {
+              directory: './dist',
+              binding: 'ASSETS',
+              not_found_handling: c.assets.not_found_handling,
+              run_worker_first: ['/*', '!/assets/*']
+            },
+            ai: { binding: 'AI' },
+            vars: { ENVIRONMENT: 'preview', CANONICAL_ORIGIN: expected.previewOrigin },
+            d1_databases: [{ binding: 'HQ_DB', database_name: 'jawed-studio-hq-preview', database_id: expected.previewDb }],
+            ratelimits: c.env.preview.ratelimits,
+            env: {
+              preview: {
+                name: expected.previewName,
+                vars: { ENVIRONMENT: 'preview', CANONICAL_ORIGIN: expected.previewOrigin },
+                ai: { binding: 'AI' },
+                d1_databases: [{ binding: 'HQ_DB', database_name: 'jawed-studio-hq-preview', database_id: expected.previewDb }],
+                ratelimits: c.env.preview.ratelimits
+              }
+            }
+          };
+          fs.writeFileSync('wrangler.preview-only.jsonc', JSON.stringify(isolated, null, 2));
+          console.log('Artifact validated. Generated Preview-only config; Production target and D1 migrations are excluded.');
+          NODE
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Install trusted Wrangler dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Deploy to Preview Worker only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "Missing preview-deployment environment secret CLOUDFLARE_API_TOKEN"; exit 1; }
+          ./node_modules/.bin/wrangler deploy --config wrangler.preview-only.jsonc --env preview
