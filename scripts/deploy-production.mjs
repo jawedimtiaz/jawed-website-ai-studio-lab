@@ -1,24 +1,23 @@
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const PRODUCTION_CONFIRMATION = "DEPLOY jawed-website-ai-studio-lab PRODUCTION";
 
 export function runProductionDeploymentGuard({
   answer,
   spawn = spawnSync,
-  platform = process.platform,
+  wranglerEntry = fileURLToPath(import.meta.resolve("wrangler")),
   log = console.log
 }) {
-  if (answer.trim() !== PRODUCTION_CONFIRMATION) {
+  if (typeof answer !== "string" || answer.trim() !== PRODUCTION_CONFIRMATION) {
     log("Production deployment cancelled. No Wrangler command was run.");
     return 1;
   }
 
-  const result = spawn("wrangler", ["deploy", "--env", "production"], {
-    stdio: "inherit",
-    shell: platform === "win32"
+  const result = spawn(process.execPath, [wranglerEntry, "deploy", "--env", "production"], {
+    stdio: "inherit"
   });
 
   if (result.error) throw result.error;
@@ -26,6 +25,12 @@ export function runProductionDeploymentGuard({
 }
 
 async function main() {
+  if (!stdin.isTTY || !stdout.isTTY) {
+    console.error("Production deployment requires an interactive terminal. No Wrangler command was run.");
+    process.exitCode = 1;
+    return;
+  }
+
   const terminal = createInterface({ input: stdin, output: stdout });
   try {
     console.log("\nPRODUCTION DEPLOYMENT GUARD");
