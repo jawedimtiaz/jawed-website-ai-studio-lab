@@ -87,6 +87,30 @@ function addSecurityHeaders(response, pathname = '') {
   });
 }
 
+/** Fetch `/` via explicit GET and construct a fresh SPA shell response without redirect headers. */
+async function createSpaShellResponse(env, requestUrl, status, statusText, pathname) {
+  const rootRequest = new Request(new URL('/', requestUrl), {
+    method: 'GET',
+    headers: { accept: 'text/html' }
+  });
+  const shell = await env.ASSETS.fetch(rootRequest);
+  const headers = new Headers(shell.headers);
+  headers.delete('location');
+  if (!shell.ok) {
+    await shell.body?.cancel?.();
+    return addSecurityHeaders(new Response('Not Found', {
+      status: status === 200 ? 502 : 404,
+      statusText: status === 200 ? 'Bad Gateway' : 'Not Found',
+      headers: { 'content-type': 'text/plain; charset=utf-8' }
+    }), pathname);
+  }
+  return addSecurityHeaders(new Response(shell.body, {
+    status,
+    statusText,
+    headers
+  }), pathname);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -235,18 +259,22 @@ export default {
 
           if (isKnownAppRoute(pathname, routePaths)) {
             if (assetResponse.status !== 404) return addSecurityHeaders(assetResponse, pathname);
-            const indexRequest = new Request(new URL('/index.html', request.url), request);
-            return addSecurityHeaders(await env.ASSETS.fetch(indexRequest), pathname);
+            await assetResponse.body?.cancel?.();
+            return createSpaShellResponse(env, request.url, 200, 'OK', pathname);
           }
 
-          const shell = assetResponse.status === 404
-            ? await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request))
-            : assetResponse;
-          return addSecurityHeaders(new Response(shell.body, {
-            status: 404,
-            statusText: 'Not Found',
-            headers: shell.headers
-          }), pathname);
+          if (assetResponse.ok && assetResponse.status === 200) {
+            const headers = new Headers(assetResponse.headers);
+            headers.delete('location');
+            return addSecurityHeaders(new Response(assetResponse.body, {
+              status: 404,
+              statusText: 'Not Found',
+              headers
+            }), pathname);
+          }
+
+          await assetResponse.body?.cancel?.();
+          return createSpaShellResponse(env, request.url, 404, 'Not Found', pathname);
         }
 
         return addSecurityHeaders(assetResponse, pathname);
