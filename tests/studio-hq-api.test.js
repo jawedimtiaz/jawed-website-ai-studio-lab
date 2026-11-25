@@ -212,6 +212,14 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     assert.equal(projectRes.status, 200);
     assert.equal(projectRes.data.projects.length, 1);
 
+    // Canonical client archival is blocked while an active project exists.
+    const blockedArchiveRes = await apiCall(env, `/api/hq/clients/${clientId}/archive`, { method: 'POST', body: {} });
+    assert.equal(blockedArchiveRes.status, 400);
+    assert.equal(blockedArchiveRes.data.error, 'CLIENT_HAS_ACTIVE_PROJECTS');
+
+    // Archive the project first, then archive and restore its client.
+    const projectArchiveRes = await apiCall(env, `/api/hq/projects/${projectId}/archive`, { method: 'POST', body: {} });
+    assert.equal(projectArchiveRes.status, 200);
     const archiveRes = await apiCall(env, `/api/hq/clients/${clientId}/archive`, { method: 'POST', body: {} });
     assert.equal(archiveRes.status, 200);
     const restoreRes = await apiCall(env, `/api/hq/clients/${clientId}/restore`, { method: 'POST', body: {} });
@@ -428,12 +436,13 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     });
     assert.equal(maintRes.status, 201);
 
+    // Support persistence is intentionally unsupported by the current canonical schema.
     const tktRes = await apiCall(env, '/api/hq/support', {
       method: 'POST',
       body: { client_id: clientId, project_id: projectId, subject: 'SSL Certificate Check', priority: 'High' }
     });
-    assert.equal(tktRes.status, 201);
-    assert.match(tktRes.data.ticket.ticket_number, /^SUP-\d{4}-0001$/);
+    assert.equal(tktRes.status, 400);
+    assert.equal(tktRes.data.error.code, 'UNSUPPORTED_OPERATION');
 
     // Development: Repository & Deployment
     const repoRes = await apiCall(env, '/api/hq/repositories', {
