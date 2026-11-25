@@ -1075,3 +1075,54 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - **Confirmed root cause:** Under `not_found_handling: "none"`, Cloudflare Workers Assets defaults to `html_handling: "auto-trailing-slash"`, which responds to `env.ASSETS.fetch('/index.html')` with `HTTP 301 Location: /` (`0`-byte body).
 - **Bounded fix (`fix/phase-8-0-16s-spa-shell-response`):** Updated `worker.js` (`createSpaShellResponse`) to fetch `/` with an explicit `GET` (`Accept: text/html`) instead of `/index.html`, delete any `location` header, and construct a fresh `200 OK` (known routes) or `404 Not Found` (unknown routes) HTML response.
 - **Regression tests (`tests/worker-integration.test.js`):** Updated `createMockAssets` to return `301 Location: /` for `/index.html` while serving `/` with `200` HTML, and added Test 14 asserting known routes (`/`, `/studio-hq`, `/studio-hq/projects`, `/about`, `/about/`), unknown routes, missing/existing assets, API `404`, and zero `/index.html` fallback fetches.
+
+---
+
+## Phase 8.0.16 — true SPA and static-asset 404 completion (25 November 2026)
+
+### Implementation, Preview verification and merge
+
+- PR #78: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/78 — merged into `main` on 25 November 2026 at 16:03:40 UTC.
+- Final PR head before merge: `c41676ffa63064b5ba3c09110eec8593ac2a365c`.
+- Merge commit and verified `main` tip at post-merge check: `5d4c516f7c7ee65c8ba2c63a4cc2bd7636199981`.
+- Changes include route manifest generation, Worker route-aware SPA responses, genuine HTTP 404 for unknown browser routes and missing static assets, JSON 404 for unknown API paths, and regression coverage.
+- PR #80 and PR #81 fixes were incorporated into PR #78's development branch before its merge. PR #80 addressed missing static asset fallback behavior; PR #81 corrected the SPA shell fetch to use `/` rather than redirecting `/index.html`.
+
+### Preview deployment and live acceptance
+
+- Controlled Preview deployment workflow run: `45647305242` — successful.
+- Preview Worker: `jawed-website-ai-studio-lab-preview`.
+- Deployed Preview version: `940b7624-dcbd-4ebb-b3e9-3cfb3020ed25`.
+- Preview hostname: https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev.
+- User-provided Antigravity live acceptance report recorded 22/22 HTTP/browser checks passing. Coverage included known SPA routes and refresh, unknown browser route 404 HTML, missing static assets 404, existing JS/CSS assets 200, unknown API JSON 404, browser console, and 390x844 mobile navigation.
+- External CSP blocks for Google Fonts and Firebase were observed separately and were not classified as Phase 8.0.16 regressions.
+- The Preview QA report's continuity edit was initially local/uncommitted. This merged continuity addendum now records the verified milestone; retain the separate historical Master Progress Log as an external project record, not a competing repository source of truth.
+
+### Post-merge CI verification
+
+All three push-triggered workflows on merge commit `5d4c516f7c7ee65c8ba2c63a4cc2bd7636199981` completed successfully:
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| Deployment Runtime Reliability Gate | `45650730955` | SUCCESS |
+| Security Supply Chain Gate | `45650731006` | SUCCESS |
+| AdSense Readiness Gate | `45650731337` | SUCCESS |
+
+Deployment Runtime Reliability Gate jobs both passed: Deployment runtime reliability (9 steps) and Preview Worker dry-run build (14 steps). The dry-run compiled the Preview Worker; it did not deploy it.
+
+### Production deployment and repository governance status
+
+- No Production deployment, Production configuration change, D1 migration/write, secret change, binding change, DNS change, or personal/customer project modification occurred as part of this phase.
+- Inspection of all 26 workflow YAML files on the merge commit found no automated Production deployment workflow. The controlled deployment workflow is `workflow_dispatch`-only and Preview-only; the runtime reliability workflow performs a Preview dry-run only.
+- Wrangler root/default config targets the Preview Worker and Preview D1. The named `production` environment points to the separate Production Worker, Production D1 and Production rate-limit namespaces.
+- The interactive Production deployment confirmation in `scripts/deploy-production.mjs` is a procedural guard, not a hard security boundary; direct Wrangler access can bypass it.
+- Read-only GitHub UI inspection reported zero classic branch protection rules and zero repository rulesets for `main`. Therefore PR reviews and required CI checks are not enforced by GitHub settings at this checkpoint. This is a governance gap, not a CI failure.
+
+### Phase 8.0.17 — post-merge readiness audit
+
+- Main commit CI is green as listed above.
+- Production deployment inventory and Preview/Production configuration separation were reviewed read-only.
+- No Production release was authorized or performed.
+- The next bounded workstream is Phase 8.0.18: continuity reconciliation (this addendum), followed by a proposed `main` branch ruleset and release-control review. Branch ruleset configuration requires a separate explicit approval before applying settings.
+
+**Current release decision:** Source is merged and post-merge CI passed; Production deployment remains a separate, unapproved operation. Do not deploy Production or run D1 migrations without fresh explicit approval.
