@@ -127,7 +127,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
     db.close();
   });
 
-  test('1. Protected endpoints reject missing credentials & enforce 64KB body cap', async () => {
+  test('1. Protected endpoints reject missing credentials & enforce canonical JSON body cap', async () => {
     const unauth = await apiCall(env, '/api/hq/overview', { token: null });
     assert.equal(unauth.status, 401);
 
@@ -136,7 +136,7 @@ describe('Studio HQ End-to-End Business Platform API Suite', () => {
       body: JSON.stringify({ business_name: 'A'.repeat(70000), contact_name: 'Oversize' })
     });
     assert.equal(oversized.status, 413);
-    assert.equal(oversized.data.error.code, 'PAYLOAD_TOO_LARGE');
+    assert.equal(oversized.data.error, 'PAYLOAD_TOO_LARGE');
   });
 
   test('2. Canonical CRM lifecycle integrates with legacy follow-up and communication-note modules', async () => {
