@@ -28,10 +28,10 @@ export function runProductionDeploymentGuard({
 async function main() {
   const terminal = createInterface({ input: stdin, output: stdout });
   try {
-    console.log("\\nPRODUCTION DEPLOYMENT GUARD");
+    console.log("\nPRODUCTION DEPLOYMENT GUARD");
     console.log("This command targets the Production Worker and Production D1 binding.");
     console.log("It does not run D1 migrations, but the deployed code will use Production D1.");
-    const answer = await terminal.question(`To continue, type exactly: ${PRODUCTION_CONFIRMATION}\\n> `);
+    const answer = await terminal.question(`To continue, type exactly: ${PRODUCTION_CONFIRMATION}\n> `);
     process.exitCode = runProductionDeploymentGuard({ answer });
   } finally {
     terminal.close();
