@@ -43,15 +43,16 @@ jobs:
           [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid run ID"; exit 1; }
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid commit SHA"; exit 1; }
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
-          test "$(jq -r .event <<<"$run")" = "pull_request"
-          test "$(jq -r .head_branch <<<"$run")" = "fix/phase-8-0-16-spa-true-404"
-          test "$(jq -r .pull_requests[0].head.sha // empty <<<"$run")" = "$EXPECTED_SHA"
-          test "$(jq -r .pull_requests[0].number // empty <<<"$run")" = "78"
-          test "$(jq -r .status <<<"$run")" = "completed"
-          test "$(jq -r .conclusion <<<"$run")" = "success"
-          workflow_id="$(jq -r .workflow_id <<<"$run")"
+          test "$(jq -r '.event' <<<"$run")" = "pull_request"
+          test "$(jq -r '.head_branch' <<<"$run")" = "fix/phase-8-0-16-spa-true-404"
+          test "$(jq -r '.head_sha // empty' <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r '.pull_requests[0].head.sha // empty' <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r '.pull_requests[0].number // empty' <<<"$run")" = "78"
+          test "$(jq -r '.status' <<<"$run")" = "completed"
+          test "$(jq -r '.conclusion' <<<"$run")" = "success"
+          workflow_id="$(jq -r '.workflow_id' <<<"$run")"
           workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")"
-          test "$(jq -r .path <<<"$workflow")" = ".github/workflows/deployment-runtime-reliability.yml"
+          test "$(jq -r '.path' <<<"$workflow")" = ".github/workflows/deployment-runtime-reliability.yml"
           echo "Verified successful source run $SOURCE_RUN_ID for $EXPECTED_SHA"
 
       - name: Download exact PR build artifact
