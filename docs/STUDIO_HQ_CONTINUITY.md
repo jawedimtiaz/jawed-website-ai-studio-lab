@@ -1006,3 +1006,54 @@ Full detailed records: [Phase 8.0.5 Acceptance & Reconciliation Record](hq/phase
 > 5. **No deployment command may be executed during this task.**
 > 6. When authorized, the production deployment requires **zero D1 migrations** (the changes are strictly frontend UI normalization and Worker endpoint serialization).
 
+## Phase 8.0.7 — Deployment Safety Improvement (development branch)
+
+**Status:** Implementation prepared on `safety/phase-8-0-7-deployment-guard`; pending PR review and automated checks. No deployment or database operation performed.
+
+- Root `wrangler.jsonc` now defaults to the Preview Worker and Preview D1.
+- Explicit `env.production` retains the Production Worker and Production D1 bindings.
+- Added `npm run deploy:preview` and an interactive `npm run deploy:production` confirmation wrapper.
+- Added `scripts/validate-wrangler-deployment-safety.mjs` and `tests/wrangler-deployment-safety.test.js`.
+- Extended the deployment runtime workflow to validate Wrangler environment separation and run the focused regression tests.
+- Updated the existing runtime validator to verify the Production Worker under `env.production`.
+- Added `docs/hq/phase-8-0-7-deployment-safety.md` with command and release-safety guidance.
+- Pinned the Wrangler CLI as exact devDependency `wrangler@4.166.0`; Preview and Production scripts now use the locally installed CLI instead of unpinned `npx` resolution. No tracked lockfile exists on `main` or this branch; transitive dependency reproducibility remains a separate issue.
+- Important limitation: the interactive guard is a procedural safeguard; an operator with direct Wrangler access can still explicitly run `wrangler deploy --env production`. Root/default deploy now resolves to Preview.
+- No Cloudflare Worker deploy, D1 migration, D1 write, secret change, personal-site modification or customer-project modification is included.
+
+
+### Phase 8.0.7 CI evidence update — 25 November 2026
+
+- Latest verified development-branch commit before this documentation update: `e00c352124a98c74a4f947d580ba33f59534fa17`.
+- Deployment Runtime Reliability Gate run #352 (run ID `45560816193`) passed. Its two jobs both passed: the configuration/guard/runtime validator job and the Preview Worker dry-run build job.
+- The dry-run job successfully installed dependencies without creating a lockfile, ran the TypeScript/Vite application build, and compiled Wrangler with `--dry-run --env preview`. No deployment or D1 operation occurred.
+- Security Supply Chain Gate run #553 and AdSense Readiness Gate run #662 also passed for the same commit.
+- The Production guard has mocked regression tests for invalid confirmation, exact confirmation, and Windows shell resolution. They passed as part of the Deployment Runtime Reliability Gate.
+- PR #77 remains open and unmerged. The latest CI evidence applies to commit `e00c352...`; the documentation commits that follow must receive their own CI checks before merge consideration.
+- No Preview or Production Worker deployment, D1 migration/write, secret change, or Production operation was performed. Production deployment remains separately unauthorized.
+
+
+## Phase 8.0.7 — latest verification addendum (25 November 2026)
+
+This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
+
+- Latest branch commit before this documentation update: `7f0aaa59317bd578e65047e5b67847efea6613ef`.
+- The branch incorporated current `main` commit `034d907340fb5d2254f639239473ed7ef851add9`; compare status was ahead 28, behind 0.
+- The synchronized branch includes the recent Portfolio Tracker changes from main; the rebalancing execution-history implementation was confirmed present.
+- PR #77: https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/pull/77 — open, unmerged, mergeable at last check; head branch `safety/phase-8-0-7-deployment-guard`; latest checked head `7f0aaa59317bd578e65047e5b67847efea6613ef`.
+- Deployment Runtime Reliability Gate run #355 (ID `45561207386`): SUCCESS. Both jobs passed, including the Preview Worker dry-run build.
+- Security Supply Chain Gate run #556 (ID `45561207418`): SUCCESS.
+- AdSense Readiness Gate run #665 (ID `45561207465`): SUCCESS.
+- PR diff review confirms the intended scope: Wrangler Preview-default/explicit Production configuration, deployment guard scripts, validation/tests, workflow dry-run, and two documentation files. The guard is procedural, not access control. No deploy command is present in the validation workflow.
+- The Preview dry-run and CI builds are not live Worker deployment or live browser acceptance evidence.
+- Lockfile limitation remains: Wrangler is exact-pinned at `4.166.0`, but there is no tracked package lockfile, so transitive dependency resolution is not fully reproducible.
+- No Worker deployment, D1 migration/write, secret change, personal-site modification, customer-project modification, or Production operation was performed.
+
+### Phase 8.0.7 — dependency lockfile reconciliation addendum (25 November 2026)
+
+- Reconciled the repository's tracked `bun.lock` (`bun --use-system-ca install --lockfile-only`, Bun `1.4.4`) to include `wrangler@4.166.0`, `jose@6.1.2`, and all transitive dependencies without upgrading existing application dependencies.
+- Updated `.github/workflows/deployment-runtime-reliability.yml` (`preview-worker-dry-run`) to install via `oven-sh/setup-bun` (`1.4.4`) + `bun install --frozen-lockfile`, build via `bun run build`, and compile via `./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
+- Verified locally: clean `bun install --frozen-lockfile`, `bun run lint`, `bun run build`, Wrangler `--dry-run --env preview`, and all repository safety/supply-chain/runtime validators pass.
+- Note: the statement above from earlier commits regarding "no tracked lockfile" predated this reconciliation; `bun.lock` is the repository's authoritative lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`), and `npm install` remains unsupported for lockfile-reproducible installs because no `package-lock.json` is maintained.
+
+**Next action:** review the uncommitted lockfile reconciliation diff on `safety/phase-8-0-7-deployment-guard` before committing/pushing. Do not merge PR #77 or deploy Preview/Production without separate explicit authorization.

@@ -1,0 +1,87 @@
+# Phase 8.0.7 — Wrangler Deployment Safety
+
+## Scope
+
+This change applies only to the Studio HQ Lab Worker in this repository. It does not deploy the Worker, execute D1 migrations, change D1 data, or modify the personal website or customer projects.
+
+## Safe deployment defaults
+
+The root Wrangler configuration now targets:
+
+- Worker: `jawed-website-ai-studio-lab-preview`
+- Environment: `preview`
+- Canonical origin: `https://preview.lab.jawed.co.in`
+- D1: `jawed-studio-hq-preview`
+
+The named `preview` environment resolves to the same Preview Worker and Preview D1.
+
+Production is defined only under `env.production`:
+
+- Worker: `jawed-website-ai-studio-lab`
+- Environment: `lab`
+- Canonical origin: `https://lab.jawed.co.in`
+- D1: `jawed-studio-hq`
+
+Preview and Production D1 IDs are asserted to be different by the deployment-safety validator.
+
+## Wrangler CLI version control
+
+- Wrangler is declared as an exact development dependency: `wrangler@4.166.0`.
+- Deployment commands use the locally installed CLI, not an unpinned `npx` download.
+- `bun.lock` is the repository's tracked lockfile (per `config/security-supply-chain-contract.json` and `config/deployment-runtime-contract.json`) and has been reconciled to pin `wrangler@4.166.0`, `jose@6.1.2`, and all transitive dependencies. No `package-lock.json` is tracked; Bun (`bun install --frozen-lockfile`) is the authoritative reproducible install path.
+
+## Supported commands
+
+From the repository root:
+
+- Preview deployment: `npm run deploy:preview` (equivalent to `wrangler deploy --env preview`).
+- Production deployment: `npm run deploy:production`. This invokes an interactive guard and requires the exact confirmation text `DEPLOY jawed-website-ai-studio-lab PRODUCTION` before it invokes Wrangler with `--env production`.
+
+A plain `wrangler deploy` now resolves to the root Preview configuration. Do not bypass the guarded Production command for routine operations. An operator with direct Wrangler access can still explicitly run `wrangler deploy --env production`; this repository-level confirmation script is a procedural safeguard, not an access-control boundary.
+
+## Automated controls
+
+The deployment runtime workflow runs:
+
+1. `scripts/validate-wrangler-deployment-safety.mjs` — verifies default Preview target, Preview D1, explicit Production target, Production D1 and database separation.
+2. `node --test tests/wrangler-deployment-safety.test.js` — regression tests for the configuration and command guard.
+3. Existing deployment runtime reliability validation.
+
+The workflow is validation-only. It has read-only repository permissions and contains no Wrangler deployment command.
+
+## Release and database safeguards
+
+- This phase does not authorize Production deployment.
+- No D1 migrations or data writes are part of this phase.
+- A Worker code rollback does not restore D1 data.
+- Any future Production release requires separate explicit owner authorization, a reviewed release plan, a Wrangler dry run, and live smoke verification.
+- Any D1 migration or data restoration requires separate review and authorization.
+
+## Preview Worker dry-run CI
+
+A second, separate CI job now performs a full application build and Wrangler compile without deployment:
+
+1. Sets up Node.js `22` and Bun `1.4.4` (`oven-sh/setup-bun`), then installs project dependencies with `bun install --frozen-lockfile`.
+2. Runs `bun run build` to produce `dist/`.
+3. Runs `./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run`.
+
+The job targets the named `preview` environment (matching root Preview config) and does not use a Cloudflare API token. It is a compile validation only; it does not publish a Worker, run D1 migrations, or modify D1 data. Earlier CI run 352 (run ID `45560816193`) on commit `e00c352124a98c74a4f947d580ba33f59534fa17` validated the initial `npm install --no-package-lock` workflow before `bun.lock` reconciliation.
+
+## Confirmation guard regression coverage
+
+The Production confirmation logic is exported as a testable function. Mocked tests verify that incorrect or non-string confirmation does not invoke Wrangler, exact confirmation invokes only the resolved local Wrangler CLI with `--env production` via Node (`process.execPath`, without shell resolution), and non-zero exit codes, signal terminations, and spawn errors propagate. These tests do not launch Wrangler or contact Cloudflare.
+
+
+## Latest branch verification — 25 November 2026
+
+The PR branch was synchronized with current `main` through merge commit `7f0aaa59317bd578e65047e5b67847efea6613ef`. The branch is no longer behind `main`.
+
+All three GitHub Actions gates passed for that exact commit:
+
+- Deployment Runtime Reliability Gate: run #355, ID `45561207386` — success. Both the runtime validation job and Preview Worker dry-run build job completed successfully.
+- Security Supply Chain Gate: run #556, ID `45561207418` — success.
+- AdSense Readiness Gate: run #665, ID `45561207465` — success.
+
+The dry-run is compile/build evidence only. It does not establish live Preview Worker behavior and does not mean a Worker was deployed.
+
+PR #77 remains open and unmerged. No Worker deployment, D1 migration/write, secret change, or Production operation was performed. Production deployment remains separately unauthorized.

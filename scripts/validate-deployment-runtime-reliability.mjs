@@ -38,7 +38,7 @@ else{
 }
 
 const wrangler=JSON.parse(read(contract.wrangler_config));
-if(wrangler.name!==contract.worker_name)fail("Wrangler Worker name differs from deployment contract");
+if(wrangler.env?.production?.name!==contract.worker_name)fail("Wrangler production Worker name differs from deployment contract");
 if(wrangler.main!==contract.entrypoint)fail("Wrangler entrypoint differs from deployment contract");
 if(wrangler.assets?.directory!==contract.assets_directory)fail("Wrangler assets directory differs from deployment contract");
 if(wrangler.assets?.binding!==contract.assets_binding)fail("Wrangler assets binding differs from deployment contract");

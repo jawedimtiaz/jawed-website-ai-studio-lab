@@ -5,6 +5,17 @@ concurrency:
 on:
   pull_request:
     paths:
+      - "wrangler.jsonc"
+      - "package.json"
+      - "bun.lock"
+      - "worker.js"
+      - "src/**"
+      - "scripts/prepare-dist.mjs"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "scripts/validate-wrangler-deployment-safety.mjs"
+      - "scripts/deploy-production.mjs"
+      - "tests/wrangler-deployment-safety.test.js"
       - "config/deployment-runtime-contract.json"
       - "config/production-smoke-contract.json"
       - "scripts/validate-deployment-runtime-reliability.mjs"
@@ -20,6 +31,17 @@ on:
   push:
     branches: [main]
     paths:
+      - "wrangler.jsonc"
+      - "package.json"
+      - "bun.lock"
+      - "worker.js"
+      - "src/**"
+      - "scripts/prepare-dist.mjs"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "scripts/validate-wrangler-deployment-safety.mjs"
+      - "scripts/deploy-production.mjs"
+      - "tests/wrangler-deployment-safety.test.js"
       - "config/deployment-runtime-contract.json"
       - "config/production-smoke-contract.json"
       - "scripts/validate-deployment-runtime-reliability.mjs"
@@ -51,5 +73,35 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Validate Wrangler deployment environment separation
+        run: node scripts/validate-wrangler-deployment-safety.mjs
+      - name: Test Wrangler deployment safety guards
+        run: node --test tests/wrangler-deployment-safety.test.js
       - name: Run deployment runtime reliability validation
         run: node scripts/validate-deployment-runtime-reliability.mjs
+
+  preview-worker-dry-run:
+    name: Preview Worker dry-run build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies with frozen lockfile
+        run: bun install --frozen-lockfile
+      - name: Build application assets
+        run: bun run build
+      - name: Compile Preview Worker without deploying
+        run: ./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run
