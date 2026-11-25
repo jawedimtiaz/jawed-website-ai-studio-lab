@@ -32,16 +32,17 @@ function shouldRunWorkerFirst(pathname, rules = configuredAssets.run_worker_firs
 
 function createMockAssets(options = {}) {
   const notFoundHandling = options.notFoundHandling ?? configuredAssets.not_found_handling ?? 'none';
+  const htmlHandling = options.htmlHandling ?? 'auto-trailing-slash';
+  const requestedPaths = options.requestedPaths;
   const staticFiles = new Map([
     ['/app-routes.json', {
-      body: JSON.stringify({ version: 1, routes: ['/', '/tools/:slug', '/tools/:slug/', '/studio-hq', '/studio-hq/*'] }),
+      body: JSON.stringify({
+        version: 1,
+        routes: ['/', '/about', '/about/', '/tools/:slug', '/tools/:slug/', '/studio-hq', '/studio-hq/*']
+      }),
       contentType: 'application/json'
     }],
     ['/', {
-      body: '<!DOCTYPE html><html><body>SPA Root</body></html>',
-      contentType: 'text/html; charset=utf-8'
-    }],
-    ['/index.html', {
       body: '<!DOCTYPE html><html><body>SPA Root</body></html>',
       contentType: 'text/html; charset=utf-8'
     }],
@@ -62,6 +63,13 @@ function createMockAssets(options = {}) {
   return {
     fetch: async (req) => {
       const url = new URL(req.url);
+      requestedPaths?.push(url.pathname);
+      if (htmlHandling === 'auto-trailing-slash' && url.pathname === '/index.html') {
+        return new Response(null, {
+          status: 301,
+          headers: { location: '/' }
+        });
+      }
       const asset = staticFiles.get(url.pathname);
       if (asset) {
         return new Response(asset.body, {
@@ -70,7 +78,7 @@ function createMockAssets(options = {}) {
         });
       }
       if (notFoundHandling === 'single-page-application') {
-        const shell = staticFiles.get('/index.html');
+        const shell = staticFiles.get('/');
         return new Response(shell.body, {
           status: 200,
           headers: { 'content-type': shell.contentType }
@@ -435,5 +443,68 @@ test('13. Wrangler assets config and edge routing return 404 for missing static 
   const buggyMissingAsset = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.js`), buggyEnv);
   assert.equal(buggyMissingAsset.status, 200);
   assert.match(await buggyMissingAsset.text(), /SPA Root/);
+});
+
+test('14. SPA fallback fetches / rather than /index.html so known routes return 200 and unknown routes return 404 HTML without Location: /', async () => {
+  const requestedPaths = [];
+  const env = createMockEnv({
+    ASSETS: createMockAssets({ requestedPaths })
+  });
+
+  // Verify the realistic Cloudflare Assets mock itself redirects /index.html -> 301 Location: /
+  const directIndexAsset = await env.ASSETS.fetch(new Request(`${TEST_ORIGIN}/index.html`, {
+    headers: { accept: 'text/html' }
+  }));
+  assert.equal(directIndexAsset.status, 301);
+  assert.equal(directIndexAsset.headers.get('location'), '/');
+
+  requestedPaths.length = 0;
+
+  // 1-4 & 13: Homepage and known SPA routes (without static HTML files) -> HTTP 200 HTML shell, zero Location header
+  for (const route of ['/', '/studio-hq', '/studio-hq/projects', '/about', '/about/']) {
+    const res = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}${route}`, {
+      headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+    }), env);
+    assert.equal(res.status, 200, `Expected HTTP 200 for ${route}`);
+    assert.equal(res.headers.get('location'), null, `Expected no Location header for ${route}`);
+    assert.match(res.headers.get('content-type') || '', /text\/html/);
+    assert.match(await res.text(), /SPA Root/);
+  }
+
+  // 5-6: Unknown browser route -> HTTP 404 with non-empty HTML shell and zero Location header
+  const unknownRes = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/this-route-does-not-exist-8016s`, {
+    headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+  }), env);
+  assert.equal(unknownRes.status, 404);
+  assert.equal(unknownRes.headers.get('location'), null);
+  assert.match(unknownRes.headers.get('content-type') || '', /text\/html/);
+  const unknownBody = await unknownRes.text();
+  assert.ok(unknownBody.length > 0);
+  assert.match(unknownBody, /SPA Root/);
+
+  // 7: Worker fallback never fetches /index.html from ASSETS
+  assert.ok(!requestedPaths.includes('/index.html'), `Worker must not fetch /index.html from ASSETS; saw ${requestedPaths.join(', ')}`);
+  assert.ok(requestedPaths.includes('/'));
+
+  // 8-12: Missing static assets, existing assets, and unknown API routes remain intact
+  const missingJs = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.js`), env);
+  assert.equal(missingJs.status, 404);
+  const missingCss = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/nonexistent.css`), env);
+  assert.equal(missingCss.status, 404);
+  const missingRootJs = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/missing-script.js`, {
+    headers: { accept: 'text/html', 'sec-fetch-mode': 'navigate' }
+  }), env);
+  assert.equal(missingRootJs.status, 404);
+
+  const existingJs = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/index-test.js`), env);
+  assert.equal(existingJs.status, 200);
+  const existingCss = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/assets/index-test.css`), env);
+  assert.equal(existingCss.status, 200);
+
+  const api404 = await simulateCloudflareEdge(new Request(`${TEST_ORIGIN}/api/unknown-route`, {
+    headers: { accept: 'text/html' }
+  }), env);
+  assert.equal(api404.status, 404);
+  assert.match(api404.headers.get('content-type') || '', /application\/json/);
 });
 
