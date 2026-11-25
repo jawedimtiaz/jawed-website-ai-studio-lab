@@ -45,7 +45,7 @@ jobs:
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
           test "$(jq -r .event <<<"$run")" = "pull_request"
           test "$(jq -r .head_branch <<<"$run")" = "fix/phase-8-0-16-spa-true-404"
-          test "$(jq -r .head_sha <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r .pull_requests[0].head.sha // empty <<<"$run")" = "$EXPECTED_SHA"
           test "$(jq -r .status <<<"$run")" = "completed"
           test "$(jq -r .conclusion <<<"$run")" = "success"
           workflow_id="$(jq -r .workflow_id <<<"$run")"
