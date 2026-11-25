@@ -8,7 +8,7 @@ export const PRODUCTION_CONFIRMATION = "DEPLOY jawed-website-ai-studio-lab PRODU
 export function runProductionDeploymentGuard({
   answer,
   spawn = spawnSync,
-  wranglerEntry = fileURLToPath(import.meta.resolve("wrangler")),
+  wranglerEntry,
   log = console.log
 }) {
   if (typeof answer !== "string" || answer.trim() !== PRODUCTION_CONFIRMATION) {
@@ -16,7 +16,8 @@ export function runProductionDeploymentGuard({
     return 1;
   }
 
-  const result = spawn(process.execPath, [wranglerEntry, "deploy", "--env", "production"], {
+  const resolvedWranglerEntry = wranglerEntry ?? fileURLToPath(import.meta.resolve("wrangler"));
+  const result = spawn(process.execPath, [resolvedWranglerEntry, "deploy", "--env", "production"], {
     stdio: "inherit"
   });
 
