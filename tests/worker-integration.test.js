@@ -281,7 +281,7 @@ test('12. Unknown API and missing static assets remain 404 and never receive the
     headers: { accept: 'text/html' }
   }), env, mockCtx);
   assert.equal(api.status, 404);
-  assert.match(api.headers.get('content-type') || '', /application\\/json/);
+  assert.match(api.headers.get('content-type') || '', /application\/json/);
 
   const asset = await worker.fetch(new Request(`${TEST_ORIGIN}/assets/missing.js`, {
     headers: { accept: '*/*' }
