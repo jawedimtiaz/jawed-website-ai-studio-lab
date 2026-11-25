@@ -102,4 +102,43 @@ test("Production guard invokes only the explicit Production environment after ex
   assert.deepEqual(invocation[2], { stdio: "inherit" });
 });
 
-test("Production guard rejects non-string confirmation without invoking Wrangler", () => {\n  let invoked = false;\n  const status = runProductionDeploymentGuard({\n    answer: undefined,\n    spawn: () => { invoked = true; return { status: 0 }; },\n    log: () => {}\n  });\n  assert.equal(status, 1);\n  assert.equal(invoked, false);\n});\n\ntest("Production guard propagates non-zero Wrangler exit status", () => {\n  const status = runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ status: 2 }),\n    log: () => {}\n  });\n  assert.equal(status, 2);\n});\n\ntest("Production guard returns failure when Wrangler is terminated without an exit status", () => {\n  const status = runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ status: null, signal: "SIGTERM" }),\n    log: () => {}\n  });\n  assert.equal(status, 1);\n});\n\ntest("Production guard propagates Wrangler spawn errors", () => {\n  const expected = new Error("spawn failed");\n  assert.throws(() => runProductionDeploymentGuard({\n    answer: PRODUCTION_CONFIRMATION,\n    wranglerEntry: "/mock/wrangler.js",\n    spawn: () => ({ error: expected }),\n    log: () => {}\n  }), expected);\n});
+test("Production guard rejects non-string confirmation without invoking Wrangler", () => {
+  let invoked = false;
+  const status = runProductionDeploymentGuard({
+    answer: undefined,
+    spawn: () => { invoked = true; return { status: 0 }; },
+    log: () => {}
+  });
+  assert.equal(status, 1);
+  assert.equal(invoked, false);
+});
+
+test("Production guard propagates non-zero Wrangler exit status", () => {
+  const status = runProductionDeploymentGuard({
+    answer: PRODUCTION_CONFIRMATION,
+    wranglerEntry: "/mock/wrangler.js",
+    spawn: () => ({ status: 2 }),
+    log: () => {}
+  });
+  assert.equal(status, 2);
+});
+
+test("Production guard returns failure when Wrangler is terminated without an exit status", () => {
+  const status = runProductionDeploymentGuard({
+    answer: PRODUCTION_CONFIRMATION,
+    wranglerEntry: "/mock/wrangler.js",
+    spawn: () => ({ status: null, signal: "SIGTERM" }),
+    log: () => {}
+  });
+  assert.equal(status, 1);
+});
+
+test("Production guard propagates Wrangler spawn errors", () => {
+  const expected = new Error("spawn failed");
+  assert.throws(() => runProductionDeploymentGuard({
+    answer: PRODUCTION_CONFIRMATION,
+    wranglerEntry: "/mock/wrangler.js",
+    spawn: () => ({ error: expected }),
+    log: () => {}
+  }), expected);
+});
