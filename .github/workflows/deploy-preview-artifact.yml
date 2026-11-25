@@ -113,6 +113,15 @@ jobs:
           fs.writeFileSync('wrangler.preview-only.jsonc', JSON.stringify(isolated, null, 2));
           console.log('Artifact validated. Generated Preview-only config; Production target and D1 migrations are excluded.');
           NODE
+          
+      - name: Stage exact validated PR Worker bundle
+        run: |
+          set -euo pipefail
+          cp preview-artifact/worker.js ./worker.js
+          rm -rf ./dist
+          cp -a preview-artifact/dist ./dist
+          test -s worker.js
+          test -s dist/index.html
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
