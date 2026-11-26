@@ -23,7 +23,7 @@ function walk(dir, relative="") {
 for (const required of ["worker.js","wrangler.jsonc","dist/index.html","dist/app-routes.json"]) {
   if (!fs.existsSync(path.join(root, required))) throw new Error("Required artifact file missing: " + required);
 }
-walk(root);
+for (const entry of ["worker.js", "wrangler.jsonc", "dist"]) {\n  const target = path.join(root, entry);\n  if (fs.statSync(target).isDirectory()) walk(target, entry);\n  else {\n    files.push({ path: entry, sha256: crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex") });\n  }\n}
 const manifest = { schema: 1, source_sha: expectedSha, files };
 fs.writeFileSync(path.join(root, "preview-artifact-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 console.log("Preview artifact manifest created for " + expectedSha + " (" + files.length + " files).");
