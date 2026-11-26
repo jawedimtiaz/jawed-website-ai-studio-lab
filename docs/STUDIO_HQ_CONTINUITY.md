@@ -1127,3 +1127,16 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Evidence source qualification: owner-provided Antigravity report. ChatGPT Cloudflare OAuth received HTTP 403 for Token Write and could not independently execute/reproduce the revocations.
 - Detailed record: `docs/hq/phase-8-0-24u-stage-1-token-revocations.md`.
 - Next: Stage 2 separately considers revoking only old broad User Profile Preview token `ad6b01a01b89248182c3b8bb52e075f7`; requires separate explicit authorization.
+
+
+---
+
+## Phase 8.0.24U — Stage 2 old broad Preview User token revocation (26 November 2026)
+
+- Antigravity reported successful revocation of `Jawed Studio HQ Preview Deployment` (User Profile token ID `ad6b01a01b89248182c3b8bb52e075f7`) at 2026-11-26 17:59:39 UTC.
+- Cloudflare audit event: `1c18cf16-9c7e-441d-a49b-a82e1b233226`; reported status transition: active → deleted.
+- Reported post-revocation verification: refreshed User Profile token list showed 2 remaining entries and no target token.
+- Excluded credentials/resources reportedly unchanged, including active Preview-only token, Production-scoped token, Build token, Agent token, GitHub secrets/environments, Workers, D1, DNS/routes, deployments and customer/personal projects.
+- Evidence qualification: owner-provided Antigravity report. ChatGPT's Cloudflare OAuth DELETE attempt returned HTTP 403 (missing API Tokens Write); it did not execute or independently reproduce the revocation.
+- Detailed record: `docs/hq/phase-8-0-24u-stage-2-broad-preview-token-revocation.md`.
+- Next: Stage 3 considers removal of only repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The `preview-deployment` environment secret `CLOUDFLARE_API_TOKEN` must remain untouched; Stage 3 requires separate authorization.
