@@ -48,7 +48,7 @@ jobs:
           workflow_id="$(jq -r '.workflow_id' <<<"$run")"
           workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")"
           test "$(jq -r '.path' <<<"$workflow")" = ".github/workflows/deployment-runtime-reliability.yml"
-          artifact_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == ("preview-worker-" + "'"$EXPECTED_SHA"'") and .expired == false)] | length')"
+          artifact_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" | jq --arg name "preview-worker-$EXPECTED_SHA" '[.artifacts[] | select(.name == $name and .expired == false)] | length')"
           test "$artifact_count" = "1"
           echo "Verified successful main source run $SOURCE_RUN_ID for $EXPECTED_SHA"
 
