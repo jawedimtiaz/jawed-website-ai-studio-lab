@@ -1113,3 +1113,20 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Phase 8.0.24L audit is complete; Phase 8.0.24M remediation design is pending.
 - Do not implement remediation or touch Production until a specific plan is reviewed and separately approved by the owner.
 
+---
+
+## Phase 8.0.24T — Least-Privilege Preview Token & Controlled Deployment Verification (26 November 2026)
+
+**Record:** `docs/hq/phase-8-0-24t-preview-token-deployment-verification.md`  
+**Deployment workflow:** [Run 45866856115](https://github.com/jawedimtiaz/jawed-website-ai-studio-lab/actions/runs/45866856115)  
+**Source artifact:** `preview-worker-0783c22159f755c13b9fb81ecfe9c1b030192140` (ID `15091728802`; SHA-256 `ddb7f5eb22c7c0bb6d06eacf595d84a2e9ff92d5b556990e32f43e30e5cc27ff`).
+
+- Replacement Preview token configuration and GitHub environment secret update were reported by Antigravity; no token value was recorded.
+- The manually dispatched `preview-deployment` workflow completed successfully. Source run `45766445390` and exact source SHA `0783c22159f755c13b9fb81ecfe9c1b030192140` were validated and the exact pinned artifact downloaded.
+- ChatGPT independently inspected GitHub run metadata, all job step conclusions, the job log, the deployment command, and the live acceptance summary. All listed job steps passed.
+- Preview Worker version: `ce792ec5-1008-47a8-9cde-2edc0b205d0d` at `https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev`.
+- Scripted read-only acceptance passed for homepage, AI readiness, API 404, missing asset, browser 404, HQ 401 and security headers.
+- The job used the masked `CLOUDFLARE_API_TOKEN` and explicit Preview-only config/`--env preview`. No credential value appeared in the inspected logs.
+- Production Worker, Production D1, DNS/routes and customer projects were outside this deployment operation. No token revocation occurred.
+- Evidence caveat: Cloudflare token scope and GitHub secret update are owner/Antigravity-supplied; GitHub secrets are write-only and the connected Cloudflare API integration cannot read token details. The deployment's successful use of the secret is independently verified.
+- **Decision:** Preview pipeline PASS. Production remains unchanged and separately governed.
