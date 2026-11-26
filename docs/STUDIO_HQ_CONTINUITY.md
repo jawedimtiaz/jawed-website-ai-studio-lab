@@ -1075,3 +1075,41 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - **Confirmed root cause:** Under `not_found_handling: "none"`, Cloudflare Workers Assets defaults to `html_handling: "auto-trailing-slash"`, which responds to `env.ASSETS.fetch('/index.html')` with `HTTP 301 Location: /` (`0`-byte body).
 - **Bounded fix (`fix/phase-8-0-16s-spa-shell-response`):** Updated `worker.js` (`createSpaShellResponse`) to fetch `/` with an explicit `GET` (`Accept: text/html`) instead of `/index.html`, delete any `location` header, and construct a fresh `200 OK` (known routes) or `404 Not Found` (unknown routes) HTML response.
 - **Regression tests (`tests/worker-integration.test.js`):** Updated `createMockAssets` to return `301 Location: /` for `/index.html` while serving `/` with `200` HTML, and added Test 14 asserting known routes (`/`, `/studio-hq`, `/studio-hq/projects`, `/about`, `/about/`), unknown routes, missing/existing assets, API `404`, and zero `/index.html` fallback fetches.
+
+
+---
+
+## Phase 8.0.24L — Production Governance Read-Only Audit (26 November 2026)
+
+**Audit report:** `docs/hq/phase-8-0-24l-production-governance-audit.md`  
+**Audited main commit:** `0783c22159f755c13b9fb81ecfe9c1b030192140`  
+**Documentation branch:** `docs/phase-8-0-24l-production-governance-audit`
+
+### Preview status
+- PR #88 merged; controlled main-to-Preview workflow is available on main.
+- Preview deployment workflow run `45766855931` succeeded.
+- Source SHA: `0783c22159f755c13b9fb81ecfe9c1b030192140`.
+- Preview Worker Version ID: `db78f60a-916b-47ea-a136-f09bb0e8e4a8`.
+- Antigravity reported all six live endpoint probes and seven security headers passed. ChatGPT independently inspected the GitHub workflow and job success; endpoint probe details are owner-supplied Antigravity evidence.
+
+### Production governance audit
+- Antigravity account-level audit reports no `production-deployment` GitHub environment or protected Production deployment pipeline.
+- Repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets exist; usage and token scopes require verification before any removal or rotation.
+- Main ruleset was reported active with PR and required-check controls.
+- Cloudflare live routes, Worker versions, D1 metadata/migration state and API token scopes remain unknown because the audit browser was unauthenticated.
+- Production D1 backup and Time Travel bookmark are historically documented in Phase 8.0.4 WP-5C; remote restore rehearsal has not been verified.
+- Historical WP-5E record documents Production migrations 0001–0003 and Worker deployment. Current live state was not rechecked during this audit.
+- Production rollback is documented historically, but current live version availability and D1 compatibility must be verified before any rollback.
+
+### Repository code review
+- `scripts/deploy-production.mjs` requires exact phrase `DEPLOY jawed-website-ai-studio-lab PRODUCTION` and invokes local Wrangler with `deploy --env production` only on exact match.
+- This is a procedural guard, not an access-control boundary; direct Wrangler access can bypass it.
+- Migration 0003 performs data backfills and contact-primary normalization using UPDATE statements. It is additive at schema level but does mutate existing rows.
+- Production and Preview Worker, D1 and rate-limit identifiers are distinct in declared Wrangler configuration.
+
+### Safety / authorization
+- No Production deployment, D1 migration, restore, Worker rollback, DNS change, secret change, GitHub environment/ruleset change, or Cloudflare account change was performed.
+- No changes to `jawed.co.in` or the Kaushal customer project.
+- Phase 8.0.24L audit is complete; Phase 8.0.24M remediation design is pending.
+- Do not implement remediation or touch Production until a specific plan is reviewed and separately approved by the owner.
+
