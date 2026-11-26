@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { validateWranglerConfig } from "./validate-wrangler-deployment-safety.mjs";
 
 const PREVIEW = {
   worker: "jawed-website-ai-studio-lab-preview",
@@ -60,7 +61,8 @@ export function validatePreviewArtifact(root, expectedSha) {
   fail(config.env?.production?.d1_databases?.[0]?.database_id !== PRODUCTION.database, "Production D1 declaration mismatch.");
   fail(JSON.stringify((config.env?.production?.ratelimits || []).map(x=>x.namespace_id)) !== JSON.stringify(PRODUCTION.limiters), "Production rate-limit namespace declaration mismatch.");
   fail(Array.isArray(config.routes) && config.routes.length > 0, "Custom routes are prohibited.");
-  return errors;
+  errors.push(...validateWranglerConfig(config));
+  return [...new Set(errors)];
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
