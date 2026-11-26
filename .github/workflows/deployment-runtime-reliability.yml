@@ -15,6 +15,11 @@ on:
       - "vite.config.ts"
       - "scripts/validate-wrangler-deployment-safety.mjs"
       - "scripts/deploy-production.mjs"
+      - "scripts/create-preview-artifact-manifest.mjs"
+      - "scripts/validate-preview-artifact.mjs"
+      - "scripts/validate-preview-acceptance.mjs"
+      - "tests/preview-artifact-validation.test.js"
+      - ".github/workflows/deploy-preview-main.yml"
       - "tests/wrangler-deployment-safety.test.js"
       - "config/deployment-runtime-contract.json"
       - "config/production-smoke-contract.json"
@@ -41,6 +46,11 @@ on:
       - "vite.config.ts"
       - "scripts/validate-wrangler-deployment-safety.mjs"
       - "scripts/deploy-production.mjs"
+      - "scripts/create-preview-artifact-manifest.mjs"
+      - "scripts/validate-preview-artifact.mjs"
+      - "scripts/validate-preview-acceptance.mjs"
+      - "tests/preview-artifact-validation.test.js"
+      - ".github/workflows/deploy-preview-main.yml"
       - "tests/wrangler-deployment-safety.test.js"
       - "config/deployment-runtime-contract.json"
       - "config/production-smoke-contract.json"
@@ -105,6 +115,8 @@ jobs:
         run: bun run build
       - name: Test Worker route and API integration boundaries
         run: node --test tests/worker-integration.test.js
+      - name: Test Preview artifact validation
+        run: node --test tests/preview-artifact-validation.test.js
       - name: Compile Preview Worker without deploying
         run: ./node_modules/.bin/wrangler deploy --dry-run --env preview --outdir .wrangler-dry-run
       - name: Verify deployment artifact inputs
@@ -114,13 +126,18 @@ jobs:
           test -s wrangler.jsonc
           test -s dist/index.html
           test -s dist/app-routes.json
+      - name: Create SHA-pinned artifact manifest and checksums
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/create-preview-artifact-manifest.mjs "$SOURCE_SHA" .
       - name: Package Preview Worker artifact for controlled deployment
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: preview-worker-${{ github.event.pull_request.head.sha }}
+          name: preview-worker-${{ github.sha }}
           path: |
             worker.js
             wrangler.jsonc
             dist/
+            preview-artifact-manifest.json
           if-no-files-found: error
           retention-days: 3

@@ -1,0 +1,146 @@
+name: Controlled Preview Deployment from Main
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful Deployment Runtime Reliability run ID for a push to main"
+        required: true
+        type: string
+      expected_sha:
+        description: "Exact 40-character main commit SHA validated by that run"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: studio-hq-preview-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    name: Verify source, deploy isolated Preview, run live acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment:
+      name: preview-deployment
+      url: https://preview.lab.jawed.co.in
+    steps:
+      - name: Validate source run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid source run ID"; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid source SHA"; exit 1; }
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          test "$(jq -r '.repository.full_name' <<<"$run")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.event' <<<"$run")" = "push"
+          test "$(jq -r '.head_branch' <<<"$run")" = "main"
+          test "$(jq -r '.head_sha' <<<"$run")" = "$EXPECTED_SHA"
+          test "$(jq -r '.status' <<<"$run")" = "completed"
+          test "$(jq -r '.conclusion' <<<"$run")" = "success"
+          workflow_id="$(jq -r '.workflow_id' <<<"$run")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")"
+          test "$(jq -r '.path' <<<"$workflow")" = ".github/workflows/deployment-runtime-reliability.yml"
+          artifact_count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts" | jq --arg name "preview-worker-$EXPECTED_SHA" '[.artifacts[] | select(.name == $name and .expired == false)] | length')"
+          test "$artifact_count" = "1"
+          echo "Verified successful main source run $SOURCE_RUN_ID for $EXPECTED_SHA"
+
+      - name: Download exact SHA-pinned artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preview-worker-${{ inputs.expected_sha }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          path: preview-artifact
+
+      - name: Checkout exact validated source commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.expected_sha }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate artifact provenance, checksums and environment isolation
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: node source/scripts/validate-preview-artifact.mjs preview-artifact
+
+      - name: Stage the verified Worker bundle and construct Preview-only config
+        run: |
+          set -euo pipefail
+          cp preview-artifact/worker.js source/worker.js
+          rm -rf source/dist
+          cp -a preview-artifact/dist source/dist
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const c = JSON.parse(fs.readFileSync('preview-artifact/wrangler.jsonc', 'utf8'));
+          const p = c.env.preview;
+          const isolated = {
+            $schema: c.$schema,
+            name: 'jawed-website-ai-studio-lab-preview',
+            main: 'worker.js',
+            compatibility_date: c.compatibility_date,
+            compatibility_flags: c.compatibility_flags,
+            assets: c.assets,
+            ai: { binding: 'AI' },
+            vars: { ENVIRONMENT: 'preview', CANONICAL_ORIGIN: 'https://preview.lab.jawed.co.in' },
+            d1_databases: p.d1_databases,
+            ratelimits: p.ratelimits,
+            env: {
+              preview: {
+                name: 'jawed-website-ai-studio-lab-preview',
+                ai: { binding: 'AI' },
+                vars: { ENVIRONMENT: 'preview', CANONICAL_ORIGIN: 'https://preview.lab.jawed.co.in' },
+                d1_databases: p.d1_databases,
+                ratelimits: p.ratelimits
+              }
+            }
+          };
+          if (isolated.name !== 'jawed-website-ai-studio-lab-preview' ||
+              isolated.d1_databases[0].database_id !== '623a828d-2909-47e7-a228-130b4eeefef5' ||
+              isolated.vars.CANONICAL_ORIGIN !== 'https://preview.lab.jawed.co.in' ||
+              isolated.env.preview.name !== 'jawed-website-ai-studio-lab-preview' ||
+              isolated.env.preview.d1_databases[0].database_id !== '623a828d-2909-47e7-a228-130b4eeefef5' ||
+              isolated.env.preview.vars.CANONICAL_ORIGIN !== 'https://preview.lab.jawed.co.in' ||
+              isolated.env.production !== undefined) {
+            throw new Error('Preview-only deployment configuration failed isolation checks.');
+          }
+          fs.writeFileSync('source/wrangler.preview-only.jsonc', JSON.stringify(isolated, null, 2));
+          NODE
+
+      - name: Set up Bun and install exact-source Wrangler dependencies
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Install frozen dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+
+      - name: Dry-run isolated Preview deployment
+        working-directory: source
+        run: ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.preview-only.jsonc --env preview --outdir .wrangler-preview-dry-run
+
+      - name: Deploy to Preview Worker only
+        working-directory: source
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "Missing Preview deployment environment secret."; exit 1; }
+          ./node_modules/.bin/wrangler deploy --config wrangler.preview-only.jsonc --env preview
+
+      - name: Run live read-only Preview acceptance
+        working-directory: source
+        env:
+          PREVIEW_ACCEPTANCE_ORIGIN: https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev
+        run: node scripts/validate-preview-acceptance.mjs
