@@ -107,7 +107,11 @@ jobs:
           };
           if (isolated.name !== 'jawed-website-ai-studio-lab-preview' ||
               isolated.d1_databases[0].database_id !== '623a828d-2909-47e7-a228-130b4eeefef5' ||
-              isolated.vars.CANONICAL_ORIGIN !== 'https://preview.lab.jawed.co.in') {
+              isolated.vars.CANONICAL_ORIGIN !== 'https://preview.lab.jawed.co.in' ||
+              isolated.env.preview.name !== 'jawed-website-ai-studio-lab-preview' ||
+              isolated.env.preview.d1_databases[0].database_id !== '623a828d-2909-47e7-a228-130b4eeefef5' ||
+              isolated.env.preview.vars.CANONICAL_ORIGIN !== 'https://preview.lab.jawed.co.in' ||
+              isolated.env.production !== undefined) {
             throw new Error('Preview-only deployment configuration failed isolation checks.');
           }
           fs.writeFileSync('source/wrangler.preview-only.jsonc', JSON.stringify(isolated, null, 2));
@@ -137,4 +141,6 @@ jobs:
 
       - name: Run live read-only Preview acceptance
         working-directory: source
+        env:
+          PREVIEW_ACCEPTANCE_ORIGIN: https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev
         run: node scripts/validate-preview-acceptance.mjs

@@ -1,11 +1,24 @@
-const BASE = "https://preview.lab.jawed.co.in";
+const ALLOWED_PREVIEW_ORIGINS = new Set([
+  "https://preview.lab.jawed.co.in",
+  "https://jawed-website-ai-studio-lab-preview.jawed-eee.workers.dev"
+]);
+const requestedBase = (process.env.PREVIEW_ACCEPTANCE_ORIGIN || "https://preview.lab.jawed.co.in").replace(/\/+$/, "");
+if (!ALLOWED_PREVIEW_ORIGINS.has(requestedBase)) {
+  throw new Error("Refusing unapproved acceptance target: " + requestedBase);
+}
+const BASE = requestedBase;
+const PRODUCTION_HOST = "lab.jawed.co.in";
 const REQUIRED_HEADERS = ["strict-transport-security","x-frame-options","x-content-type-options","cross-origin-opener-policy","referrer-policy","permissions-policy","content-security-policy"];
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
 async function probe(path, options={}) {
-  const response = await fetch(BASE + path, { redirect: "manual", ...options });
+  const response = await fetch(BASE + path, { redirect: "manual", signal: AbortSignal.timeout(10000), ...options });
   assert(response.status < 300 || response.status >= 400, path + " returned redirect " + response.status + ".");
-  assert(!response.headers.get("location")?.includes("lab.jawed.co.in"), path + " redirects toward Production.");
+  const location = response.headers.get("location");
+  if (location) {
+    const targetHost = new URL(location, BASE).hostname.toLowerCase();
+    assert(targetHost !== PRODUCTION_HOST, path + " redirects toward Production.");
+  }
   return response;
 }
 

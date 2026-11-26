@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { validateWranglerConfig } from "./validate-wrangler-deployment-safety.mjs";
 
 const PREVIEW = {
@@ -33,15 +34,41 @@ export function validatePreviewArtifact(root, expectedSha) {
   const seen = new Set();
   for (const item of manifest.files || []) {
     if (!item || typeof item.path !== "string" || !/^[a-f0-9]{64}$/.test(item.sha256 || "")) { errors.push("Invalid checksum manifest entry."); continue; }
+    if (item.path.includes("\\") || item.path.includes("\0")) { errors.push("Unsafe artifact path: " + item.path); continue; }
     const normalized = path.posix.normalize(item.path);
-    if (normalized !== item.path || normalized.startsWith("../") || path.isAbsolute(normalized) || normalized === "preview-artifact-manifest.json") { errors.push("Unsafe artifact path: " + item.path); continue; }
+    if (normalized !== item.path || normalized.startsWith("../") || normalized === ".." || path.posix.isAbsolute(normalized) || path.isAbsolute(normalized) || normalized === "preview-artifact-manifest.json") { errors.push("Unsafe artifact path: " + item.path); continue; }
     if (!["worker.js","wrangler.jsonc","dist"].includes(normalized.split("/")[0])) { errors.push("Unexpected artifact path: " + item.path); continue; }
     if (seen.has(normalized)) { errors.push("Duplicate artifact path: " + item.path); continue; }
     seen.add(normalized);
     const target = path.join(root, ...normalized.split("/"));
-    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) { errors.push("Manifest file missing: " + item.path); continue; }
+    if (!fs.existsSync(target)) { errors.push("Manifest file missing: " + item.path); continue; }
+    const stat = fs.lstatSync(target);
+    if (stat.isSymbolicLink()) { errors.push("Symlinks are not allowed in Preview artifacts: " + item.path); continue; }
+    if (!stat.isFile()) { errors.push("Manifest file missing: " + item.path); continue; }
     const digest = crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
     if (digest !== item.sha256) errors.push("Checksum mismatch: " + item.path);
+  }
+  const walkActualArtifact = (dir, relative = "") => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const rel = relative ? path.posix.join(relative, entry.name) : entry.name;
+      if (rel === "preview-artifact-manifest.json") continue;
+      const abs = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        errors.push("Symlinks are not allowed in Preview artifacts: " + rel);
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (rel === "dist" || rel.startsWith("dist/")) walkActualArtifact(abs, rel);
+        else errors.push("Unexpected artifact file on disk: " + rel);
+      } else if (entry.isFile()) {
+        if (!seen.has(rel)) errors.push("Unexpected artifact file on disk: " + rel);
+      } else {
+        errors.push("Unsupported artifact entry: " + rel);
+      }
+    }
+  };
+  if (fs.existsSync(root) && fs.lstatSync(root).isDirectory()) {
+    walkActualArtifact(root);
   }
   for (const required of ["worker.js","wrangler.jsonc","dist/index.html","dist/app-routes.json"]) fail(!seen.has(required), "Required file absent from manifest: " + required);
   fail(config.name !== PREVIEW.worker, "Root Worker target is not Preview.");
@@ -65,7 +92,7 @@ export function validatePreviewArtifact(root, expectedSha) {
   return [...new Set(errors)];
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = path.resolve(process.argv[2] || "preview-artifact");
   const errors = validatePreviewArtifact(root, process.env.EXPECTED_SHA);
   if (errors.length) { console.error("Preview artifact validation FAILED"); errors.forEach(e=>console.error("- "+e)); process.exit(1); }
