@@ -13,16 +13,7 @@ function fixture() {
   fs.writeFileSync(path.join(root,"worker.js"),"export default {};");
   fs.writeFileSync(path.join(root,"dist/index.html"),"<html></html>");
   fs.writeFileSync(path.join(root,"dist/app-routes.json"),'{"routes":[]}');
-  const config = {
-    name:"jawed-website-ai-studio-lab-preview",main:"worker.js",
-    assets:{directory:"./dist",binding:"ASSETS",not_found_handling:"none",run_worker_first:["/*","!/assets/*"]},
-    vars:{ENVIRONMENT:"preview",CANONICAL_ORIGIN:"https://preview.lab.jawed.co.in"},
-    d1_databases:[{binding:"HQ_DB",database_name:"jawed-studio-hq-preview",database_id:"623a828d-2909-47e7-a228-130b4eeefef5"}],
-    env:{
-      preview:{name:"jawed-website-ai-studio-lab-preview",vars:{ENVIRONMENT:"preview",CANONICAL_ORIGIN:"https://preview.lab.jawed.co.in"},d1_databases:[{database_id:"623a828d-2909-47e7-a228-130b4eeefef5"}],ratelimits:[{namespace_id:"620261117"},{namespace_id:"620261118"},{namespace_id:"620261119"}]},
-      production:{name:"jawed-website-ai-studio-lab",vars:{CANONICAL_ORIGIN:"https://lab.jawed.co.in"},d1_databases:[{database_id:"d9ec83ea-7114-4179-af8e-a22ba5494508"}],ratelimits:[{namespace_id:"620261114"},{namespace_id:"620261115"},{namespace_id:"620261116"}]}
-    }
-  };
+  const config = JSON.parse(fs.readFileSync("wrangler.jsonc","utf8"));
   fs.writeFileSync(path.join(root,"wrangler.jsonc"),JSON.stringify(config));
   const files=["worker.js","wrangler.jsonc","dist/index.html","dist/app-routes.json"].map(p=>({path:p,sha256:crypto.createHash("sha256").update(fs.readFileSync(path.join(root,p))).digest("hex")}));
   fs.writeFileSync(path.join(root,"preview-artifact-manifest.json"),JSON.stringify({schema:1,source_sha:sha,files}));
