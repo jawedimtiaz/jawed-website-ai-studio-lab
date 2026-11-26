@@ -1113,3 +1113,17 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Phase 8.0.24L audit is complete; Phase 8.0.24M remediation design is pending.
 - Do not implement remediation or touch Production until a specific plan is reviewed and separately approved by the owner.
 
+
+
+---
+
+## Phase 8.0.24U — Stage 1 Preview token revocations (26 November 2026)
+
+- Antigravity reported successful revocation of two never-used Account API tokens:
+  - `Jawed Studio HQ Preview Deploy Replacement` — ID `a58739d10dd1bc1f623aa580ec5935b7`; audit event `0e840917-6d3d-441b-962a-fa64cd46e902`; 2026-11-26 17:48:53 UTC.
+  - `Jawed Studio HQ Preview Deploy` — ID `9a7219338ff51d2e93f30ef1e222fab0`; audit event `a044a4d7-a916-4c04-9a31-64ab089e0445`; 2026-11-26 17:49:08 UTC.
+- Reported verification: both absent from active Account API token list; total count reduced to 2.
+- Excluded credentials and resources reportedly unchanged, including active Preview Deploy Final token, Production token, old broad User Profile Preview token, Build/Agent tokens, GitHub secrets/environments, Worker/D1/DNS/routes, and customer/personal projects.
+- Evidence source qualification: owner-provided Antigravity report. ChatGPT Cloudflare OAuth received HTTP 403 for Token Write and could not independently execute/reproduce the revocations.
+- Detailed record: `docs/hq/phase-8-0-24u-stage-1-token-revocations.md`.
+- Next: Stage 2 separately considers revoking only old broad User Profile Preview token `ad6b01a01b89248182c3b8bb52e075f7`; requires separate explicit authorization.
