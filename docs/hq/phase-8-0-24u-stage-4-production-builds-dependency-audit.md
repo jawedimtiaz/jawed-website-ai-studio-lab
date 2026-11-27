@@ -1,0 +1,77 @@
+# Phase 8.0.24U — Stage 4: Legacy Production Workers Builds dependency audit
+
+**Date:** 27 November 2026  
+**Scope:** Read-only investigation of the legacy Cloudflare Workers Builds token associated with Production Worker `jawed-website-ai-studio-lab`. No token revocation, Builds configuration change, repository change outside this documentation PR, Worker deployment, or D1 operation was performed.
+
+## Executive finding
+
+**Historical finding superseded by Stage 5 verification.** The 27 November follow-up check returned HTTP 404 for the Production Worker Builds configuration and an empty trigger list. Antigravity reported the configuration was deleted on 26 November. The legacy token was subsequently revoked in Stage 5; see the Stage 5 report.
+
+A fresh Cloudflare Builds API read returned a Worker build configuration for `jawed-website-ai-studio-lab` with:
+- `auto_build_enabled: true`
+- Production build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+- Git branch: `main`
+- `previews_enabled: false`
+- `build_token_uuid: e2e8ebda-7a24-44f4-ac81-17f2d7ff2db3`
+
+The matching trigger is present and not deleted:
+- Trigger UUID: `734925f6-0ae3-4a38-9c90-dbd436a06260`
+- Worker: `jawed-website-ai-studio-lab`
+- Branch include: `main`
+- Build token name: `jawed-website-ai-studio-lab build token`
+- Token UUID: `e2e8ebda-7a24-44f4-ac81-17f2d7ff2db3`
+- Repository: `jawedimtiaz/jawed-website-ai-studio-lab`
+- Repository connection UUID: `a75006a1-2593-4a2f-864d-aba32f06199e`
+- Repository connection `grant_id: null`; connection `deleted_on: null`.
+
+The Builds token inventory returns two entries with the same display name. One maps to the target legacy Cloudflare token ID `46491d31f1e626954b693ba1c80a2ac4` and the token UUID referenced by the configuration above. A second same-name entry maps to Cloudflare token ID `1c8e244cf6da374b7f915e3eb49c2604`. The second token's purpose/dependency has not been established; do not conflate the two entries.
+
+## Build history and logs
+
+The Builds API returned exactly one build record for this Worker (one page, total count 1):
+
+- Build UUID: `e19699a2-095d-41e8-acff-2f4b79a3c6fe`
+- Created: `2026-11-19T07:35:28.605Z`
+- Trigger source: `manual`
+- Branch: `main`
+- Outcome: `cancelled`
+- Status: `stopped`
+- No `running_on` timestamp.
+- Build metadata references the target token UUID `e2e8ebda-7a24-44f4-ac81-17f2d7ff2db3`.
+
+Build logs state:
+- “Build initialization failed: unable to verify Worker”
+- “Build cancelled: the Worker for this build was not found. If it still exists, retry the build.”
+
+Therefore, the only returned build record is not evidence of a successful build or Production deployment. It does demonstrate that the build record was created through the trigger and that its metadata points to the target token UUID.
+
+The trigger's build environment variables endpoint returned an empty object.
+
+## Audit-log cross-check
+
+Cloudflare account audit logs were queried read-only from 1 October 2026 through the current audit response window (312 records returned). No audit records containing “build” were returned, and no Build-token create/update/revoke events were returned in that date range.
+
+The account audit log is not a complete token-usage ledger. Absence of build-related audit events does not prove the token was never used.
+
+The earlier Antigravity credential inventory reported the target token's last-used timestamp as 19 November 2026 10:48:38Z and reported 38 historical actions targeting only the Lab Production Worker. That last-used/action-count detail remains owner-supplied evidence; this API audit did not independently retrieve token last-used metadata.
+
+## Reconciliation with earlier Builds checks
+
+An earlier investigation queried a different/legacy Worker Builds configuration endpoint and received HTTP 404, and the trigger endpoint at that time was reported empty. The current Cloudflare Builds API endpoints `/accounts/{account_id}/builds/workers/{script_tag}` and `/accounts/{account_id}/builds/workers/{external_script_id}/triggers` now return an extant configuration and trigger.
+
+For the present decision, the current successful Builds API reads are the stronger and more directly relevant evidence. The prior 404 result must not be interpreted as proof that all Workers Builds configuration has been removed.
+
+## Follow-up reconciliation and decision
+
+A subsequent read-only check against the same account and exact Production Worker script tag returned HTTP 404 with Cloudflare message “No build configuration associated with that script tag was found”; the triggers endpoint returned an empty array. This matched Antigravity's report that the Builds configuration had been deleted on 26 November. The earlier active-looking response is therefore not the current configuration state and should be treated as stale/inconsistent historical evidence.
+
+Antigravity also investigated the two same-name Build token records: token ID ending `2604` was already revoked; token ID ending `2ac4` was the active broad User Profile token targeted by Stage 5. The owner explicitly authorized revoking only the latter. Antigravity reported HTTP 200, a successful `token_revoke` audit event, and absence from refreshed active token listings. See `docs/hq/phase-8-0-24u-stage-5-dormant-production-build-token-revocation.md`.
+
+**Decision:** The old broad Build token is reported revoked. No Production Builds configuration or trigger was present in the follow-up API check. Preserve the Preview and Production-scoped Account API tokens; this audit does not authorize any Production deployment or other infrastructure change.
+
+## Verification and non-mutation
+
+ChatGPT directly read the Cloudflare Builds configuration, trigger list, Build token inventory, build history, build detail, build logs, trigger environment variables, and account audit logs. All requests in this audit were GET/read-only. No secret/token values were retrieved. No configuration, token, Worker, deployment, D1, DNS, GitHub secret, or customer/personal website resource was changed.
+
+**Stage 4 status:** Read-only audit complete; decommissioning is blocked pending a separately reviewed and authorized plan.

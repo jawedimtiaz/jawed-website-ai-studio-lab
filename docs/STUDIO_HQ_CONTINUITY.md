@@ -1113,3 +1113,44 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Phase 8.0.24L audit is complete; Phase 8.0.24M remediation design is pending.
 - Do not implement remediation or touch Production until a specific plan is reviewed and separately approved by the owner.
 
+
+
+---
+
+## Phase 8.0.24U — Stage 1 Preview token revocations (26 November 2026)
+
+- Antigravity reported successful revocation of two never-used Account API tokens:
+  - `Jawed Studio HQ Preview Deploy Replacement` — ID `a58739d10dd1bc1f623aa580ec5935b7`; audit event `0e840917-6d3d-441b-962a-fa64cd46e902`; 2026-11-26 17:48:53 UTC.
+  - `Jawed Studio HQ Preview Deploy` — ID `9a7219338ff51d2e93f30ef1e222fab0`; audit event `a044a4d7-a916-4c04-9a31-64ab089e0445`; 2026-11-26 17:49:08 UTC.
+- Reported verification: both absent from active Account API token list; total count reduced to 2.
+- Excluded credentials and resources reportedly unchanged, including active Preview Deploy Final token, Production token, old broad User Profile Preview token, Build/Agent tokens, GitHub secrets/environments, Worker/D1/DNS/routes, and customer/personal projects.
+- Evidence source qualification: owner-provided Antigravity report. ChatGPT Cloudflare OAuth received HTTP 403 for Token Write and could not independently execute/reproduce the revocations.
+- Detailed record: `docs/hq/phase-8-0-24u-stage-1-token-revocations.md`.
+- Next: Stage 2 separately considers revoking only old broad User Profile Preview token `ad6b01a01b89248182c3b8bb52e075f7`; requires separate explicit authorization.
+
+
+---
+
+## Phase 8.0.24U — Stage 2 old broad Preview User token revocation (26 November 2026)
+
+- Antigravity reported successful revocation of `Jawed Studio HQ Preview Deployment` (User Profile token ID `ad6b01a01b89248182c3b8bb52e075f7`) at 2026-11-26 17:59:39 UTC.
+- Cloudflare audit event: `1c18cf16-9c7e-441d-a49b-a82e1b233226`; reported status transition: active → deleted.
+- Reported post-revocation verification: refreshed User Profile token list showed 2 remaining entries and no target token.
+- Excluded credentials/resources reportedly unchanged, including active Preview-only token, Production-scoped token, Build token, Agent token, GitHub secrets/environments, Workers, D1, DNS/routes, deployments and customer/personal projects.
+- Evidence qualification: owner-provided Antigravity report. ChatGPT's Cloudflare OAuth DELETE attempt returned HTTP 403 (missing API Tokens Write); it did not execute or independently reproduce the revocation.
+- Detailed record: `docs/hq/phase-8-0-24u-stage-2-broad-preview-token-revocation.md`.
+- Stage 3 completion (27 November 2026): Antigravity reported deletion of repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; repository Settings reportedly shows zero repository secrets after reload. The `preview-deployment` environment secret remains present with timestamp `2026-11-26T17:09:22.000Z`; protections reportedly remain reviewer `jawedimtiaz`, `main` only, administrator bypass disabled. ChatGPT independently reviewed both Preview workflow files and confirmed each job declares `environment: preview-deployment` before consuming `secrets.CLOUDFLARE_API_TOKEN`. GitHub connector does not expose repository secret inventory, so deletion and settings verification remain owner-supplied Antigravity evidence. Detailed record: `docs/hq/phase-8-0-24u-stage-3-repository-secret-cleanup.md`.
+- Stage 4 read-only audit (27 November 2026): Current Cloudflare Builds API returns an extant Production Worker build configuration (`auto_build_enabled: true`) and non-deleted `main` trigger for `jawed-website-ai-studio-lab`. Both reference Build token UUID `e2e8ebda-7a24-44f4-ac81-17f2d7ff2db3`, mapped in Build token inventory to legacy Cloudflare token ID `46491d31f1e626954b693ba1c80a2ac4`. One build record exists (manual, 19 Nov 2026) and was cancelled before running; logs say Worker could not be found. Trigger repository connection has `grant_id: null`; Build token inventory contains a second same-name entry mapped to a different token ID, purpose unknown. Account audit query returned no build-related events, which is not a complete token usage ledger. **Do not revoke or delete the legacy token/configuration yet.** Detailed read-only audit: `docs/hq/phase-8-0-24u-stage-4-production-builds-dependency-audit.md`.
+
+
+---
+
+## Phase 8.0.24U — Stage 5 dormant Production Build token revocation (27 November 2026)
+
+- Owner explicitly authorized revocation of exactly User Profile token `jawed-website-ai-studio-lab build token`, ID `46491d31f1e626954b693ba1c80a2ac4`.
+- Antigravity reported successful DELETE (HTTP 200) at `2026-11-27T04:51:56Z` (10:21:56 IST); Cloudflare audit action `token_revoke`, result true; event ID `5062af75-3bc5-49bf-b596-b3e6a3e12f9c` (header ID `01a21b58-86e4-73d5-a047-285764d8b093`). Refreshed User Profile token list reportedly showed only the Agent token and no target.
+- ChatGPT Cloudflare OAuth DELETE attempt returned HTTP 403 (missing API Tokens Write); subsequent User Profile token-list GET returned HTTP 403 (missing API Tokens Read/Write). A narrow audit-log query returned no matching rows. Revocation and post-state are therefore owner-supplied Antigravity evidence, not independently reproduced by ChatGPT.
+- Reconciliation: direct Cloudflare Builds API follow-up GET for the exact Production Worker script tag returned HTTP 404 (“No build configuration associated with that script tag”); trigger list returned empty. This agrees with Antigravity's report that the Builds configuration was deleted on 26 November and supersedes the earlier inconsistent active-looking configuration response. No Builds configuration was changed during Stage 5.
+- Preserved credentials per Antigravity report: Preview-only Account token `665bc2b6276be4b163993c2a9099ddc2`, Production Worker-scoped Account token `541c00f5dacb4ae59d59a7b0e25af26d`, and read-only Agent User token `d15435aa60b060da9523d553983df908`. GitHub Preview environment secret/protections and all Worker/D1/DNS/routes/deployments reportedly unchanged.
+- Detailed record: `docs/hq/phase-8-0-24u-stage-5-dormant-production-build-token-revocation.md`.
+- **Stage 5 status: owner-reported complete.** No further token revocations or Production changes are authorized by this record.
