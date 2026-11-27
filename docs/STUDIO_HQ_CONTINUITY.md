@@ -1179,3 +1179,19 @@ This addendum supersedes the earlier Phase 8.0.7 status and CI snapshot above.
 - Owner-provided ruleset inspection reports active main ruleset `Protect main — Require PR and CI`, force-push/deletion restrictions, PR and required-check gates, but `Required approvals: 0`. This means CI/PR controls exist but independent human approval is not required by the ruleset.
 - **Governance verdict:** `GOVERNANCE GAPS — REMEDIATION REQUIRED`. A protected Production release path and an independent PR approval threshold should be designed and reviewed before implementation. Do not create a Production workflow, add/move secrets, alter rulesets, revoke credentials, or deploy without a separately reviewed plan and explicit owner authorization.
 - Evidence qualification: token metadata, GitHub settings inventory and ruleset details are from the uploaded Antigravity report. Workflow files, package.json and `scripts/deploy-production.mjs` were independently inspected through GitHub source on `main`. No credential value was accessed and no settings/resources were changed.
+
+
+
+---
+
+## Phase 8.0.25 — Production release governance design (27 November 2026)
+
+- Design-only proposal added at `docs/hq/phase-8-0-25-production-governance-design.md`.
+- Repository visibility was checked through the GitHub integration and returned `public`.
+- Proposed main protections: one independent approval, dismiss stale approvals, require approval of the latest push, resolve review conversations, retain CI/up-to-date checks and force-push/deletion restrictions.
+- Solo-maintainer constraint explicitly documented: do not introduce self-approval workarounds or reduce required approvals without an explicit policy decision.
+- Proposed separate `production` environment, `main`-only deployment, reviewer gate, self-review prevention and strict separation from `preview-deployment`.
+- Proposed immutable artifact promotion: build once, deploy/test exact artifact in Preview, verify run/SHA/manifest/checksums, obtain Production approval, deploy same artifact to only the Production Worker, then run smoke tests.
+- Rollback and D1 migration/data compatibility are separate safety concerns; Worker rollback must not be assumed to reverse database writes.
+- **Status:** design only. No GitHub rulesets, environments, secrets, Cloudflare tokens, Worker/D1 resources, DNS/routes, or deployments were changed. Implementation and Production deployment require separate explicit owner approval.
+- Detailed design: `docs/hq/phase-8-0-25-production-governance-design.md`.
