@@ -5,7 +5,7 @@
 
 ## Executive finding
 
-**The legacy token is still referenced by an active-looking Workers Builds configuration and trigger. Do not revoke it yet.**
+**Historical finding superseded by Stage 5 verification.** The 27 November follow-up check returned HTTP 404 for the Production Worker Builds configuration and an empty trigger list. Antigravity reported the configuration was deleted on 26 November. The legacy token was subsequently revoked in Stage 5; see the Stage 5 report.
 
 A fresh Cloudflare Builds API read returned a Worker build configuration for `jawed-website-ai-studio-lab` with:
 - `auto_build_enabled: true`
@@ -62,13 +62,13 @@ An earlier investigation queried a different/legacy Worker Builds configuration 
 
 For the present decision, the current successful Builds API reads are the stronger and more directly relevant evidence. The prior 404 result must not be interpreted as proof that all Workers Builds configuration has been removed.
 
-## Risk assessment and decision
+## Follow-up reconciliation and decision
 
-1. **Do not revoke** Cloudflare token ID `46491d31f1e626954b693ba1c80a2ac4` at this stage.
-2. Do not delete the Build token record, trigger, repository connection, or Worker Builds configuration as part of this audit.
-3. The trigger has `auto_build_enabled: true`, targets `main`, and specifies `npx wrangler deploy` for the Production Worker. If the integration becomes functional again, it could represent an alternate Production deployment path.
-4. The repository connection's `grant_id: null` and the failed “Worker not found” manual build indicate the current integration may be incomplete or stale, but they do not establish that it is safe to revoke its credential.
-5. Before any decommissioning, reconcile the two same-name Build token records, establish whether the repository connection can trigger builds, and obtain separate explicit approval for the exact configuration/token operations. Keep the Preview deployment token and Production-scoped Account API token outside this stage.
+A subsequent read-only check against the same account and exact Production Worker script tag returned HTTP 404 with Cloudflare message “No build configuration associated with that script tag was found”; the triggers endpoint returned an empty array. This matched Antigravity's report that the Builds configuration had been deleted on 26 November. The earlier active-looking response is therefore not the current configuration state and should be treated as stale/inconsistent historical evidence.
+
+Antigravity also investigated the two same-name Build token records: token ID ending `2604` was already revoked; token ID ending `2ac4` was the active broad User Profile token targeted by Stage 5. The owner explicitly authorized revoking only the latter. Antigravity reported HTTP 200, a successful `token_revoke` audit event, and absence from refreshed active token listings. See `docs/hq/phase-8-0-24u-stage-5-dormant-production-build-token-revocation.md`.
+
+**Decision:** The old broad Build token is reported revoked. No Production Builds configuration or trigger was present in the follow-up API check. Preserve the Preview and Production-scoped Account API tokens; this audit does not authorize any Production deployment or other infrastructure change.
 
 ## Verification and non-mutation
 
